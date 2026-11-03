@@ -163,3 +163,4 @@ progress::-webkit-progress-bar{background:#e8ebef}progress{background:#e8ebef}
 .sim-positions{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.sim-position{border-left:3px solid var(--sim-color)}
 #sim-trades .pill{border-color:var(--sim-color);color:var(--sim-color)}
 html[data-route=sim] #pause-banner{display:none}
+.companion-accounts{list-style:none;margin:12px 0 0;padding:0}.companion-accounts li{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-top:1px solid var(--line);font-size:13px}.companion-accounts i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}.companion-accounts b{font-family:var(--mono)}

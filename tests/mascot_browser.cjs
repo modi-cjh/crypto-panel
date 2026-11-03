@@ -26,6 +26,8 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   let account = paused(), team = { schema_version: 1, status: { updated_at: null, meeting: null, phase: null, roles: {} }, log: [] };
   await context.route(/okx\.com/, r => r.abort());
+  // Without paper-account data the companion falls back to the bot snapshot, which these checks cover.
+  await context.route('**/paper-data/dashboard.json*', r => r.abort());
   await context.route('**/paper/account.json?*', r => r.fulfill({ json: account }));
   await context.route('**/paper/team.json?*', r => r.fulfill({ json: team }));
   await context.route('**/paper/events.json?*', r => r.fulfill({ json: { schema_version: 1, generated_at: iso(Date.now()), source_status: 'ok', events: [] } }));

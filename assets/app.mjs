@@ -2,7 +2,7 @@ import { HomePositions, equitySVG, rangePoints } from './home.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
-import { SIM_URL, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup } from './sim.mjs';
+import { SIM_URL, SIM_COLORS, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simTotals, simMascotState, simChanges, simFeed } from './sim.mjs';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs';
@@ -431,7 +431,7 @@ function navigate() {
   } else if (route === 'paper') { historyPage.refresh(); }
   else { renderMarket(); refreshSlow(); }
   if (route === 'home' || route === 'paper') refreshSnapshot();
-  document.documentElement.dataset.route=route;renderPinnedBalance();if(route==='sim' || route==='home'){renderSim();refreshSim();}
+  document.documentElement.dataset.route=route;renderPinnedBalance();renderSim();refreshSim();
   refreshPublicAccount();syncStreams();
 }
 $('search').addEventListener('input', renderMarket);
@@ -483,7 +483,13 @@ function updateCompanion(current=liveBalance(publicAccount,effectiveQuotes())){
   mascot.update({...publicAccount,dataDisconnected:errors.has('account'),now:Date.now(),offlineMinutes:config.offlineMinutes,events:eventsData?.events || []},team,{
     route,coin,paused:Boolean(publicAccount?.pause?.paused),equity:current?.equity,daily:current?.daily,percent:current?.percent,source:current?.source,
     positions:main?main.positions.length:null,loss:Number.isFinite(main?.daily_loss_limit)?{ratio:loss,limit:main.daily_loss_limit}:null,
-    long:risk?.long,short:risk?.short,decision:rule?BIAS[rule.bias] || null:null,eventText});
+    long:risk?.long,short:risk?.short,decision:rule?BIAS[rule.bias] || null:null,eventText,...simContext()});
+}
+// Once the paper accounts have loaded, the companion follows them instead of the paused bot snapshot.
+function simContext(){
+  if(!simData)return {};
+  return {simState:simMascotState(simData),simFeed:simFeed(simData),sim:{totals:simTotals(simData),
+    accounts:Object.entries(simData.accounts).map(([key,a])=>({name:a.name,color:SIM_COLORS[key] || '#06727d',equity:a.equity,return_pct:a.return_pct,positions:a.open_positions.length,halted:a.halted}))}};
 }
 function updateStreamStatus(){
   const live=candleStream?.state==='实时' && Date.now()-candleStream.lastData<45000;
@@ -576,7 +582,9 @@ async function refreshSim(){
  try{
   const response=await fetch(`${SIM_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
   if(!response.ok)throw new Error();const data=await response.json();if(!validSim(data))throw new Error();
-  simData=data;$('sim-error').hidden=true;renderSim();
+  const changes=simChanges(simData,data);
+  simData=data;$('sim-error').hidden=true;renderSim();updateCompanion();
+  for(const line of changes)notify(line,`模拟盘 · ${line.text}`);
  }catch{if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='模拟交易数据暂时读取失败，保留已有数据，稍后自动重试。';}}
  finally{simBusy=false;}
 }
@@ -590,13 +598,13 @@ function renderSim(){
 }
 document.addEventListener('visibilitychange',()=>{
  if(document.hidden){quoteStream?.stop();candleStream?.stop();quoteStreamKey='';candleStreamKey='';}
- else {syncStreams();refreshPrices();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();if(['home','coin'].includes(route))refreshCandles(true);}
+ else {syncStreams();refreshPrices();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSim();if(['home','coin'].includes(route))refreshCandles(true);}
 });
 navigate();refreshPrices();refreshEvents();
 setInterval(()=>{if(!document.hidden){refreshPrices();renderPinnedBalance();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
  if(['home','coin'].includes(route))refreshCandles();
- refreshSnapshot();if(route==='paper')historyPage.refresh();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();if(route==='sim' || route==='home')refreshSim();
+ refreshSnapshot();if(route==='paper')historyPage.refresh();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();refreshSim();
 }},60000);
 setInterval(()=>{if(!document.hidden){refreshHealth();if(route==='home')renderHome();
  for(const stream of [quoteStream,candleStream])if(stream?.state==='实时' && Date.now()-stream.lastData>45000)stream.socket?.close();

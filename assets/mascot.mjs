@@ -71,6 +71,7 @@ export function contextTip(c={}){
   if(c.route==='paper')return '这里是账户历史：最大回撤按所选范围从峰值到之后低点计算。';
   if(c.route==='market')return '点任一币种，可以看均值回归入场条件和 K 线。';
   if(c.route==='sim')return '这里是三个学习用模拟账户，每小时自动更新；持仓浮盈按实时价计算。';
+  if(c.sim)return `三个模拟账户合计 ${signed(c.sim.totals.ret)}%，持仓 ${c.sim.totals.positions} 个；有开平仓我会马上告诉你。`;
   if(c.paused)return '模拟盘暂停中，重新开始后我会第一时间播报开平仓。';
   if(c.positions>0)return `当前 ${c.positions} 个持仓，点持仓行可展开 K 线。`;
   return '暂无持仓，有新信号或成交我会马上告诉你。';
@@ -231,7 +232,8 @@ export class Mascot {
   }
   update(snapshot,team,context={}){
     const previous=this.value;
-    this.value=mascotState(snapshot);this.team=team;this.events=snapshot?.events || [];this.context=context;
+    // Paper accounts drive the companion once their data has loaded; the old bot snapshot is the fallback.
+    this.value=context.simState || mascotState(snapshot);this.team=team;this.events=snapshot?.events || [];this.context=context;
     this.host.querySelector('#mascot-status').textContent=this.value.label;
     this.applyFace();
     if(this.value.state!==previous.state){
@@ -271,6 +273,12 @@ export class Mascot {
   renderStatus(){
     const c=this.context,metric=(label,value,cls='')=>`<div><span>${label}</span><strong class="${cls}">${value}</strong></div>`;
     const tone=v=>Number.isFinite(v)?v>=0?'up':'down':'';
+    if(c.sim){
+      const t=c.sim.totals;
+      this.panel.querySelector('#companion-panel-status').innerHTML=`<div class="companion-metrics">${metric('合计权益 USDT',fmt(t.equity))}${metric('合计收益',`${signed(t.ret)}%`,tone(t.ret))}${metric('当前持仓',t.positions+' 仓')}${metric('已平仓',t.trades+' 笔')}</div>`+
+        `<ul class="companion-accounts">${c.sim.accounts.map(a=>`<li><span><i style="background:${esc(a.color)}"></i>${esc(a.name)}${a.halted?' · <b class="down">停手</b>':''}</span><span>${fmt(a.equity)} <b class="${tone(a.return_pct)}">${signed(a.return_pct)}%</b> · 持仓 ${a.positions}</span></li>`).join('')}</ul>`;
+      return;
+    }
     const bar=(label,r)=>{const used=r && Number.isFinite(r.ratio) && r.limit>0?Math.min(100,Math.max(0,r.ratio/r.limit*100)):null;
       return `<div class="companion-bar"><div><span>${label}</span><b class="${used>=100?'down':''}">${used===null?'—':fmt(r.ratio*100)+'%'} / ${r?.limit?fmt(r.limit*100,0)+'%':'—'}</b></div><progress max="100" value="${used??0}" aria-label="${label}" ${used===null?'data-missing="true"':''}></progress></div>`;};
     this.panel.querySelector('#companion-panel-status').innerHTML=`<div class="companion-metrics">${metric('账户权益 USDT',fmt(c.equity))}${metric('今日盈亏',Number.isFinite(c.daily)?`${signed(c.daily)} / ${signed(c.percent)}%`:'—',tone(c.daily))}${metric('当前持仓',c.paused?'暂停中':Number.isFinite(c.positions)?c.positions+' 仓':'—')}${metric('数据来源',esc(c.source || '—'))}</div>${bar('当日亏损 · 停手线',c.loss)}${bar('多头合计风险',c.long)}${bar('空头合计风险',c.short)}`;
@@ -283,7 +291,8 @@ export class Mascot {
     const clock=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',hour12:false});
     const said=this.feed.map(m=>({ts:m.ts,text:m.text,mood:m.mood}));
     const tidy=t=>String(t).replace(/-?\d+\.\d{5,}/g,n=>String(+Number(n).toPrecision(4)));
-    const events=(this.events||[]).slice(-12).reverse().map(e=>({ts:stamp(e.ts),text:tidy(this.context.eventText?.(e) || e.type),mood:'event'}));
+    const events=this.context.simFeed ? this.context.simFeed.map(r=>({...r,mood:r.mood==='sad'?'sad':'event'}))
+      : (this.events||[]).slice(-12).reverse().map(e=>({ts:stamp(e.ts),text:tidy(this.context.eventText?.(e) || e.type),mood:'event'}));
     const rows=[...said,...events].filter(r=>Number.isFinite(r.ts)).sort((a,b)=>b.ts-a.ts).slice(0,30);
     this.panel.querySelector('#companion-feed').innerHTML=rows.length?rows.map(r=>`<li data-mood="${r.mood}"><time>${clock.format(r.ts)}</time><span>${esc(r.text)}</span></li>`).join(''):'<li class="empty">还没有动态，有新成交、异动或报告时我会记在这里</li>';
   }
