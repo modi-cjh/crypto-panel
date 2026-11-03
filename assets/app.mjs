@@ -1,11 +1,11 @@
 import { HomePositions, equitySVG, rangePoints } from './home.mjs';
 import { coinIcon } from './coins.mjs';
-import { Mascot } from './mascot.mjs';
-import { HistoryPage } from './history.mjs';
+import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
+import { HistoryPage, riskProgress } from './history.mjs';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs';
-import { configureMotion, rollNumber, roleEffect, toast, typeLine } from './effects.mjs';
+import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
 import config from '../config.js';
@@ -19,6 +19,8 @@ const historyPage = new HistoryPage();
 const $ = id => document.getElementById(id);
 configureMotion();
 const mascot = new Mascot($('mascot'), $('mascot-drawer'));
+// Screen readers hear the toast; sighted users get the companion's speech bubble.
+const notify = (line, announce = line.text) => { toast(announce); mascot.say(line.text, line.mood); };
 const teamRecords=new NewRecords(),fillRecords=new NewRecords(),eventRecords=new NewRecords(),liveQuotes=new Map();
 let quoteStream=null,candleStream=null,quoteStreamKey='',candleStreamKey='',streamReason='';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -50,7 +52,7 @@ let lastCandleRequest = '', candleBusy = new Set();
 let publicAccount = null, publicBusy = false;
 let team = null, teamBusy = false, teamRole = '', teamMeeting = '';
 const teamStateOptions = () => ({offlineMinutes:config.offlineMinutes,snapshotAt:publicAccount?.updated_at ?? snapshot?.updated_at ?? snapshot?.generated_at});
-let scanExpanded=false,signalsExpanded=false;
+let scanExpanded=false,signalsExpanded=false,eventsBusy=false,eventsData=null;
 let scan = null, scanBusy = false, scanSort = 'quote_24h', scanDirection = -1;
 function syncHomeCoin() {
   focusSymbol = meetingSymbol(team?.status.meeting, configuredSymbol, new Set([...tickers.map(t=>t.id),...(scan?.instruments || []).map(r=>r.instId)]));
@@ -141,7 +143,7 @@ async function refreshTeam() {
     if (!meetings.includes(teamMeeting)) teamMeeting = '';
     $('team-meeting').innerHTML = '<option value="">全部会议</option>' + meetings.map(m => `<option value="${escape(m)}">${escape(m)}</option>`).join('');
     $('team-meeting').value = teamMeeting; renderTimeline(); if (route === 'home') renderHome();
-    for(const row of fresh){roleEffect(row.role,'report');toast(`${ROLES[row.role]} · 新报告：${row.title}`);}
+    for(const row of fresh)notify(reportLine(row),`${ROLES[row.role]} · 新报告：${row.title}`);
   } catch { setError('team', '团队数据暂时无法读取'); }
   finally { teamBusy = false; }
 }
@@ -156,7 +158,11 @@ $('team-meeting').addEventListener('change', () => { teamMeeting = $('team-meeti
 
 function setError(key, message) {
   if (message) errors.set(key, message); else errors.delete(key);
-  $('alerts').innerHTML = [...errors.values()].map(m => `<div class="alert">${escape(m)}。已有数据会保留，将自动重试。</div>`).join('');
+  const list = [...errors.values()];
+  // One compact line; details stay one tap away instead of stacking banners.
+  $('alerts').innerHTML = !list.length ? '' : list.length === 1
+    ? `<div class="alert"><span aria-hidden="true">⚠</span> ${escape(list[0])} · 已有数据保留，自动重试</div>`
+    : `<details class="alert"><summary><span aria-hidden="true">⚠</span> ${list.length} 项数据暂时无法更新 · 已有数据保留，自动重试</summary><ul>${list.map(m => `<li>${escape(m)}</li>`).join('')}</ul></details>`;
 }
 function description(error) { return /^(OKX|接口|请求)/.test(error.message) ? error.message : '网络连接失败或请求超时'; }
 function badge(row) { return `${coinIcon(row.symbol)}<div><a href="#/coin/${encodeURIComponent(row.id)}">${escape(row.symbol)}</a><small>USDT 永续</small></div>`; }
@@ -318,7 +324,7 @@ async function refreshPublicAccount() {
     publicAccount=data;historyPage.setAccount(data);renderPinnedBalance();
     if(route==='paper')refreshPrices();
     if(['home','coin'].includes(route)){const cached=candleCache.get(coin+'/'+timeframe);if(cached)renderAnalysis(cached.bars);}
-    for(const fill of freshFills)toast(`新成交 · ${fill.symbol.split('-')[0]} ${fill.kind==='open'?'开仓':'平仓'} @ ${fill.price}`);
+    for(const fill of freshFills){const line=fillLine(fill);notify(line,`新成交 · ${line.text}`);}
     setError('account',null);syncHomeCoin();renderScan();
     if(route==='home'){renderHome();renderBalance();} else if(route==='coin')renderDecisions();
   }catch{setError('account','账户快照暂无有效更新');renderPinnedBalance();}
@@ -329,7 +335,8 @@ function renderBalance() {
   const points=rangePoints(aggregateCurve(publicAccount?.accounts || []),equityRange);
   $('equity-chart').innerHTML=equitySVG(points);
   $('equity-error').hidden=Boolean(points.length);
-  $('equity-error').textContent='暂无记录';
+  const pause=publicAccount?.pause;
+  $('equity-error').textContent=pause?.paused && pause.reset?`暂无记录 · 重新开始后从 ${num(pause.next_initial_equity)} USDT 起记录资金曲线`:'暂无记录';
   $('home-equity-range').querySelectorAll('button').forEach(b=>{
     const active=b.dataset.range===equityRange;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));
   });
@@ -338,7 +345,6 @@ function renderPublicHome() {
   const pause=publicAccount ? publicAccount.pause : snapshot?.accounts.find(a=>a.id==='paper_main')?.pause;
   const banner=$('pause-banner');banner.hidden=!pause?.paused;
   if(pause?.paused)banner.innerHTML=`<strong>${escape(pause.message)}</strong><small>since ${escape(time(pause.since))} UTC+7 · ${pause.reset?'重置权益':'最终权益'} ${num(pause.reset?pause.next_initial_equity:mainAccounts(publicAccount)[0]?.equity ?? pause.final_equity)} USDT</small>`;
-  mascot.update({...publicAccount,dataDisconnected:errors.has('account'),now:Date.now(),offlineMinutes:config.offlineMinutes,events:eventsData?.events || []},team);
   const resolved=mainAccounts(publicAccount).flatMap(a=>a.positions).map(p=>({id:p.symbol,last:quoteFor(p,liveQuotes,tickers,errors.has('prices')?0:priceAt).mark}));
   const summary=summarizeAccounts(publicAccount,resolved);
   const mode=publicAccount?.mode==='live'?'实盘':'模拟盘';
@@ -424,6 +430,7 @@ function navigate() {
   } else if (route === 'paper') { historyPage.refresh(); }
   else { renderMarket(); refreshSlow(); }
   if (route === 'home' || route === 'paper') refreshSnapshot();
+  document.documentElement.dataset.route=route;renderPinnedBalance();
   refreshPublicAccount();syncStreams();
 }
 $('search').addEventListener('input', renderMarket);
@@ -466,6 +473,16 @@ function renderPinnedBalance(){
   $('pinned-time').textContent=publicAccount?`${stale?'延迟 · ':''}${time(publicAccount.updated_at)} UTC+7`:'— UTC+7';
   $('pinned-time').className=stale?'stale':'';
   if(route==='home')rollNumber($('total-equity'),current?.equity);
+  updateCompanion(current);
+}
+const BIAS={long:'偏多',short:'偏空',watch:'观察',ban:'禁开仓'};
+function updateCompanion(current=liveBalance(publicAccount,effectiveQuotes())){
+  const main=mainAccounts(publicAccount)[0],loss=summarizeAccounts(publicAccount)?.accounts[0]?.loss ?? null;
+  const risk=main && main.status!=='未启动'?riskProgress(main):null,rule=publicAccount?.decisions?.symbols?.[coin];
+  mascot.update({...publicAccount,dataDisconnected:errors.has('account'),now:Date.now(),offlineMinutes:config.offlineMinutes,events:eventsData?.events || []},team,{
+    route,coin,paused:Boolean(publicAccount?.pause?.paused),equity:current?.equity,daily:current?.daily,percent:current?.percent,source:current?.source,
+    positions:main?main.positions.length:null,loss:Number.isFinite(main?.daily_loss_limit)?{ratio:loss,limit:main.daily_loss_limit}:null,
+    long:risk?.long,short:risk?.short,decision:rule?BIAS[rule.bias] || null:null,eventText});
 }
 function updateStreamStatus(){
   const live=candleStream?.state==='实时' && Date.now()-candleStream.lastData<45000;
@@ -520,7 +537,6 @@ function syncStreams(){
     }
   }
 }
-let eventsBusy=false,eventsData=null;
 async function refreshEvents(){
  if(eventsBusy)return;eventsBusy=true;
  try{
@@ -544,8 +560,10 @@ async function refreshEvents(){
   eventsData=data;if(route==='home')renderPublicHome();$('events-count').textContent=data.events.length+' 条';
   $('events-status').textContent=data.source_status==='missing'?'暂无事件源':`${isStale(data.generated_at,Date.now(),config.offlineMinutes)?'事件快照延迟 · ':''}${time(data.generated_at)} UTC+7 · 每 60 秒同步`;
   for(const event of fresh){
-   if(event.type==='trade_opened'){roleEffect('trader','excited');toast(eventText(event));}
-   if(event.type==='daily_halt' || event.type==='trade_closed' && /止损|强平/.test(event.reason || '')){roleEffect('risk','warning',event.type==='daily_halt'?'停手':'止损');toast(eventText(event));}
+   // Opens and closes are narrated from fills; events add wake alerts, halts and liquidations.
+   const line=eventLine(event);
+   if(line)notify(line,eventText(event));
+   else if(event.type==='trade_opened' || event.type==='trade_closed' && /止损|强平/.test(event.reason || ''))toast(eventText(event));
   }
  }catch{$('events-status').textContent='事件快照读取失败 · 保留已有记录';}
  finally{eventsBusy=false;}
