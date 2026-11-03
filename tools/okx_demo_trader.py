@@ -23,6 +23,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -34,6 +35,7 @@ from volume_test import profile as volume_profile, describe as describe_volume
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
 RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .08
+SAME_SIDE_CAP = .05
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
 OPEN_WINDOW = 2 * 3600_000        # only mirror paper entries that are at most this old
@@ -43,10 +45,14 @@ UTC7 = timezone(timedelta(hours=7))
 TAG = {'mean_reversion': 'mr', 'breakout_long': 'bl', 'breakout_daily': 'bd'}
 
 
-def configure_volume_test(now=None):
-    global INSTRUMENTS, RISK
+def configure_volume_test(now=None, universe=None):
+    global INSTRUMENTS, RISK, SAME_SIDE_CAP
     p = volume_profile(now)
     INSTRUMENTS, RISK = p['instruments'], p['risk']
+    if p['mode'] == 'aggressive' and isinstance(universe, list) and len(universe) == p['scan_limit'] and len(set(universe)) == len(universe) and all(isinstance(i,str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP',i) for i in universe):
+        INSTRUMENTS = list(universe)
+        p['instruments'] = INSTRUMENTS
+    SAME_SIDE_CAP = p['same_side_cap']
     return p
 
 
@@ -145,6 +151,7 @@ class Mirror:
     def __init__(self, client, state, paper, now, dry_run=False):
         self.c, self.s, self.paper, self.now, self.dry = client, state, paper, now, dry_run
         self.actions = []
+        self.new_order_risk = {}
         self.now_ms = int(now.timestamp() * 1000)
 
     def log(self, kind, inst, **kw):
@@ -211,6 +218,22 @@ class Mirror:
         if not sp['ctVal']:
             return self.log('skip', inst, reason='no_instrument_spec')
         risk = RISK * self.equity
+        same_risk = 0.0
+        for existing_key, m in self.s['mirrored'].items():
+            if m.get('status') != 'open' or m.get('side') != side:
+                continue
+            if existing_key in self.new_order_risk:
+                same_risk += self.new_order_risk[existing_key]
+                continue
+            held = self.held(m['inst'], side)
+            if not held:
+                continue
+            avg = float(held.get('avgPx') or m.get('entry') or 0)
+            if avg <= 0 or not m.get('stop'):
+                return self.log('skip', inst, reason='existing_risk_unknown')
+            same_risk += max((avg - float(m['stop'])) * side, 0) * abs(float(held['pos'])) * self.spec(m['inst'])['ctVal']
+        if same_risk + risk > SAME_SIDE_CAP * self.equity:
+            return self.log('skip', inst, reason='same_side_risk')
         contracts = quantize(risk / (px * dist) / sp['ctVal'], sp['lotSz'])
         if float(contracts) < sp['minSz'] or contracts <= 0:
             return self.log('skip', inst, reason='size_below_minimum', contracts=fmt(contracts), min=sp['minSz'])
@@ -234,8 +257,10 @@ class Mirror:
         if not ok(r):
             return self.log('error', inst, step='order', detail=first_error(r), size=fmt(contracts))
         self.s['mirrored'][key] = dict(inst=inst, side=side, posSide=pos_side or 'net', strategy=p.get('strategy'), contracts=fmt(contracts),
-                                       stop=p['stop'], target=p.get('tp'), leverage=lever, clOrdId=cl, opened_at=self.now_ms, status='open',
+                                       stop=p['stop'], target=p.get('tp'), leverage=lever, entry=px, clOrdId=cl, opened_at=self.now_ms, status='open',
                                        ordId=(r.get('data') or [{}])[0].get('ordId'))
+        self.new_order_risk[key] = float(contracts) * sp['ctVal'] * abs(px - p['stop'])
+        self.available -= margin
         self.log('open', inst, side=side, strategy=p.get('strategy'), contracts=fmt(contracts), price=px, stop=algo['slTriggerPx'],
                  target=algo.get('tpTriggerPx'), leverage=lever, risk_usdt=round(risk, 2))
 
@@ -329,6 +354,7 @@ class Mirror:
         return dict(updated_at=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), equity=self.equity, available=self.available,
                     day_start=self.s.get('day_start'), paused=self.s['paused'], halted=self.s['halted'], dry_run=self.dry, positions=pos,
                     stop_control=self.s.get('stop_control'),
+                    execution_profile=dict(volume_profile(self.now), instruments=list(INSTRUMENTS), risk=RISK, same_side_cap=SAME_SIDE_CAP),
                     open_mirrors=[dict(m, key=k) for k, m in self.s['mirrored'].items() if m['status'] == 'open'],
                     start_equity=self.s.get('start_equity'), history=self.curve(),
                     closed_trades=sum(1 for m in self.s['mirrored'].values() if m['status'] == 'done'))
@@ -354,18 +380,22 @@ def main():
     ap.add_argument('--data', type=Path, required=True)
     ap.add_argument('--action', default='run', choices=['run', 'dry-run', 'pause', 'resume', 'flatten', 'follow-current', 'snapshot'])
     args = ap.parse_args()
-    print(describe_volume(configure_volume_test()))
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
     if not all(creds):
         print('未配置 OKX 模拟交易密钥，跳过跟单。'); return
     paper_path = args.data / 'combined' / 'state.json'
     if not paper_path.exists():
         print('没有合并模拟盘状态，跳过跟单。'); return
+    paper = json.loads(paper_path.read_text())
+    applied = configure_volume_test(universe=paper.get('universe') if paper.get('profile_mode') == 'aggressive' else None)
+    print(describe_volume(applied))
+    if args.action in ('run', 'resume', 'follow-current', 'dry-run') and applied['mode'] == 'aggressive' and len(INSTRUMENTS) != applied['scan_limit']:
+        raise SystemExit('Aggressive execution requires the confirmed 100-contract signal universe; no orders submitted')
     out = args.data / 'okx_demo'; out.mkdir(parents=True, exist_ok=True)
     state_path = out / 'state.json'
     state = json.loads(state_path.read_text()) if state_path.exists() else new_state()
     dry = args.action == 'dry-run'
-    mirror = Mirror(OKX(*creds), json.loads(json.dumps(state)) if dry else state, json.loads(paper_path.read_text()), datetime.now(timezone.utc), dry)
+    mirror = Mirror(OKX(*creds), json.loads(json.dumps(state)) if dry else state, paper, datetime.now(timezone.utc), dry)
     error = None
     try:
         if args.action == 'snapshot':

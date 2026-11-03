@@ -26,8 +26,12 @@ marks where the replay ends. --reset deletes all account data first. Standard li
 import argparse
 import csv
 import json
+import math
+import re
 import subprocess
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from volume_test import profile as volume_profile, describe as describe_volume
@@ -48,18 +52,34 @@ RISK, SAME_SIDE_CAP, DAILY_HALT = .01, .05, .08
 UTC7 = timezone(timedelta(hours=7))
 
 
-def configure_volume_test(now=None):
-    global INSTRUMENTS, RISK
+def configure_volume_test(now=None, universe=None):
+    global INSTRUMENTS, RISK, SAME_SIDE_CAP
     p = volume_profile(now)
     INSTRUMENTS, RISK = p['instruments'], p['risk']
+    if p['mode'] == 'aggressive' and universe is not None:
+        INSTRUMENTS = list(universe)
+        p['instruments'] = INSTRUMENTS
+    SAME_SIDE_CAP = p['same_side_cap']
     STRATEGIES['mean_reversion']['rsi'] = p['rsi']
+    STRATEGIES['mean_reversion']['trend'] = p['trend']
     STRATEGIES['breakout_long']['lookback'] = p['lookback']
     return p
 
 
 # ---------------------------------------------------------------- market data
+_request_lock = threading.Lock()
+_next_request = 0.0
+
+
 def okx_get(path, retries=5):
+    global _next_request
     for attempt in range(retries):
+        # Shared across scanner workers: comfortably below history-candles' 20 requests / 2 s.
+        with _request_lock:
+            delay = _next_request - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            _next_request = time.monotonic() + .15
         try:
             out = subprocess.run(['curl', '-sS', '-m', '20', 'https://www.okx.com/api/v5/' + path],
                                  capture_output=True, text=True, check=True).stdout
@@ -70,6 +90,26 @@ def okx_get(path, retries=5):
             pass
         time.sleep(1 + attempt)
     raise RuntimeError(f'OKX request failed: {path}')
+
+
+def ranked_universe(tickers, specs, limit=100):
+    allowed = {s.get('instId') for s in specs if s.get('state') == 'live' and s.get('settleCcy') == 'USDT' and s.get('ctType') == 'linear'}
+    ranked = {}
+    for t in tickers:
+        inst = t.get('instId', '')
+        if inst not in allowed or not re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', inst):
+            continue
+        try:
+            price, volume = float(t['last']), float(t['volCcy24h'])
+            turnover = price * volume
+        except (KeyError, TypeError, ValueError):
+            continue
+        if price > 0 and volume > 0 and math.isfinite(turnover):
+            ranked[inst] = turnover
+    selected = sorted(ranked, key=lambda inst: (-ranked[inst], inst))[:limit]
+    if len(selected) < limit:
+        raise RuntimeError(f'Only {len(selected)} eligible liquid contracts; expected {limit}, preserving prior account data')
+    return selected
 
 
 def fetch_open(inst, bar='1H'):
@@ -439,17 +479,32 @@ def run_once(data_dir, fetch=fetch_okx, until=None, now=None, backfill_days=0, r
         fetch_opens = fetch_open
     d = data_dir / ACCOUNT; d.mkdir(exist_ok=True)
     acct = load_state(d / 'state.json')
+    acct['universe'] = list(INSTRUMENTS)
+    acct['profile_mode'] = volume_profile(now)['mode']
     # After expiry, keep managing test-only positions and pending fills until they exit.
     managed = sorted(set(INSTRUMENTS) | set(acct['positions']) | set(acct['pending']))
     books = {}
     for bar in ('1H', '1Dutc'):
         # A backfill needs the replayed days plus 500 bars of indicator warm-up.
-        pages = -(-(backfill_days * 24 + 500) // 100) if backfill_days and bar == '1H' else None
-        series = {inst: fetch(inst, bar, **({'pages': pages} if pages else {})) for inst in managed}
+        pages = -(-(backfill_days * 24 + 500) // 100) if backfill_days and bar == '1H' else 3 if fetch is fetch_okx and len(INSTRUMENTS) >= 30 else None
+        def get_series(inst):
+            return fetch(inst, bar, **({'pages': pages} if pages else {}))
+        if fetch is fetch_okx and len(managed) >= 30:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                series = dict(zip(managed, pool.map(get_series, managed)))
+        else:
+            series = {inst: get_series(inst) for inst in managed}
         series = {k: v for k, v in series.items() if v}
         if until is not None:
             series = {k: [b for b in v if b['ts'] <= until] for k, v in series.items()}
-        opens = {inst: fetch_opens(inst, bar) for inst in series} if fetch_opens and bar == '1H' and until is None else {}
+        opens = {}
+        if fetch_opens and bar == '1H' and until is None:
+            keys = list(series)
+            if fetch is fetch_okx and len(keys) >= 30:
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    opens = dict(zip(keys, pool.map(lambda inst: fetch_opens(inst, bar), keys)))
+            else:
+                opens = {inst: fetch_opens(inst, bar) for inst in keys}
         books[bar] = (series, {inst: indicators(bars) for inst, bars in series.items()}, opens)
     fresh = acct['last_ts'] is None
     trades, points, events = replay(acct, books, start_ts=start_ts if fresh else None)
@@ -480,7 +535,9 @@ def main():
     ap.add_argument('--reset', action='store_true', help='delete all account state and outputs before running')
     ap.add_argument('--backfill-days', type=int, default=0, help='start a fresh account this many days ago (max 90) and replay to now')
     args = ap.parse_args()
-    print(describe_volume(configure_volume_test()))
+    p = volume_profile()
+    universe = ranked_universe(okx_get('market/tickers?instType=SWAP'), okx_get('public/instruments?instType=SWAP'), p['scan_limit']) if p['mode'] == 'aggressive' else None
+    print(describe_volume(configure_volume_test(universe=universe)), flush=True)
     s = run_once(args.data, backfill_days=args.backfill_days, reset=args.reset)['accounts'][ACCOUNT]
     print(f"{s['name']}: 权益 {s['equity']:.2f} USDT ({s['return_pct']:+.2f}%) · 已平仓 {s['closed_trades']} · 持仓 {len(s['open_positions'])} · 最新K线 {s['last_bar']}")
     for b in s['by_strategy']:

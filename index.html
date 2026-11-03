@@ -34,6 +34,7 @@
 
     <section id="home-page" class="page" aria-label="交易室首页">
       <section id="home-sim" class="home-sim" hidden aria-label="OKX 模拟交易账户">
+        <p class="trade-profile" data-execution-profile role="status">策略档位：等待任务回执确认</p>
         <div class="trade-controls"><p data-stop-status role="status">全部平仓后保持暂停，需登录 GitHub 执行。</p><button type="button" class="trade-stop-button" data-stop-demo aria-haspopup="dialog" aria-controls="stop-dialog">全部平仓并停止</button></div>
         <section class="panel sim-capital"><div class="capital-total"><div><h1>OKX 模拟账户权益 <span class="mode-tag">交易所模拟</span></h1><div class="equity-number"><strong id="okx-total-equity">—</strong><small>USDT</small></div><p id="okx-total-ret">—</p></div><div class="okx-side"><span id="home-okx-status" class="pill">—</span><small id="okx-total-updated"></small></div></div><div class="panel-heading"><h2>资金曲线</h2><a href="#/sim" class="pill">完整页面 →</a></div><div id="home-okx-curve" class="sim-curve"></div></section>
         <section class="panel"><div class="panel-heading"><h2>当前持仓</h2><small class="muted">止损挂在交易所 · 浮盈按 OKX 实时价</small></div><div id="home-okx-positions" class="sim-positions"></div></section>
@@ -74,6 +75,7 @@
     <section id="sim-page" class="page history-page" hidden aria-labelledby="sim-title">
       <div class="page-heading"><div><div class="eyebrow">OKX DEMO / 交易所模拟交易</div><h1 id="sim-title">OKX 模拟交易</h1><p>OKX 模拟交易账户 · 三套策略出信号 · 约每 5 分钟自动运行 · 止损挂在交易所 · 仅模拟资金</p></div><span id="sim-updated" class="pill">等待数据</span></div>
       <p id="sim-error" class="alert" hidden></p>
+      <p class="trade-profile" data-execution-profile role="status">策略档位：等待任务回执确认</p>
       <div class="trade-controls"><p data-stop-status role="status">全部平仓后保持暂停，需登录 GitHub 执行。</p><button type="button" class="trade-stop-button" data-stop-demo aria-haspopup="dialog" aria-controls="stop-dialog">全部平仓并停止</button></div>
       <section class="panel"><div class="panel-heading"><h2>账户</h2><span id="okx-status" class="pill">—</span></div><div id="okx-metrics" class="okx-body"></div></section>
       <section class="panel"><div class="panel-heading"><h2>资金曲线</h2><span id="okx-start" class="pill">—</span></div><div id="okx-curve" class="sim-curve"></div></section>

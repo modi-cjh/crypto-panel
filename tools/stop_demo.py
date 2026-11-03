@@ -76,7 +76,9 @@ def main():
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
     if not all(creds):
         raise SystemExit('OKX demo credentials are missing')
-    configure_volume_test()
+    signal_path = args.data / 'combined' / 'state.json'
+    signal_state = json.loads(signal_path.read_text()) if signal_path.exists() else {}
+    configure_volume_test(universe=signal_state.get('universe') if signal_state.get('profile_mode') == 'aggressive' else None)
     print(json.dumps(stop(args.data, OKX(*creds)), ensure_ascii=False))
 
 

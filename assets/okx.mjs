@@ -26,7 +26,7 @@ const ACTIONS = { open: '开仓', close: '平仓', amend_stop: '上移止损', c
   pause: '暂停跟单', resume: '恢复跟单', follow_current: '手动跟进当前持仓', flatten: '全部平仓并暂停', error: '出错' };
 const SKIPS = { paper_entry_too_old: '信号已超过 2 小时', stop_too_close_or_crossed: '价格已接近或越过止损', target_already_reached: '价格已到止盈',
   size_below_minimum: '仓位小于最小下单量', insufficient_margin: '保证金不足', exchange_position_exists_not_ours: '交易所已有非本程序的仓位',
-  no_price: '取不到价格', no_instrument_spec: '取不到合约信息' };
+  no_price: '取不到价格', no_instrument_spec: '取不到合约信息', same_side_risk: '达到同向风险上限', existing_risk_unknown: '现有仓位风险暂时无法确认' };
 const CLOSES = { paper_closed: '策略信号平仓', daily_halt: '日亏停手平仓', manual_flatten: '手动全部平仓', execution_test: '模拟成交测试 · 成交后立即平仓' };
 
 export function validOkx(d) {
