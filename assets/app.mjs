@@ -2,7 +2,7 @@ import { HomePositions, equitySVG, rangePoints } from './home.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
-import { SIM_URL, SIM_COLORS, SIM_STALE, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simTotals, simMascotState, simChanges, simFeed, simPendingText, simBackfillNote, liveEquity } from './sim.mjs';
+import { SIM_URL, SIM_COLORS, SIM_STALE, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simTotals, simMascotState, simChanges, simFeed, simPendingText, simBackfillNote, liveEquity, OKX_DEMO_URL, validOkxDemo, okxDemoMarkup } from './sim.mjs';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs';
@@ -53,7 +53,7 @@ let lastCandleRequest = '', candleBusy = new Set();
 let publicAccount = null, publicBusy = false;
 let team = null, teamBusy = false, teamRole = '', teamMeeting = '';
 const teamStateOptions = () => ({offlineMinutes:config.offlineMinutes,snapshotAt:publicAccount?.updated_at ?? snapshot?.updated_at ?? snapshot?.generated_at});
-let scanExpanded=false,signalsExpanded=false,eventsBusy=false,eventsData=null,simData=null,simBusy=false;
+let scanExpanded=false,signalsExpanded=false,eventsBusy=false,eventsData=null,simData=null,simBusy=false,okxDemo=null;
 let scan = null, scanBusy = false, scanSort = 'quote_24h', scanDirection = -1;
 function syncHomeCoin() {
   focusSymbol = meetingSymbol(team?.status.meeting, configuredSymbol, new Set([...tickers.map(t=>t.id),...(scan?.instruments || []).map(r=>r.instId)]));
@@ -593,6 +593,7 @@ async function refreshEvents(){
 
 // Learning-only paper accounts (tools/paper_trader.py) published on the paper-data branch.
 async function refreshSim(){
+ refreshOkxDemo();
  if(simBusy)return;simBusy=true;
  try{
   const response=await fetch(`${SIM_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
@@ -615,6 +616,19 @@ function simPrimary(){
 }
 let showLegacy=false;
 $('legacy-toggle').addEventListener('click',()=>{showLegacy=!showLegacy;renderSim();});
+// OKX demo-trading mirror results; the card stays hidden until the mirror has written a summary.
+async function refreshOkxDemo(){
+ try{
+  const response=await fetch(`${OKX_DEMO_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
+  if(!response.ok)return;const data=await response.json();if(!validOkxDemo(data))return;
+  okxDemo=data;renderOkxDemo();
+ }catch{}
+}
+function renderOkxDemo(){
+ for(const [box,body] of [['home-okx','home-okx-body'],['sim-okx','sim-okx-body']]){
+  const el=$(box);if(!el)continue;el.hidden=!okxDemo;if(okxDemo)$(body).innerHTML=okxDemoMarkup(okxDemo);
+ }
+}
 function renderSim(){
  const primary=simPrimary();
  document.documentElement.classList.toggle('sim-primary',primary);document.documentElement.classList.toggle('show-legacy',primary && showLegacy);

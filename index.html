@@ -31,6 +31,7 @@
         <div id="home-sim-cards" class="sim-cards"></div>
         <section class="panel"><div class="panel-heading"><h2>当前持仓</h2><small class="muted">浮动盈亏按 OKX 实时价</small></div><p id="home-sim-pending" class="sim-pending" hidden></p><div id="home-sim-positions" class="sim-positions"></div></section>
         <section class="panel"><div class="panel-heading"><h2>最近平仓</h2><small class="muted">UTC+7</small></div><ol id="home-sim-trades" class="fills-list"></ol></section>
+        <section class="panel okx-demo" id="home-okx" hidden><div class="panel-heading"><h2>OKX 模拟交易 <small class="muted">交易所实测</small></h2></div><div class="okx-body" id="home-okx-body"></div><p class="panel-caption">跟单合并模拟盘：模拟盘开新仓后 2 小时内在 OKX 模拟交易按市价开仓，止损挂在交易所；模拟盘平仓时跟着平仓。仅模拟资金。</p></section>
         <button id="legacy-toggle" class="expand-button" type="button" aria-expanded="false">显示原主力盘（crypto-bot · 已暂停）</button>
       </section>
       <section class="panel capital-panel" aria-label="账户权益">
@@ -72,6 +73,7 @@
       <section class="panel"><div class="panel-heading"><h2>资金曲线</h2><span class="pill">起始 100 USDT</span></div><div id="sim-curve" class="sim-curve"></div></section>
       <section class="panel"><div class="panel-heading"><h2>当前持仓</h2><small class="muted">浮动盈亏按 OKX 实时价计算</small></div><div id="sim-positions" class="sim-positions"></div></section>
       <section class="panel"><div class="panel-heading"><h2>最近平仓</h2><small class="muted">最新 20 笔 · UTC+7</small></div><ol id="sim-trades" class="fills-list"></ol></section>
+      <section class="panel okx-demo" id="sim-okx" hidden><div class="panel-heading"><h2>OKX 模拟交易 <small class="muted">交易所实测</small></h2></div><div class="okx-body" id="sim-okx-body"></div><p class="panel-caption">跟单合并模拟盘：模拟盘开新仓后 2 小时内在 OKX 模拟交易按市价开仓，止损挂在交易所；模拟盘平仓时跟着平仓。仅模拟资金。</p></section>
       <p class="panel-caption">规则与研究回测一致：已收盘 K 线出信号、下一根开盘成交、每笔风险 1%、逐仓杠杆、日亏 8% 停手、含手续费与滑点。回测显示两套 1 小时规则过去一年不赚钱，仅供学习观察，不构成投资建议。数据来自 GitHub paper-data 分支，约 5 分钟缓存。</p>
     </section>
     <section id="paper-page" class="page history-page" hidden aria-labelledby="paper-title">

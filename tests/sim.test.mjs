@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validSim, livePnl, simTotals, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simMascotState, simChanges, simFeed, simLiveSince, simBackfillNote, liveEquity } from '../assets/sim.mjs';
+import { validSim, livePnl, simTotals, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simMascotState, simChanges, simFeed, simLiveSince, simBackfillNote, liveEquity, validOkxDemo, okxDemoStatus, okxDemoMarkup } from '../assets/sim.mjs';
 
 const now = Date.parse('2026-11-03T15:00:00Z');
 const account = (over = {}) => ({ name: '日线趋势突破', rules: '20 日新高', equity: 101.5, return_pct: 1.5, max_drawdown_pct: .8, closed_trades: 1, win_rate_pct: 100, avg_r: 1.5,
@@ -107,4 +107,30 @@ test('account equity moves with live prices: cash plus floating PnL, recorded eq
   const totals = simTotals(data({ a, b: account({ cash: 99, equity: 99, open_positions: [] }) }), [{ id: 'BTC-USDT-SWAP', last: 103 }], now - 1000, now);
   assert.equal(totals.equity, 202); assert.ok(Math.abs(totals.ret - 1) < 1e-9);
   assert.match(simCardsMarkup(data({ a }), [{ id: 'BTC-USDT-SWAP', last: 103 }], now - 1000, now), /103\.00[\s\S]*\+3\.00%/);
+});
+
+const okxNow = Date.parse('2026-11-03T12:00:00Z');
+const okxSummary = (over = {}) => ({ updated_at: '2026-11-03T11:40:00Z', equity: 4990, available: 4800, day_start: 5000, paused: false, halted: false, dry_run: false,
+  positions: [{ inst: 'ETH-USDT-SWAP', side: 'short', contracts: '-2', avgPx: '3000', markPx: '3010', upl: '-10', lever: '8', ours: false }],
+  recent_actions: [{ ts: '2026-11-03T11:30:00Z', action: 'error', inst: 'ETH-USDT-SWAP', step: 'open', detail: '<b>bad</b>' }], ...over });
+
+test('OKX demo summary is validated before it is shown', () => {
+  assert.ok(validOkxDemo(okxSummary()));
+  assert.equal(validOkxDemo(okxSummary({ equity: 'x' })), false);
+  assert.equal(validOkxDemo(okxSummary({ positions: [{ inst: '<x>' }] })), false);
+  assert.equal(validOkxDemo(null), false);
+});
+
+test('OKX demo status reflects stale, halted, paused and running', () => {
+  assert.equal(okxDemoStatus(okxSummary(), okxNow).label, '运行中');
+  assert.equal(okxDemoStatus(okxSummary({ paused: true }), okxNow).label, '已暂停');
+  assert.equal(okxDemoStatus(okxSummary({ halted: true, paused: true }), okxNow).label, '日亏停手');
+  assert.equal(okxDemoStatus(okxSummary(), okxNow + 6 * 3600e3).label, '数据延迟');
+});
+
+test('OKX demo markup shows daily PnL, foreign positions and escapes exchange text', () => {
+  const html = okxDemoMarkup(okxSummary(), okxNow);
+  assert.match(html, /-10\.00 USDT/); assert.match(html, /非跟单/); assert.match(html, />空</);
+  assert.doesNotMatch(html, /<b>bad/); assert.match(html, /&lt;b&gt;bad/);
+  assert.match(okxDemoMarkup(okxSummary({ positions: [], recent_actions: [] }), okxNow), /交易所暂无持仓/);
 });
