@@ -28,6 +28,11 @@ let feed = { ...base, updated_at: new Date().toISOString() };
   assert.match(await page.locator('#pinned-mode').innerText(), /合并账户/);
   assert.match(await page.locator('#pinned-equity').innerText(), /^10\d\.\d\d$/);
   assert.match(await page.locator('#home-sim-positions').innerText(), /均值回归/);      // positions name their strategy
+  // With prices unchanged (OKX is blocked here) the equity numbers must not animate on each refresh.
+  await page.evaluate(() => { window.__rolls = 0; for (const id of ['pinned-equity', 'sim-total-equity'])
+    new MutationObserver(m => { window.__rolls += m.filter(r => [...r.addedNodes].some(n => n.classList?.contains('number-in'))).length; }).observe(document.getElementById(id), { childList: true }); });
+  await page.waitForTimeout(20000);
+  assert.equal(await page.evaluate(() => window.__rolls), 0, 'equity animated without a change');
   await page.locator('#legacy-toggle').click();
   assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), true);   // original bot still reachable
   await page.locator('#legacy-toggle').click();
