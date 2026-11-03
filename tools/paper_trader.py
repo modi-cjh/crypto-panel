@@ -293,8 +293,39 @@ def summarize(key, cfg, acct, data_dir):
                 payoff=round((sum(t['pnl'] for t in wins) / len(wins)) / (-sum(t['pnl'] for t in losses) / len(losses)), 2) if wins and losses and sum(t['pnl'] for t in losses) < 0 else None,
                 halted=acct['halted'], last_bar=iso(acct['last_ts']) if acct['last_ts'] else None,
                 open_positions=[dict(inst=k, side=p['side'], entry=round(p['entry'], 8), stop=round(p['stop'], 8), target=None if p['tp'] is None else round(p['tp'], 8),
-                                     opened=iso(p['opened']), leverage=p['leverage']) for k, p in sorted(acct['positions'].items())],
+                                     opened=iso(p['opened']), leverage=p['leverage'], qty=p['qty'], margin=round(p['margin'], 6)) for k, p in sorted(acct['positions'].items())],
                 pending=sorted(acct['pending']))
+
+
+RULES = {
+    'mean_reversion': '1H 均值回归：RSI 25 / 趋势 2%，止损 1.5×ATR，止盈中轨，最长 24 小时',
+    'breakout_long': '1H 趋势突破只做多：48 小时新高 + EMA50>EMA200，2×ATR 止损，3×ATR 跟随，最多 6 仓',
+    'breakout_daily': '日线趋势突破只做多：20 日新高 + EMA50>EMA200，2×ATR 止损，3×ATR 跟随，最多 6 仓',
+}
+
+
+def downsample(points, limit=720):
+    if len(points) <= limit:
+        return points
+    step = (len(points) - 1) / (limit - 1)
+    return [points[round(i * step)] for i in range(limit)]
+
+
+def write_dashboard(data_dir, summary):
+    """One compact public file for the web dashboard: summary, equity curve, open positions, recent trades."""
+    accounts = {}
+    for key, s in summary['accounts'].items():
+        curve = []
+        eq_path = data_dir / key / 'equity.csv'
+        if eq_path.exists():
+            with eq_path.open(newline='') as f:
+                curve = [[int(datetime.fromisoformat(r['timestamp'].replace('Z', '+00:00')).timestamp() * 1000), float(r['equity'])] for r in csv.DictReader(f)]
+        trades = read_trades(data_dir / key / 'trades.csv')[-30:]
+        accounts[key] = dict(s, rules=RULES.get(key, ''), curve=downsample(curve),
+                             trades=[dict(inst=t['inst'], side=int(t['side']), entry_time=t['entry_time'], exit_time=t['exit_time'], entry=float(t['entry']),
+                                          exit=float(t['exit']), pnl=t['pnl'], r=t['r'], reason=t['reason']) for t in reversed(trades)])
+    out = dict(schema_version=1, updated_at=summary['updated_at'], start_equity=START_EQUITY, accounts=accounts)
+    (data_dir / 'dashboard.json').write_text(json.dumps(out, ensure_ascii=False, separators=(',', ':')))
 
 
 def write_readme(data_dir, summary):
@@ -334,6 +365,7 @@ def run_once(data_dir, fetch=fetch_okx, until=None, now=None):
     summary = dict(updated_at=(now or datetime.now(timezone.utc)).isoformat(timespec='seconds').replace('+00:00', 'Z'), start_equity=START_EQUITY, accounts=accounts)
     (data_dir / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1))
     write_readme(data_dir, summary)
+    write_dashboard(data_dir, summary)
     return summary
 
 

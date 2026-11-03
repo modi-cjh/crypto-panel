@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f6f8">
   <meta name="description" content="MODI AI 交易团队、真实行情、技术指标与模拟盘看板。OKX 公共数据，只读不下单。">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://www.okx.com wss://ws.okx.com:8443 wss://ws.okx.com; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://www.okx.com wss://ws.okx.com:8443 wss://ws.okx.com https://raw.githubusercontent.com; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>MODI · AI 交易团队</title>
   <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
   <link rel="stylesheet" href="./assets/style.css">
@@ -17,7 +17,7 @@
   <header class="header">
     <a class="brand" href="#/" aria-label="交易团队首页"><span class="brand-icon" aria-hidden="true">M<span>✦</span></span><span><b>MODI</b> · AI 交易团队<small class="brand-sub">智能协作 · 实时洞察</small></span></a>
     <div class="header-status"><span id="day-number" class="day-number">DAY —</span><time id="utc-clock">— UTC+7</time></div>
-    <nav aria-label="主导航"><a href="#/" data-nav="home">交易室</a><a href="#/market" data-nav="market">市场行情</a><a href="#/paper" data-nav="paper">账户历史</a><div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">正在连接</span></div></nav>
+    <nav aria-label="主导航"><a href="#/" data-nav="home">交易室</a><a href="#/sim" data-nav="sim">模拟交易</a><a href="#/market" data-nav="market">市场行情</a><a href="#/paper" data-nav="paper">账户历史</a><div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">正在连接</span></div></nav>
     <aside class="pinned-balance" aria-label="常驻实时余额"><span class="pinned-label">主力盘余额 <span id="pinned-mode" class="mode-tag">—</span></span><strong id="pinned-equity">—</strong><span id="pinned-daily">当日盈亏 · 等待基准</span><small id="pinned-source">等待账户快照</small><small id="pinned-time">— UTC+7</small></aside>
   </header>
   <main id="main">
@@ -25,6 +25,7 @@
     <div id="alerts" role="status" aria-live="polite"></div>
 
     <section id="home-page" class="page" aria-label="交易室首页">
+      <a id="sim-summary" class="panel sim-summary" href="#/sim" hidden></a>
       <section class="panel capital-panel" aria-label="账户权益">
         <div class="capital-total"><div><h1>账户权益 <span id="mode-tag" class="mode-tag">模拟盘</span></h1><div class="equity-number"><strong id="total-equity">—</strong><small>USDT</small></div><p id="total-pnl" aria-live="polite">当日盈亏 — USDT / —%</p></div><small id="home-snapshot-status">暂无快照时间</small></div>
         <div id="equity-panel"><div class="panel-heading"><h2>权益曲线</h2><div id="home-equity-range" class="segmented" role="group" aria-label="首页权益区间"><button data-range="day" aria-pressed="false">日</button><button data-range="week" aria-pressed="false">周</button><button data-range="all" class="active" aria-pressed="true">全部</button></div></div><div id="equity-chart" class="home-equity-chart"></div><p id="equity-error" class="chart-error" hidden></p></div>
@@ -55,6 +56,15 @@
       <a href="#/market" class="back">← 返回市场行情</a>
       <div class="page-heading"><div><div class="eyebrow">单币分析 / USDT 永续</div><h1 id="coin-title">合约详情</h1><p id="coin-quote">等待行情</p></div><div class="segmented" role="group" aria-label="K 线周期"><button data-timeframe="1H" aria-pressed="false">1 小时</button><button data-timeframe="4H" class="active" aria-pressed="true">4 小时</button></div></div>
       <div id="coin-price-slot"><div id="price-panel"><div class="panel-heading"><h2>K 线与趋势</h2><div class="segmented" role="group" aria-label="持仓 K 线周期"><button data-timeframe="1H" class="active" aria-pressed="true">1H</button><button data-timeframe="4H" aria-pressed="false">4H</button></div><span id="candle-updated" class="muted">加载中</span></div><div class="chart-legend"><span class="color-ema20">EMA20</span><span class="color-ema50">EMA50</span><span class="color-ema200">EMA200</span><span>UTC+7 · 图含未收盘 K 线</span><button id="reset-chart" class="text-button">重置视图</button></div><div id="chart-levels" class="chart-levels" aria-live="polite"></div><div id="price-chart" class="chart price-chart"></div><p id="chart-error" class="chart-error" hidden></p></div></div><div id="coin-analysis-slot"><div id="analysis-content"><div class="subchart-label">成交量 <span>合约张数</span></div><div id="volume-chart" class="chart subchart"></div><div class="subchart-label">相对强弱 RSI14 <span>Wilder 平滑 · 30 / 70</span></div><div id="rsi-chart" class="chart subchart"></div><div class="subchart-label">MACD <span>12 / 26 / 9 · 柱 = DIF − DEA</span></div><div id="macd-chart" class="chart subchart"></div><div class="panel signal-panel"><div class="panel-heading"><h2>均值回归入场条件</h2><span class="pill">已收盘</span></div><div id="signal-summary" class="signal-summary"><strong>— <small>/ —</small></strong><span>等待 K 线数据</span></div><p id="signal-time" class="muted signal-time">仅分析最后一根已收盘 K 线</p><ol id="conditions" class="conditions"></ol></div><div class="panel levels-panel"><div class="panel-heading"><h2>附近支撑 / 阻力</h2></div><div id="levels" class="levels"><p class="muted">等待 K 线数据</p></div><p class="panel-caption">取信号 K 线之前的区间高低点。</p></div></div></div>
+    </section>
+    <section id="sim-page" class="page history-page" hidden aria-labelledby="sim-title">
+      <div class="page-heading"><div><div class="eyebrow">PAPER / 学习用模拟交易</div><h1 id="sim-title">模拟交易</h1><p>三个各 100 USDT 的模拟账户 · OKX 公开行情 · 每小时自动运行 · 不下单</p></div><span id="sim-updated" class="pill">等待数据</span></div>
+      <p id="sim-error" class="alert" hidden></p>
+      <div id="sim-cards" class="sim-cards"></div>
+      <section class="panel"><div class="panel-heading"><h2>资金曲线</h2><span class="pill">起始 100 USDT</span></div><div id="sim-curve" class="sim-curve"></div></section>
+      <section class="panel"><div class="panel-heading"><h2>当前持仓</h2><small class="muted">浮动盈亏按 OKX 实时价计算</small></div><div id="sim-positions" class="sim-positions"></div></section>
+      <section class="panel"><div class="panel-heading"><h2>最近平仓</h2><small class="muted">最新 20 笔 · UTC+7</small></div><ol id="sim-trades" class="fills-list"></ol></section>
+      <p class="panel-caption">规则与研究回测一致：已收盘 K 线出信号、下一根开盘成交、每笔风险 1%、逐仓杠杆、日亏 8% 停手、含手续费与滑点。回测显示两套 1 小时规则过去一年不赚钱，仅供学习观察，不构成投资建议。数据来自 GitHub paper-data 分支，约 5 分钟缓存。</p>
     </section>
     <section id="paper-page" class="page history-page" hidden aria-labelledby="paper-title">
       <div class="page-heading"><div><div class="eyebrow">PAPER_MAIN / 只读模拟盘</div><h1 id="paper-title">账户历史</h1><p>只统计主力盘 · 时间 UTC+7 · 金额 USDT</p></div><span id="history-updated" class="pill">等待快照</span></div>
