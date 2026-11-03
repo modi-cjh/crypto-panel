@@ -141,6 +141,19 @@ class MirrorTests(unittest.TestCase):
         run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), state, action='resume')
         self.assertEqual(fake.posts[-1][0], '/api/v5/trade/order')
 
+    def test_follow_current_opens_entries_skipped_for_age_but_keeps_price_checks(self):
+        fake = FakeOKX()
+        _, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=300)}))
+        self.assertEqual(fake.posts, [])                                       # too old for a normal run
+        run(fake, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=300)}), state)
+        self.assertEqual(fake.posts, [])                                       # and stays skipped
+        m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=300)}), state, action='follow-current')
+        self.assertEqual([p[0] for p in fake.posts][-1], '/api/v5/trade/order')
+        self.assertEqual([a['action'] for a in m.actions], ['follow_current', 'open'])
+        fake2 = FakeOKX(prices={'BTC-USDT-SWAP': 68500.0})                     # stop already crossed: still skipped
+        m2, _ = run(fake2, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=300)}), action='follow-current')
+        self.assertEqual(fake2.posts, []); self.assertIn('stop_too_close_or_crossed', [a.get('reason') for a in m2.actions])
+
     def test_summary_carries_equity_curve_start_equity_and_contract_value(self):
         fake = FakeOKX(positions=[dict(instId='BTC-USDT-SWAP', posSide='long', pos='3', avgPx='70000', markPx='70100', upl='3', lever='5')])
         m, state = run(fake, paper())
