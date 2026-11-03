@@ -186,6 +186,11 @@
 ### PR #33 顶栏连接状态不再卡在“离线”
 - 右上角状态只在 WebSocket 状态变化或旧主力盘快照加载时重算，手机从后台回来或 WebSocket 较慢时会一直显示“离线”，即使 8 秒行情轮询正常。现在每次行情刷新（成功后和每 8 秒）都重算；OKX 模拟盘标记价推送也算作“实时”。
 
+### PR #34 模拟盘标记价 REST 备用 + 连接诊断
+- iPhone Safari 上看板一直“离线”、浮盈停在上次运行的数字（同一手机的 Chrome 正常），说明该 Safari 的设置拦截了 OKX 连接（常见为内容拦截器、iCloud 专用代理或锁定模式）。新增备用：模拟盘 WebSocket 没有数据时，每 8 秒用 REST 一次取全部模拟盘标记价（`/public/mark-price` + `x-simulated-trading: 1`，OKX 对本站允许此标头跨域）。
+- 点右上角连接状态打开“连接诊断”：版本、浏览器、行情 REST / 两个 WebSocket 的状态与最近事件、脚本报错；“测试连接”分别直连 REST、模拟盘 REST、真实盘 WS、模拟盘 WS 并显示结果，可复制。不含密钥或账户信息。
+- 新增 `tests/okx_rest_browser.cjs`：WebSocket 全部失败时按模拟盘 REST 标记价计算（用 OKX App 截图数值验证：1.2703 → -17.06 USDT）、诊断面板可用。
+
 ---
 
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
@@ -211,6 +216,7 @@ python3 -m http.server 8008 --bind 127.0.0.1 &      # 浏览器验收前启动�
 PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/okx_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/market_browser.cjs
+PANEL_URL=http://127.0.0.1:8008/ node tests/okx_rest_browser.cjs
 ```
 
 已知情况：`tests/team_browser.cjs`、`tests/browser_smoke.cjs` 在基线 `cc25dc5` 上就已失败（仍查找 v3 删除的角色卡），本次改动未改变其结果。
