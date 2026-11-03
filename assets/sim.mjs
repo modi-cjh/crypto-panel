@@ -35,21 +35,30 @@ export function livePnl(position, tickers = [], priceAt = 0, now = Date.now()) {
   return { mark: null, pnl: null, pct: null, live: false };
 }
 
-export function simTotals(data) {
+// Equity moving with prices: realised cash plus each open position's floating PnL. Falls back to the
+// equity recorded on the last run when the cash balance or any position's price is unavailable.
+export function liveEquity(account, tickers = [], priceAt = 0, now = Date.now()) {
+  if (!finite(account.cash)) return { equity: account.equity, live: false };
+  const marks = account.open_positions.map(p => livePnl(p, tickers, priceAt, now));
+  if (marks.some(m => m.pnl == null)) return { equity: account.equity, live: false };
+  return { equity: account.cash + marks.reduce((s, m) => s + m.pnl, 0), live: marks.length > 0 && marks.every(m => m.live) };
+}
+
+export function simTotals(data, tickers = [], priceAt = 0, now = Date.now()) {
   const accounts = Object.values(data?.accounts || {});
-  const equity = accounts.reduce((s, a) => s + a.equity, 0), start = (data?.start_equity || 100) * accounts.length;
+  const equity = accounts.reduce((s, a) => s + liveEquity(a, tickers, priceAt, now).equity, 0), start = (data?.start_equity || 100) * accounts.length;
   return { equity, start, ret: start ? (equity / start - 1) * 100 : null, positions: accounts.reduce((s, a) => s + a.open_positions.length, 0), trades: accounts.reduce((s, a) => s + a.closed_trades, 0), count: accounts.length };
 }
 
-export function simSummaryMarkup(data) {
+export function simSummaryMarkup(data, tickers, priceAt, now = Date.now()) {
   if (!data) return '';
-  const t = simTotals(data);
+  const t = simTotals(data, tickers, priceAt, now);
   return `<span class="eyebrow">PAPER / 学习用模拟交易</span><strong>${t.count} 个账户 · 合计 ${fmt(t.equity)} USDT <span class="${tone(t.ret)}">${signed(t.ret)}%</span></strong><small>持仓 ${t.positions} · 已平仓 ${t.trades} 笔 · 更新 ${time(data.updated_at)} UTC+7 · 查看详情 →</small>`;
 }
 
-export function simCardsMarkup(data) {
-  return Object.entries(data.accounts).map(([key, a]) => `<article class="history-card sim-card" style="--sim-color:${SIM_COLORS[key] || '#06727d'}"><div class="history-card-head"><h3><i class="sim-dot" aria-hidden="true"></i>${esc(a.name)}</h3>${a.halted ? '<span class="pill down">今日停手</span>' : ''}</div><p class="panel-caption">${esc(a.rules)}</p><div class="history-metrics">` +
-    [['权益 USDT', fmt(a.equity)], ['收益', `${signed(a.return_pct)}%`, tone(a.return_pct)], ['最大回撤', `${fmt(a.max_drawdown_pct)}%`, a.max_drawdown_pct > 0 ? 'down' : ''], ['已平仓', `${a.closed_trades} 笔`],
+export function simCardsMarkup(data, tickers, priceAt, now = Date.now()) {
+  return Object.entries(data.accounts).map(([key, a]) => ({ key, a, eq: liveEquity(a, tickers, priceAt, now).equity })).map(({ key, a, eq }) => `<article class="history-card sim-card" style="--sim-color:${SIM_COLORS[key] || '#06727d'}"><div class="history-card-head"><h3><i class="sim-dot" aria-hidden="true"></i>${esc(a.name)}</h3>${a.halted ? '<span class="pill down">今日停手</span>' : ''}</div><p class="panel-caption">${esc(a.rules)}</p><div class="history-metrics">` +
+    [['权益 USDT', fmt(eq)], ['收益', `${signed((eq / (data.start_equity || 100) - 1) * 100)}%`, tone(eq - (data.start_equity || 100))], ['最大回撤', `${fmt(a.max_drawdown_pct)}%`, a.max_drawdown_pct > 0 ? 'down' : ''], ['已平仓', `${a.closed_trades} 笔`],
      ['胜率', a.win_rate_pct == null ? '—' : `${fmt(a.win_rate_pct, 1)}%`], ['平均 R', a.avg_r == null ? '—' : signed(a.avg_r)]]
       .map(([k, v, c = '']) => `<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('') + `</div><small class="muted">持仓 ${a.open_positions.length} · 最新 K 线 ${time(a.last_bar)} UTC+7</small></article>`).join('');
 }

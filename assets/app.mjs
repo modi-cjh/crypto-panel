@@ -2,7 +2,7 @@ import { HomePositions, equitySVG, rangePoints } from './home.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
-import { SIM_URL, SIM_COLORS, SIM_STALE, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simTotals, simMascotState, simChanges, simFeed, simPendingText, simBackfillNote } from './sim.mjs';
+import { SIM_URL, SIM_COLORS, SIM_STALE, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simTotals, simMascotState, simChanges, simFeed, simPendingText, simBackfillNote, liveEquity } from './sim.mjs';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs';
@@ -479,7 +479,7 @@ function renderPinnedBalance(){
   updateCompanion(current);
 }
 function renderPinnedSim(){
-  const t=simTotals(simData),stale=Date.now()-Date.parse(simData.updated_at)>SIM_STALE;
+  const t=simTotals(simData,tickers,simPriceAt()),stale=Date.now()-Date.parse(simData.updated_at)>SIM_STALE;
   $('pinned-label-text').textContent='模拟盘合计';$('pinned-mode').textContent=`${t.count} 账户`;
   rollNumber($('pinned-equity'),t.equity);
   $('pinned-daily').textContent=`收益 ${signed(t.ret)}% · 持仓 ${t.positions}`;$('pinned-daily').className=tone(t.ret);
@@ -498,8 +498,8 @@ function updateCompanion(current=liveBalance(publicAccount,effectiveQuotes())){
 // Once the paper accounts have loaded, the companion follows them instead of the paused bot snapshot.
 function simContext(){
   if(!simData)return {};
-  return {simState:simMascotState(simData),simFeed:simFeed(simData),sim:{totals:simTotals(simData),
-    accounts:Object.entries(simData.accounts).map(([key,a])=>({name:a.name,color:SIM_COLORS[key] || '#06727d',equity:a.equity,return_pct:a.return_pct,positions:a.open_positions.length,halted:a.halted}))}};
+  return {simState:simMascotState(simData),simFeed:simFeed(simData),sim:{totals:simTotals(simData,tickers,simPriceAt()),
+    accounts:Object.entries(simData.accounts).map(([key,a])=>{const eq=liveEquity(a,tickers,simPriceAt()).equity;return {name:a.name,color:SIM_COLORS[key] || '#06727d',equity:eq,return_pct:(eq/(simData.start_equity || 100)-1)*100,positions:a.open_positions.length,halted:a.halted};})}};
 }
 function updateStreamStatus(){
   const live=candleStream?.state==='实时' && Date.now()-candleStream.lastData<45000;
@@ -600,6 +600,7 @@ async function refreshSim(){
 }
 // The paper accounts take over the home page while the original bot is paused, stopped or stale;
 // once the bot publishes fresh snapshots again, the original home page comes back on its own.
+const simPriceAt=()=>errors.has('prices')?0:priceAt;
 function simPrimary(){
   if(!simData)return false;
   const main=mainAccounts(publicAccount)[0];
@@ -610,16 +611,16 @@ $('legacy-toggle').addEventListener('click',()=>{showLegacy=!showLegacy;renderSi
 function renderSim(){
  const primary=simPrimary();
  document.documentElement.classList.toggle('sim-primary',primary);document.documentElement.classList.toggle('show-legacy',primary && showLegacy);
- $('sim-summary').hidden=!simData || primary;if(simData)$('sim-summary').innerHTML=simSummaryMarkup(simData);
+ $('sim-summary').hidden=!simData || primary;if(simData)$('sim-summary').innerHTML=simSummaryMarkup(simData,tickers,simPriceAt());
  $('home-sim').hidden=!primary;
  $('legacy-toggle').textContent=showLegacy?'收起原主力盘':'显示原主力盘（crypto-bot · 已暂停）';$('legacy-toggle').setAttribute('aria-expanded',String(showLegacy));
  if(primary && route==='home'){
-  const t=simTotals(simData),prices=errors.has('prices')?0:priceAt;
-  $('sim-total-equity').textContent=num(t.equity);
+  const prices=simPriceAt(),t=simTotals(simData,tickers,prices);
+  rollNumber($('sim-total-equity'),t.equity);
   $('sim-total-ret').innerHTML=`合计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
   $('sim-total-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;
   const note=simBackfillNote(simData);$('home-sim-backfill').hidden=!note;$('home-sim-backfill').textContent=note;
-  $('home-sim-curve').innerHTML=simCurveSVG(simData);$('home-sim-cards').innerHTML=simCardsMarkup(simData);
+  $('home-sim-curve').innerHTML=simCurveSVG(simData);$('home-sim-cards').innerHTML=simCardsMarkup(simData,tickers,prices);
   const pending=simPendingText(simData);$('home-sim-pending').hidden=!pending;$('home-sim-pending').textContent=pending;
   $('home-sim-positions').innerHTML=simPositionsMarkup(simData,tickers,prices);$('home-sim-trades').innerHTML=simTradesMarkup(simData,10);
  }
@@ -628,7 +629,7 @@ function renderSim(){
  if(!simData){$('sim-cards').innerHTML='<p class="empty">正在读取模拟账户…</p>';return;}
  $('sim-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;
  {const note=simBackfillNote(simData);$('sim-backfill').hidden=!note;$('sim-backfill').textContent=note;}
- $('sim-cards').innerHTML=simCardsMarkup(simData);$('sim-curve').innerHTML=simCurveSVG(simData);
+ $('sim-cards').innerHTML=simCardsMarkup(simData,tickers,simPriceAt());$('sim-curve').innerHTML=simCurveSVG(simData);
  $('sim-positions').innerHTML=simPositionsMarkup(simData,tickers,errors.has('prices')?0:priceAt);$('sim-trades').innerHTML=simTradesMarkup(simData);
 }
 document.addEventListener('visibilitychange',()=>{

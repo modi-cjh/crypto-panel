@@ -327,7 +327,7 @@ def summarize(key, cfg, acct, data_dir, prices=None):
         with eq_path.open(newline='') as f:
             for r in csv.DictReader(f):
                 v = float(r['equity']); peak = max(peak, v); dd = max(dd, (peak - v) / peak * 100)
-    return dict(name=cfg['name'], equity=round(equity, 4), return_pct=round((equity / START_EQUITY - 1) * 100, 2), max_drawdown_pct=round(dd, 2),
+    return dict(name=cfg['name'], equity=round(equity, 4), cash=round(acct['cash'], 6), return_pct=round((equity / START_EQUITY - 1) * 100, 2), max_drawdown_pct=round(dd, 2),
                 closed_trades=len(trades), win_rate_pct=round(len(wins) / len(trades) * 100, 1) if trades else None,
                 avg_r=round(sum(t['r'] for t in trades) / len(trades), 3) if trades else None,
                 payoff=round((sum(t['pnl'] for t in wins) / len(wins)) / (-sum(t['pnl'] for t in losses) / len(losses)), 2) if wins and losses and sum(t['pnl'] for t in losses) < 0 else None,
