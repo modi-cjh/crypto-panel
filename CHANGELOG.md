@@ -156,9 +156,17 @@
 - 首页模拟盘区块与“模拟交易”页新增“OKX 模拟交易 · 交易所实测”卡片，读取 `paper-data/okx_demo/summary.json`（随模拟盘每分钟刷新）：状态（运行中 / 已暂停 / 日亏停手 / 数据延迟）、权益、今日盈亏、可用资金、交易所持仓（非本程序开的仓位会标注）、最近 8 条跟单动作（开仓、平仓、上移止损、交易所止损触发、跳过原因等，中文说明）。
 - 摘要文件不存在或格式不对时卡片保持隐藏；交易所返回的文字全部转义。新增 3 个单元测试，浏览器验收覆盖卡片内容。
 
+### PR #27 看板只显示 OKX 模拟交易账户
+- 看板不再显示 100 USDT 模拟盘账户：首页、顶栏权益、“模拟交易”页和机器人播报全部改为 OKX 模拟交易账户（`paper-data/okx_demo/summary.json`）。删除 `assets/sim.mjs` 及其测试与样例数据，新增 `assets/okx.mjs`。
+- 策略引擎 `tools/paper_trader.py` 仍在后台每 30 分钟运行，只作为三套策略的信号来源（OKX 跟单按它的开平仓执行），`dashboard.json` 照常生成，但看板不再读取。
+- 首页：OKX 模拟权益（浮盈按实时价与合约面值计算）、累计收益（相对起始权益）、今日盈亏、运行状态、资金曲线、持仓（含策略名与交易所止损）、最近交易动作。完整页面多了可用资金、已平仓笔数和最近 30 条动作。
+- 机器人跟随 OKX 账户：刚开仓兴奋、交易所止损触发难过、暂停 / 日亏停手、数据超过 3 小时未更新为离线；新的开仓 / 平仓 / 止损触发会弹出提示。
+- `okx_demo_trader.py` 摘要新增 `start_equity`、`history`（每次运行记录一个权益点，最多 3000 个）、`closed_trades` 与持仓 `ctVal`。
+- 测试：`tests/okx.test.mjs`（7 项）、`tests/okx_browser.cjs`（替代 `sim_browser.cjs`）、Python 新增 1 项。
+
 ---
 
-## 当前模拟盘（自 PR #21 起为一个合并账户）
+## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |
 |---|---|---|---|
@@ -175,11 +183,11 @@
 ## 测试命令
 
 ```bash
-npm test                                             # JS 单元测试（69 项）
+npm test                                             # JS 单元测试（73 项）
 python3 -m unittest discover -s tests -p 'test_*.py' # Python 单元测试
 python3 -m http.server 8008 --bind 127.0.0.1 &      # 浏览器验收前启动本地服务
 PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs
-PANEL_URL=http://127.0.0.1:8008/ node tests/sim_browser.cjs
+PANEL_URL=http://127.0.0.1:8008/ node tests/okx_browser.cjs
 ```
 
 已知情况：`tests/team_browser.cjs`、`tests/browser_smoke.cjs` 在基线 `cc25dc5` 上就已失败（仍查找 v3 删除的角色卡），本次改动未改变其结果。

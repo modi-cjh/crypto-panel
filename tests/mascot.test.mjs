@@ -63,7 +63,7 @@ test('narration lines: fills, wake alerts, halts, reports and route tips',()=>{
  assert.match(contextTip({route:'coin',coin:'BTC-USDT-SWAP'}),/暂无会议结论/);
  assert.match(contextTip({route:'home',paused:true}),/暂停/);assert.match(contextTip({route:'home',positions:2}),/2 个持仓/);
  assert.match(contextTip({route:'paper'}),/回撤/);assert.match(contextTip({route:'market'}),/币种/);
- assert.match(contextTip({route:'sim'}),/一个账户、三套策略/);
+ assert.match(contextTip({route:'sim'}),/OKX 模拟交易账户/);
  assert.match(contextTip({route:'home',paused:true,sim:{totals:{ret:-1.5,positions:2}}}),/累计 -1\.50%，持仓 2 个/);
 });
 test('speech queue is bounded and drops repeats inside the dedupe window',()=>{

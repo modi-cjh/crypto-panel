@@ -2,7 +2,7 @@ import { HomePositions, equitySVG, rangePoints } from './home.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
-import { SIM_URL, SIM_COLORS, SIM_STALE, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simTotals, simMascotState, simChanges, simFeed, simPendingText, simBackfillNote, liveEquity, OKX_DEMO_URL, validOkxDemo, okxDemoMarkup } from './sim.mjs';
+import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxFeed, okxStart } from './okx.mjs';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs';
@@ -53,7 +53,7 @@ let lastCandleRequest = '', candleBusy = new Set();
 let publicAccount = null, publicBusy = false;
 let team = null, teamBusy = false, teamRole = '', teamMeeting = '';
 const teamStateOptions = () => ({offlineMinutes:config.offlineMinutes,snapshotAt:publicAccount?.updated_at ?? snapshot?.updated_at ?? snapshot?.generated_at});
-let scanExpanded=false,signalsExpanded=false,eventsBusy=false,eventsData=null,simData=null,simBusy=false,okxDemo=null;
+let scanExpanded=false,signalsExpanded=false,eventsBusy=false,eventsData=null,simData=null,simBusy=false;
 let scan = null, scanBusy = false, scanSort = 'quote_24h', scanDirection = -1;
 function syncHomeCoin() {
   focusSymbol = meetingSymbol(team?.status.meeting, configuredSymbol, new Set([...tickers.map(t=>t.id),...(scan?.instruments || []).map(r=>r.instId)]));
@@ -483,11 +483,11 @@ function renderPinnedBalance(){
   updateCompanion(current);
 }
 function renderPinnedSim(){
-  const t=simTotals(simData,tickers,simPriceAt()),stale=Date.now()-Date.parse(simData.updated_at)>SIM_STALE;
-  $('pinned-label-text').textContent=t.count===1?'模拟盘权益':'模拟盘合计';$('pinned-mode').textContent=t.count===1?'合并账户':`${t.count} 账户`;
+  const t=okxTotals(simData,tickers,simPriceAt()),stale=Date.now()-Date.parse(simData.updated_at)>OKX_STALE;
+  $('pinned-label-text').textContent='OKX 模拟权益';$('pinned-mode').textContent='交易所模拟';
   rollNumber($('pinned-equity'),t.equity,EQUITY_ROLL_STEP);
   $('pinned-daily').textContent=`收益 ${signed(t.ret)}% · 持仓 ${t.positions}`;$('pinned-daily').className=tone(t.ret);
-  $('pinned-source').textContent='学习用模拟 · 每 30 分钟更新';
+  $('pinned-source').textContent='OKX 模拟交易 · 每 30 分钟更新';
   $('pinned-time').textContent=`${stale?'延迟 · ':''}${time(simData.updated_at)} UTC+7`;$('pinned-time').className=stale?'stale':'';
 }
 const BIAS={long:'偏多',short:'偏空',watch:'观察',ban:'禁开仓'};
@@ -499,12 +499,12 @@ function updateCompanion(current=liveBalance(publicAccount,effectiveQuotes())){
     positions:main?main.positions.length:null,loss:Number.isFinite(main?.daily_loss_limit)?{ratio:loss,limit:main.daily_loss_limit}:null,
     long:risk?.long,short:risk?.short,decision:rule?BIAS[rule.bias] || null:null,eventText,...simContext()});
 }
-// Once the paper accounts have loaded, the companion follows them instead of the paused bot snapshot.
+// Once the OKX demo account has loaded, the companion follows it instead of the paused bot snapshot.
 function simContext(){
   if(!simData)return {};
-  return {simState:simMascotState(simData),simFeed:simFeed(simData),sim:{totals:simTotals(simData,tickers,simPriceAt()),
-    accounts:Object.entries(simData.accounts).map(([key,a])=>{const eq=liveEquity(a,tickers,simPriceAt()).equity;return {name:a.name,color:SIM_COLORS[key] || '#06727d',equity:eq,return_pct:(eq/(simData.start_equity || 100)-1)*100,positions:a.open_positions.length,halted:a.halted};}),
-    strategies:Object.values(simData.accounts).flatMap(a=>a.by_strategy || []).map(b=>({...b,color:SIM_COLORS[b.key] || '#06727d'}))}};
+  const t=okxTotals(simData,tickers,simPriceAt());
+  return {simState:okxMascotState(simData),simFeed:okxFeed(simData),sim:{totals:t,
+    accounts:[{name:'OKX 模拟账户',color:OKX_COLOR,equity:t.equity,return_pct:t.ret,positions:t.positions,halted:Boolean(simData.halted)}],strategies:[]}};
 }
 function updateStreamStatus(){
   const live=candleStream?.state==='实时' && Date.now()-candleStream.lastData<45000;
@@ -591,23 +591,22 @@ async function refreshEvents(){
  finally{eventsBusy=false;}
 }
 
-// Learning-only paper accounts (tools/paper_trader.py) published on the paper-data branch.
+// OKX demo-trading account (tools/okx_demo_trader.py) published on the paper-data branch.
 async function refreshSim(){
- refreshOkxDemo();
  if(simBusy)return;simBusy=true;
  try{
-  const response=await fetch(`${SIM_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
-  if(!response.ok)throw new Error();const data=await response.json();if(!validSim(data))throw new Error();
-  const changes=simChanges(simData,data);
+  const response=await fetch(`${OKX_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
+  if(!response.ok)throw new Error();const data=await response.json();if(!validOkx(data))throw new Error();
+  const changes=okxChanges(simData,data);
   simData=data;$('sim-error').hidden=true;renderSim();updateCompanion();
-  for(const line of changes)notify(line,`模拟盘 · ${line.text}`);
- }catch{if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='模拟交易数据暂时读取失败，保留已有数据，稍后自动重试。';}}
+  for(const line of changes)notify(line,`OKX 模拟 · ${line.text}`);
+ }catch{if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='OKX 模拟账户数据暂时读取失败，保留已有数据，稍后自动重试。';}}
  finally{simBusy=false;}
 }
-// The paper accounts take over the home page while the original bot is paused, stopped or stale;
+// The OKX demo account takes over the home page while the original bot is paused, stopped or stale;
 // once the bot publishes fresh snapshots again, the original home page comes back on its own.
 const simPriceAt=()=>errors.has('prices')?0:priceAt;
-// Floating PnL moves the paper equity by a few cents on every 8-second poll; only animate meaningful moves.
+// Floating PnL moves the equity by a few cents on every 8-second poll; only animate meaningful moves.
 const EQUITY_ROLL_STEP=.1;
 function simPrimary(){
   if(!simData)return false;
@@ -616,42 +615,34 @@ function simPrimary(){
 }
 let showLegacy=false;
 $('legacy-toggle').addEventListener('click',()=>{showLegacy=!showLegacy;renderSim();});
-// OKX demo-trading mirror results; the card stays hidden until the mirror has written a summary.
-async function refreshOkxDemo(){
- try{
-  const response=await fetch(`${OKX_DEMO_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
-  if(!response.ok)return;const data=await response.json();if(!validOkxDemo(data))return;
-  okxDemo=data;renderOkxDemo();
- }catch{}
-}
-function renderOkxDemo(){
- for(const [box,body] of [['home-okx','home-okx-body'],['sim-okx','sim-okx-body']]){
-  const el=$(box);if(!el)continue;el.hidden=!okxDemo;if(okxDemo)$(body).innerHTML=okxDemoMarkup(okxDemo);
- }
+const statusPill=(el,d)=>{const st=okxStatus(d);el.textContent=st.label;el.className=`pill okx-pill ${st.cls}`;};
+function retLine(t){
+ return `累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 今日 <span class="${tone(t.day)}">${Number.isFinite(t.day)?signed(t.day)+' USDT':'—'}</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
 }
 function renderSim(){
  const primary=simPrimary();
  document.documentElement.classList.toggle('sim-primary',primary);document.documentElement.classList.toggle('show-legacy',primary && showLegacy);
- $('sim-summary').hidden=!simData || primary;if(simData)$('sim-summary').innerHTML=simSummaryMarkup(simData,tickers,simPriceAt());
  $('home-sim').hidden=!primary;
  $('legacy-toggle').textContent=showLegacy?'收起原主力盘':'显示原主力盘（crypto-bot · 已暂停）';$('legacy-toggle').setAttribute('aria-expanded',String(showLegacy));
+ const prices=simPriceAt();
  if(primary && route==='home'){
-  const prices=simPriceAt(),t=simTotals(simData,tickers,prices);
-  rollNumber($('sim-total-equity'),t.equity,EQUITY_ROLL_STEP);
-  $('sim-total-ret').innerHTML=`累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
-  $('sim-total-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;
-  const note=simBackfillNote(simData);$('home-sim-backfill').hidden=!note;$('home-sim-backfill').textContent=note;
-  $('home-sim-curve').innerHTML=simCurveSVG(simData);$('home-sim-cards').innerHTML=simCardsMarkup(simData,tickers,prices);
-  const pending=simPendingText(simData);$('home-sim-pending').hidden=!pending;$('home-sim-pending').textContent=pending;
-  $('home-sim-positions').innerHTML=simPositionsMarkup(simData,tickers,prices);$('home-sim-trades').innerHTML=simTradesMarkup(simData,10);
+  const t=okxTotals(simData,tickers,prices);
+  rollNumber($('okx-total-equity'),t.equity,EQUITY_ROLL_STEP);
+  $('okx-total-ret').innerHTML=retLine(t);
+  $('okx-total-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;statusPill($('home-okx-status'),simData);
+  $('home-okx-curve').innerHTML=okxCurveSVG(simData);
+  $('home-okx-positions').innerHTML=okxPositionsMarkup(simData,tickers,prices);$('home-okx-actions').innerHTML=okxActionsMarkup(simData,10);
  }
  renderPinnedBalance();
  if(route!=='sim')return;
- if(!simData){$('sim-cards').innerHTML='<p class="empty">正在读取模拟账户…</p>';return;}
- $('sim-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;
- {const note=simBackfillNote(simData);$('sim-backfill').hidden=!note;$('sim-backfill').textContent=note;}
- $('sim-cards').innerHTML=simCardsMarkup(simData,tickers,simPriceAt());$('sim-curve').innerHTML=simCurveSVG(simData);
- $('sim-positions').innerHTML=simPositionsMarkup(simData,tickers,errors.has('prices')?0:priceAt);$('sim-trades').innerHTML=simTradesMarkup(simData);
+ if(!simData){$('okx-metrics').innerHTML='<p class="empty">正在读取 OKX 模拟账户…</p>';return;}
+ const t=okxTotals(simData,tickers,prices);
+ $('sim-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;statusPill($('okx-status'),simData);
+ $('okx-metrics').innerHTML=`<div class="history-metrics">${[['权益 USDT',num(t.equity)],['累计收益',`${signed(t.ret)}%`,tone(t.ret)],['今日盈亏',Number.isFinite(t.day)?`${signed(t.day)} USDT`:'—',tone(t.day)],
+   ['可用 USDT',num(Number(simData.available))],['持仓',`${t.positions}`],['已平仓',`${t.trades} 笔`]].map(([k,v,c=''])=>`<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('')}</div>`;
+ $('okx-start').textContent=`起始 ${num(okxStart(simData))} USDT`;
+ $('okx-curve').innerHTML=okxCurveSVG(simData);
+ $('okx-positions').innerHTML=okxPositionsMarkup(simData,tickers,prices);$('okx-actions').innerHTML=okxActionsMarkup(simData,30);
 }
 document.addEventListener('visibilitychange',()=>{
  if(document.hidden){quoteStream?.stop();candleStream?.stop();quoteStreamKey='';candleStreamKey='';}
