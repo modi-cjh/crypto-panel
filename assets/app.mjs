@@ -201,7 +201,7 @@ async function refreshPrices() {
     priceAt = Date.now(); setError('prices', null);
     $('price-updated').textContent = `${time(priceAt)} UTC+7 更新`;
     if (firstLoad) syncHomeCoin();
-    renderMarket(); if (route === 'coin') renderQuote(); if (route === 'home') renderHome(); if (route === 'paper') historyPage.setPrices(tickers); if (route === 'sim') renderSim();
+    renderMarket(); if (route === 'coin') renderQuote(); if (route === 'home') renderHome(); if (route === 'paper') historyPage.setPrices(tickers); if (route === 'sim' || route === 'home') renderSim(); // live PnL on paper positions
     if (['home', 'market', 'coin'].includes(route)) refreshSlow();
   } catch (error) { setError('prices', `行情：${description(error)}`); if (!tickers.length) renderMarket();if(route==='paper')historyPage.setPrices([]);if(route==='home')renderPublicHome(); }
   finally { priceBusy = false; refreshHealth(); }
