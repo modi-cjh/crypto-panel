@@ -153,5 +153,5 @@ progress::-webkit-progress-bar{background:#e8ebef}progress{background:#e8ebef}
 #mascot,#mascot *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
 #mascot.dragging .companion-bot{transform:scale(1.08);transition:transform .15s ease-out}#mascot.dragging .companion-bot svg{filter:drop-shadow(0 10px 12px #12263a40)}
 /* SVG animations repaint the robot every frame; freeze them while it follows the finger. */#mascot.dragging *{animation-play-state:paused!important}
-html.companion-pointer #mascot :focus-visible,html.companion-pointer #mascot-drawer :focus-visible,html.companion-pointer #mascot-drawer:focus-visible{outline:none}
+#mascot :focus-visible,#mascot-drawer :focus-visible,#mascot-drawer:focus-visible{outline:none}html.companion-keyboard #mascot :focus-visible,html.companion-keyboard #mascot-drawer :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 /* iOS Safari paints a dark tap-highlight box over any element with a click handler (the panel listens for backdrop taps). */#mascot,#mascot *,#mascot-drawer,#mascot-drawer *{-webkit-tap-highlight-color:transparent}

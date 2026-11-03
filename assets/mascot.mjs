@@ -101,10 +101,11 @@ export class Mascot {
     document.documentElement.classList.add('has-companion');
     // Focus is returned to the robot for keyboard and screen-reader users, but touch input
     // (native gestures are blocked on the robot) makes browsers draw the keyboard ring.
-    // Hide companion focus rings after pointer input until a key is pressed.
+    // Companion focus rings are off by default and only shown once a key is pressed,
+    // so a stale cached script can never bring the ring back on phones.
     const root=document.documentElement;
-    addEventListener('pointerdown',()=>root.classList.add('companion-pointer'),{capture:true,passive:true});
-    addEventListener('keydown',()=>root.classList.remove('companion-pointer'),{capture:true});
+    addEventListener('keydown',()=>root.classList.add('companion-keyboard'),{capture:true});
+    addEventListener('pointerdown',()=>root.classList.remove('companion-keyboard'),{capture:true,passive:true});
     this.applyFace();
   }
   // ---- position -----------------------------------------------------------
