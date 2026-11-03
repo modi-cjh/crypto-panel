@@ -174,10 +174,6 @@ html.sim-primary:not(.show-legacy) #home-page>#timeline-fold{display:none}
 #legacy-toggle{align-self:center}
 .sim-backfill{margin:10px 0 0;padding:8px 12px;border-radius:10px;background:#eef2ff;color:#3730a3;font-size:12px;line-height:1.5}.sim-curve .sim-live{stroke:#6366f1;stroke-dasharray:3 3}.sim-curve .sim-live-label{fill:#4f46e5;font-size:10px}
 .sim-strategies{width:100%;margin:4px 0 10px;border-collapse:collapse;font-size:12px}.sim-strategies th,.sim-strategies td{padding:6px 4px;text-align:right;border-top:1px solid var(--line);white-space:nowrap}.sim-strategies th:first-child,.sim-strategies td:first-child{text-align:left}.sim-strategies th{color:var(--muted);font-weight:500}.sim-strategies .sim-dot{margin-right:6px;background:var(--sim-color)}
-.okx-demo .panel-heading small{font-size:12px;font-weight:400;margin-left:6px}.okx-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}.okx-head .pill.up{color:var(--green)}.okx-head .pill.down{color:var(--red)}.okx-subtitle{font-size:14px;margin:14px 0 4px}.okx-positions td,.okx-positions th{font-size:12px}.okx-positions .coin-icon{width:18px;height:18px;margin-right:4px;vertical-align:middle}
-.okx-positions{width:100%;margin:4px 0 10px;border-collapse:collapse}
-.okx-positions th,.okx-positions td{padding:6px 4px;text-align:right;border-top:1px solid var(--line);white-space:nowrap}
-.okx-positions th:first-child,.okx-positions td:first-child{text-align:left}
-.okx-positions th{color:var(--muted);font-weight:500}
-.okx-demo .okx-scroll{overflow-x:auto}
-.okx-demo .okx-body{padding:0 16px}@media(min-width:700px){.okx-demo .okx-body{padding:0 22px}}
+.okx-side{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.okx-pill.up{color:var(--green)}.okx-pill.down{color:var(--red)}#okx-metrics .history-metrics{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+#okx-metrics{padding:0 16px 12px}@media(min-width:700px){#okx-metrics{padding:0 22px 14px}}
+@media(max-width:700px){.okx-side{flex-direction:row;align-items:center;gap:10px}}

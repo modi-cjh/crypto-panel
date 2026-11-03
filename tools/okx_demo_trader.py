@@ -33,6 +33,7 @@ from pathlib import Path
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
 RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .08
+HISTORY_POINTS = 3000            # equity curve points kept (~60 days at two runs an hour)
 OPEN_WINDOW = 2 * 3600_000        # only mirror paper entries that are at most this old
 MIN_STOP_DIST = .002              # skip entries whose stop is already too close to the current price
 AMEND_TOLERANCE = .001            # amend the exchange stop when the paper stop moved more than 0.1%
@@ -271,12 +272,21 @@ class Mirror:
 
     def summary(self):
         pos = [dict(inst=p['instId'], side=p.get('posSide', 'net'), contracts=p.get('pos'), avgPx=p.get('avgPx'), markPx=p.get('markPx'),
-                    upl=p.get('upl'), uplRatio=p.get('uplRatio'), lever=p.get('lever'), margin=p.get('margin'),
+                    upl=p.get('upl'), uplRatio=p.get('uplRatio'), lever=p.get('lever'), margin=p.get('margin'), ctVal=self.spec(p['instId'])['ctVal'],
                     ours=any(m['status'] == 'open' and m['inst'] == p['instId'] for m in self.s['mirrored'].values()))
                for p in self.positions.values()]
         return dict(updated_at=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), equity=self.equity, available=self.available,
                     day_start=self.s.get('day_start'), paused=self.s['paused'], halted=self.s['halted'], dry_run=self.dry, positions=pos,
-                    open_mirrors=[dict(m, key=k) for k, m in self.s['mirrored'].items() if m['status'] == 'open'])
+                    open_mirrors=[dict(m, key=k) for k, m in self.s['mirrored'].items() if m['status'] == 'open'],
+                    start_equity=self.s.get('start_equity'), history=self.s.get('history', [])[-HISTORY_POINTS:],
+                    closed_trades=sum(1 for m in self.s['mirrored'].values() if m['status'] == 'done'))
+
+    def record_equity(self):
+        """Equity curve for the dashboard: one point per live run, capped."""
+        self.s.setdefault('start_equity', self.equity)
+        hist = self.s.setdefault('history', [])
+        hist.append([self.now_ms, round(self.equity, 2)])
+        del hist[:-HISTORY_POINTS]
 
 
 def main():
@@ -302,6 +312,8 @@ def main():
         error = str(exc); mirror.log('error', '-', step='run', detail=error)
     for a in mirror.actions:
         print(json.dumps(a, ensure_ascii=False))
+    if not dry and hasattr(mirror, 'equity'):
+        mirror.record_equity()
     if not dry:
         state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True))
         with (out / 'actions.jsonl').open('a') as f:

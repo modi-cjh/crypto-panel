@@ -64,7 +64,7 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 
 **OKX 模拟交易跟单**：配置仓库 Secrets `OKX_API_KEY` / `OKX_API_SECRET` / `OKX_API_PASSPHRASE`（OKX 模拟交易密钥，只开读取 + 交易）后，`tools/okx_demo_trader.py` 在每次运行时把合并模拟盘的开仓、跟随止损与平仓执行到 OKX 模拟交易账户，结果写入 `paper-data/okx_demo/`。新建时处于暂停状态：在 Actions 手动运行 Paper trading 并选择 `okx_demo = dry-run` 预览，确认后选 `resume` 开始；`flatten` 全部平仓并暂停。连接检查：手动运行 “OKX demo connection check”。
 
-看板 `#/sim`（导航“模拟交易”，首页顶部摘要卡片可进入）读取 `paper-data` 分支的 `dashboard.json`（`https://raw.githubusercontent.com/...`，约 5 分钟缓存，已加入 CSP connect-src），显示三个账户的权益 / 收益 / 回撤 / 胜率 / 平均 R、资金曲线对比、当前持仓（按 OKX 实时价计算浮动盈亏，以保证金封顶）和最近 20 笔平仓。该页面不显示旧主力盘的暂停横幅。验收：`PANEL_URL=http://127.0.0.1:8008/ node tests/sim_browser.cjs`。回测显示两套 1 小时规则过去一年都不赚钱；日线突破 2.7 年回测期望为正（+31.6%，最大回撤约 20%），但样本只有 92 笔。全部仅用于观察执行与学习。
+看板 `#/sim`（导航“模拟交易”）和首页（旧主力盘暂停时）显示 OKX 模拟交易账户：读取 `paper-data/okx_demo/summary.json`（约 5 分钟缓存），包括权益、累计 / 今日收益、资金曲线、交易所持仓与最近交易动作。100 USDT 策略模拟盘只在后台运行、作为信号来源，看板不再显示。验收：`PANEL_URL=http://127.0.0.1:8008/ node tests/okx_browser.cjs`。全部仅为模拟资金，用于观察执行与学习。
 
 ## 账户历史
 
