@@ -153,3 +153,4 @@ progress::-webkit-progress-bar{background:#e8ebef}progress{background:#e8ebef}
 #mascot,#mascot *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
 #mascot.dragging .companion-bot{transform:scale(1.08);transition:transform .15s ease-out}#mascot.dragging .companion-bot svg{filter:drop-shadow(0 10px 12px #12263a40)}
 /* SVG animations repaint the robot every frame; freeze them while it follows the finger. */#mascot.dragging *{animation-play-state:paused!important}
+html.companion-pointer #mascot :focus-visible,html.companion-pointer #mascot-drawer :focus-visible,html.companion-pointer #mascot-drawer:focus-visible{outline:none}
