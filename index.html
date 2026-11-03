@@ -27,14 +27,16 @@
     <dialog id="stop-dialog" class="trade-control-dialog" aria-labelledby="stop-dialog-title">
       <div class="trade-dialog-head"><h2 id="stop-dialog-title">全部平仓并停止模拟交易</h2><button id="stop-dialog-close" class="pill" type="button">取消</button></div>
       <p>关闭本程序管理的全部 OKX 模拟仓位，然后保持暂停，不再开新仓。人工仓位不在本按钮的操作范围内。</p>
-      <ol><li>点击下方按钮，在 GitHub 登录仓库所有者账号。</li><li>在任务页点击 <b>Run workflow</b>（运行工作流），分支选择 <b>master</b>。</li><li>任务完成后返回看板刷新，核对停止状态与平仓回执。</li></ol>
-      <p class="muted">打开任务页不会停止交易。任务排队可能延迟，平仓结果以交易所回执为准。</p>
+      <div id="stop-github-instructions"><ol><li>点击下方按钮，在 GitHub 登录仓库所有者账号。</li><li>在任务页点击 <b>Run workflow</b>（运行工作流），分支选择 <b>master</b>。</li><li>任务完成后返回看板刷新，核对停止状态与平仓回执。</li></ol><p class="muted">打开任务页不会停止交易。任务排队可能延迟，平仓结果以交易所回执为准。</p></div>
+      <div id="stop-runtime-instructions" hidden><p>登录常驻服务控制台后，点击“全部平仓并停止”并确认。请求直接提交给后台，先禁止新开仓，再执行平仓。</p><p class="muted">查看任务回执确认是否完成。提交请求或打开控制台不代表平仓已经成功。</p></div>
+      <p id="stop-config-error" role="status" hidden>控制服务配置无法读取，请刷新后重试。</p>
       <a id="stop-workflow-link" class="trade-stop-link" href="https://github.com/modi-cjh/crypto-panel/actions/workflows/stop-demo.yml" target="_blank" rel="noopener noreferrer">前往 GitHub 执行全部平仓并停止 ↗</a>
     </dialog>
 
     <section id="home-page" class="page" aria-label="交易室首页">
       <section id="home-sim" class="home-sim" hidden aria-label="OKX 模拟交易账户">
         <p class="trade-profile" data-execution-profile role="status">策略档位：等待任务回执确认</p>
+        <p class="runtime-health" data-runtime-health role="status">正在检查执行调度…</p>
         <div class="trade-controls"><p data-stop-status role="status">全部平仓后保持暂停，需登录 GitHub 执行。</p><button type="button" class="trade-stop-button" data-stop-demo aria-haspopup="dialog" aria-controls="stop-dialog">全部平仓并停止</button></div>
         <section class="panel sim-capital"><div class="capital-total"><div><h1>OKX 模拟账户权益 <span class="mode-tag">交易所模拟</span></h1><div class="equity-number"><strong id="okx-total-equity">—</strong><small>USDT</small></div><p id="okx-total-ret">—</p></div><div class="okx-side"><span id="home-okx-status" class="pill">—</span><small id="okx-total-updated"></small></div></div><div class="panel-heading"><h2>资金曲线</h2><a href="#/sim" class="pill">完整页面 →</a></div><div id="home-okx-curve" class="sim-curve"></div></section>
         <section class="panel"><div class="panel-heading"><h2>当前持仓</h2><small class="muted">止损挂在交易所 · 浮盈按 OKX 实时价</small></div><div id="home-okx-positions" class="sim-positions"></div></section>
@@ -76,6 +78,7 @@
       <div class="page-heading"><div><div class="eyebrow">OKX DEMO / 交易所模拟交易</div><h1 id="sim-title">OKX 模拟交易</h1><p>OKX 模拟交易账户 · 三套策略出信号 · 约每 5 分钟自动运行 · 止损挂在交易所 · 仅模拟资金</p></div><span id="sim-updated" class="pill">等待数据</span></div>
       <p id="sim-error" class="alert" hidden></p>
       <p class="trade-profile" data-execution-profile role="status">策略档位：等待任务回执确认</p>
+      <p class="runtime-health" data-runtime-health role="status">正在检查执行调度…</p>
       <div class="trade-controls"><p data-stop-status role="status">全部平仓后保持暂停，需登录 GitHub 执行。</p><button type="button" class="trade-stop-button" data-stop-demo aria-haspopup="dialog" aria-controls="stop-dialog">全部平仓并停止</button></div>
       <section class="panel"><div class="panel-heading"><h2>账户</h2><span id="okx-status" class="pill">—</span></div><div id="okx-metrics" class="okx-body"></div></section>
       <section class="panel"><div class="panel-heading"><h2>资金曲线</h2><span id="okx-start" class="pill">—</span></div><div id="okx-curve" class="sim-curve"></div></section>
@@ -90,7 +93,7 @@
       <details class="archive-section" open><summary>02 / 风控仪表 <span>收起 / 展开</span></summary><div class="history-section"><div id="history-risk"></div><div id="history-stops" class="history-metrics"></div><div id="history-blackout" class="blackout-card" aria-live="polite"></div></div></details>
       <details class="archive-section" open><summary>03 / 策略战绩 <span>收起 / 展开</span></summary><div class="history-section"><div id="history-strategies" class="history-strategies"></div><p class="panel-caption">仅 trades.csv 已平仓交易，按净盈亏统计；盈亏比 = 平均盈利 / 平均亏损绝对值；手续费占比 = 总手续费 / |Σ每笔毛盈亏|。毛盈亏 = 方向 × 币数 × (平价 − 开价)，已含成交滑点，未扣手续费、资金费。</p></div></details>
       <details class="archive-section" open><summary>04 / 成交记录 <span>收起 / 展开</span></summary><div class="history-section"><div class="history-filters"><label>币种 <select id="history-symbol" aria-label="成交币种筛选"><option value="">全部币</option></select></label><label>策略 <select id="history-strategy" aria-label="成交策略筛选"><option value="">全部策略</option><option value="mean_reversion">均值回归</option><option value="breakout">突破（历史）</option><option value="manual">会议单</option></select></label></div><p class="panel-caption">已平仓完整交易 · 盈亏 % = 净盈亏 / 入场保证金 × 100% · 名义金额按开仓价</p><div id="history-trades" class="history-trades"></div><div class="pagination"><button id="history-prev">上一页</button><span id="history-page-number"></span><button id="history-next">下一页</button></div></div></details>
-      <details class="archive-section" open><summary>05 / 异动 → 决策记录 <span>收起 / 展开</span></summary><div class="history-section"><p class="panel-caption">仅 wake=true，按 wake_index 分组。精确引用优先；否则按同币和异动后 24h 关联。时间关联仅为候选，不代表因果。</p><div id="history-alerts"></div></div></details>
+      <details class="archive-section" open><summary>05 / 异动 → 决策记录 <span>收起 / 展开</span></summary><div class="history-section"><button type="button" class="pill" data-open-decisions>到机器人查看异动 / 决策 →</button><p class="panel-caption">这里保留旧 crypto-bot 历史记录；机器人同时展示当前模拟策略的信号与执行回执。</p><p class="panel-caption">仅 wake=true，按 wake_index 分组。精确引用优先；否则按同币和异动后 24h 关联。时间关联仅为候选，不代表因果。</p><div id="history-alerts"></div></div></details>
       <p id="history-error" class="muted" role="status"></p>
     </section>
     <noscript><p class="note">请启用 JavaScript 以加载行情与模拟盘数据。</p></noscript>

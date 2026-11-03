@@ -1,5 +1,6 @@
 import { HomePositions, equitySVG, rangePoints } from './home.mjs';
 import { initTradeControls, renderTradeControls } from './control.mjs';
+import { runtimeConfig, refreshRuntimeHealth } from './runtime.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
@@ -18,6 +19,7 @@ import { parseCandles, analyze } from './indicators.mjs';
 import { chartAvailable, createCandleCharts } from './charts.mjs';
 
 const historyPage = new HistoryPage();
+let decisionHistory=null,decisionHistoryStatus='loading',decisionHistoryBusy=false;
 const $ = id => document.getElementById(id);
 configureMotion();
 const mascot = new Mascot($('mascot'), $('mascot-drawer'));
@@ -505,7 +507,7 @@ function updateCompanion(current=liveBalance(publicAccount,effectiveQuotes())){
   const main=mainAccounts(publicAccount)[0],loss=summarizeAccounts(publicAccount)?.accounts[0]?.loss ?? null;
   const risk=main && main.status!=='未启动'?riskProgress(main):null,rule=publicAccount?.decisions?.symbols?.[coin];
   mascot.update({...publicAccount,dataDisconnected:errors.has('account'),now:Date.now(),offlineMinutes:config.offlineMinutes,events:eventsData?.events || []},team,{
-    route,coin,paused:Boolean(publicAccount?.pause?.paused),equity:current?.equity,daily:current?.daily,percent:current?.percent,source:current?.source,
+    route,coin,decisions:{summary:simData,history:decisionHistory,status:decisionHistoryStatus},paused:Boolean(publicAccount?.pause?.paused),equity:current?.equity,daily:current?.daily,percent:current?.percent,source:current?.source,
     positions:main?main.positions.length:null,loss:Number.isFinite(main?.daily_loss_limit)?{ratio:loss,limit:main.daily_loss_limit}:null,
     long:risk?.long,short:risk?.short,decision:rule?BIAS[rule.bias] || null:null,eventText,...simContext()});
 }
@@ -644,7 +646,9 @@ async function refreshEvents(){
 async function refreshSim(){
  if(simBusy)return;simBusy=true;
  try{
-  const response=await fetch(`${OKX_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
+  const runtime=await runtimeConfig();if(runtime.mode==='unavailable')throw new Error('运行环境配置无法读取');
+  const source=new URL(runtime.account_url||OKX_URL);source.searchParams.set('t',Math.floor(Date.now()/60000));
+  const response=await fetch(source,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
   if(!response.ok)throw new Error();const data=await response.json();if(!validOkx(data))throw new Error();
   const changes=okxChanges(simData,data);
   simData=data;$('sim-error').hidden=true;syncOkxMarks();pollOkxMarks();renderSim();updateCompanion();
@@ -728,7 +732,14 @@ document.addEventListener('visibilitychange',()=>{
  if(document.hidden){quoteStream?.stop();candleStream?.stop();quoteStreamKey='';candleStreamKey='';syncOkxMarks();}
  else {syncStreams();refreshPrices();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSim();if(['home','coin'].includes(route))refreshCandles(true);}
 });
-initTradeControls();navigate();refreshPrices();refreshEvents();
+async function refreshDecisionHistory(){
+ if(decisionHistoryBusy)return;decisionHistoryBusy=true;
+ try{const r=await fetch('./paper/history.json',{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error();const d=await r.json();if(d.schema_version!==1||!Array.isArray(d.alert_groups))throw new Error();decisionHistory=d;decisionHistoryStatus='ready';}
+ catch{decisionHistoryStatus='error';}finally{decisionHistoryBusy=false;updateCompanion();}
+}
+document.addEventListener('modi-decisions-open',refreshDecisionHistory);
+document.querySelector('[data-open-decisions]').addEventListener('click',()=>{mascot.select('decisions');mascot.open();});
+initTradeControls();refreshRuntimeHealth();navigate();refreshPrices();refreshEvents();
 setInterval(()=>{if(!document.hidden){refreshPrices();pollOkxMarks();renderPinnedBalance();updateStreamStatus();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
  if(['home','coin'].includes(route))refreshCandles();
@@ -736,6 +747,6 @@ setInterval(()=>{if(!document.hidden){
 }},60000);
 setInterval(()=>{if(!document.hidden){refreshHealth();if(route==='home')renderHome();
  for(const stream of [quoteStream,candleStream])if(stream?.state==='实时' && Date.now()-stream.lastData>45000)stream.socket?.close();
-}},10000);
+ refreshRuntimeHealth();}},10000);
 const updateClock = () => { if(route==='paper')historyPage.renderCountdown(); $('utc-clock').textContent = new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(Date.now()) + ' UTC+7'; $('day-number').textContent = 'DAY ' + dayNumber(config.startDate); };
 updateClock(); setInterval(updateClock, 1000);

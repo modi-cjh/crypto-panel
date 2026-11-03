@@ -27,6 +27,7 @@ import argparse
 import csv
 import json
 import math
+import os
 import re
 import subprocess
 import threading
@@ -35,6 +36,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from volume_test import profile as volume_profile, describe as describe_volume
+from runtime_guard import check_scan, atomic_json
 
 COINS = 'BTC ETH SOL XRP DOGE'.split()  # the five most liquid majors, chosen for the learning run
 INSTRUMENTS = [f'{c}-USDT-SWAP' for c in COINS]
@@ -73,7 +75,10 @@ _next_request = 0.0
 
 def okx_get(path, retries=5):
     global _next_request
+    if os.environ.get('PANEL_RUNTIME_CONTROL_FILE'):
+        retries = min(retries, 2)
     for attempt in range(retries):
+        check_scan()
         # Shared across scanner workers: comfortably below history-candles' 20 requests / 2 s.
         with _request_lock:
             delay = _next_request - time.monotonic()
@@ -81,7 +86,9 @@ def okx_get(path, retries=5):
                 time.sleep(delay)
             _next_request = time.monotonic() + .15
         try:
-            out = subprocess.run(['curl', '-sS', '-m', '20', 'https://www.okx.com/api/v5/' + path],
+            check_scan()
+            timeout = '5' if os.environ.get('PANEL_RUNTIME_CONTROL_FILE') else '20'
+            out = subprocess.run(['curl', '-sS', '-m', timeout, 'https://www.okx.com/api/v5/' + path],
                                  capture_output=True, text=True, check=True).stdout
             body = json.loads(out)
             if body.get('code') == '0':
@@ -518,12 +525,12 @@ def run_once(data_dir, fetch=fetch_okx, until=None, now=None, backfill_days=0, r
     if events:
         with (d / 'events.jsonl').open('a') as f:
             f.writelines(json.dumps(e, ensure_ascii=False) + '\n' for e in events)
-    (d / 'state.json').write_text(json.dumps(acct, ensure_ascii=False, indent=1, sort_keys=True))
+    atomic_json(d / 'state.json', acct)
     price_of = fetch_prices or (fetch_price if fetch is fetch_okx else None)
     prices = {k: price_of(k) for k in acct['positions']} if price_of and until is None else {}
     summary = dict(updated_at=now.isoformat(timespec='seconds').replace('+00:00', 'Z'), start_equity=START_EQUITY,
                    accounts={ACCOUNT: summarize(acct, data_dir, prices)})
-    (data_dir / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1))
+    atomic_json(data_dir / 'summary.json', summary)
     write_readme(data_dir, summary)
     write_dashboard(data_dir, summary)
     return summary

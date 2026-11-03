@@ -1,4 +1,5 @@
 import {ROLES} from './team.mjs';
+import {decisionsMarkup} from './decisions.mjs';
 const stamp=v=>Date.parse(v);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const fmt=(v,d=2)=>Number.isFinite(v)?v.toLocaleString('zh-CN',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
@@ -85,7 +86,7 @@ const GREETINGS=['嗨！我是 MODI 团队的小助手','今天也要按纪律�
 
 const svg=(id)=>`<svg viewBox="0 0 120 120" aria-hidden="true" focusable="false"><defs><clipPath id="m-clip-${id}"><rect x="26" y="30" width="68" height="36" rx="16"/></clipPath></defs><ellipse class="m-shadow" cx="60" cy="114" rx="24" ry="3.5"/><g class="m-float"><g class="m-body"><path class="m-line" d="M60 23V13"/><circle class="m-antenna" cx="60" cy="9" r="5"/><path class="m-arm m-arm-l" d="M38 78q-12 4-15 15"/><path class="m-arm m-arm-r" d="M82 78q12 4 15 15"/><g class="m-feet"><path class="m-leg" d="M50 99v8"/><path class="m-leg" d="M70 99v8"/></g><rect class="m-shell" x="38" y="70" width="44" height="31" rx="14"/><circle class="m-core" cx="60" cy="85" r="4.5"/><g class="m-head"><rect class="m-shell" x="18" y="22" width="84" height="52" rx="24"/><rect class="m-screen" x="26" y="30" width="68" height="36" rx="16"/><g clip-path="url(#m-clip-${id})"><path class="m-shine" d="M30 26h10L22 70H12Z"/></g><circle class="m-cheek" cx="35" cy="59" r="4"/><circle class="m-cheek" cx="85" cy="59" r="4"/><g class="m-eyes"><g class="m-blink"><g class="f f-normal m-ink"><rect x="40" y="40" width="9" height="14" rx="4.5"/><rect x="71" y="40" width="9" height="14" rx="4.5"/></g><g class="f f-happy m-stroke"><path d="M39 50q5.5-8 11 0M70 50q5.5-8 11 0"/></g><g class="f f-closed m-stroke"><path d="M39 48q5.5 4 11 0M70 48q5.5 4 11 0"/></g><g class="f f-dash m-stroke"><path d="M40 47h9M71 47h9"/></g><g class="f f-star m-ink"><path d="M44.5 38.5l2.2 4.7 5.1.6-3.8 3.5 1 5.1-4.5-2.6-4.5 2.6 1-5.1-3.8-3.5 5.1-.6z"/><path d="M75.5 38.5l2.2 4.7 5.1.6-3.8 3.5 1 5.1-4.5-2.6-4.5 2.6 1-5.1-3.8-3.5 5.1-.6z"/></g><g class="f f-wide m-ink"><circle cx="44.5" cy="47" r="6.5"/><circle cx="75.5" cy="47" r="6.5"/></g><g class="f f-sad"><path class="m-stroke" d="M38 41l10 3M82 41l-10 3"/><g class="m-ink"><rect x="41" y="45" width="7" height="9" rx="3.5"/><rect x="72" y="45" width="7" height="9" rx="3.5"/></g></g><g class="f f-dizzy m-stroke"><path d="M44.5 47m-5 0a5 5 0 1 0 5-5a3 3 0 1 0 3 3M75.5 47m-5 0a5 5 0 1 0 5-5a3 3 0 1 0 3 3"/></g></g></g><g class="m-mouth"><path class="f f-smile m-stroke" d="M54 58q6 5 12 0"/><path class="f f-grin m-ink" d="M52 56.5q8 9.5 16 0z"/><path class="f f-flat m-stroke" d="M55 59.5h10"/><path class="f f-frown m-stroke" d="M54 62q6-5 12 0"/><ellipse class="f f-o m-ink" cx="60" cy="59.5" rx="3.4" ry="4"/><path class="f f-wavy m-stroke" d="M53 60q2.3-2.5 4.7 0t4.6 0 4.7 0"/></g></g></g><g class="acc acc-zzz"><text x="86" y="20">Z</text><text x="97" y="11" font-size="9">z</text></g><g class="acc acc-alert"><path d="M104 4v13"/><circle cx="104" cy="23" r="2.6"/></g><path class="acc acc-tear" d="M83 62q3.4 5.5 0 8.6q-3.4-3.1 0-8.6z"/><g class="acc acc-wifi"><path d="M85 14q10-8 20 0M89 18q6-4.5 12 0"/><circle cx="95" cy="22" r="1.8"/><path d="M86 8l18 18"/></g><g class="acc acc-spark"><path d="M14 22l1.6 4 4 1.6-4 1.6-1.6 4-1.6-4-4-1.6 4-1.6z"/><path d="M104 30l1.2 3 3 1.2-3 1.2-1.2 3-1.2-3-3-1.2 3-1.2z"/></g><g class="acc acc-heart"><path d="M96 20c-3-4-9-1-6 4l6 5 6-5c3-5-3-8-6-4z"/><path d="M20 28c-2-2.6-6-.7-4 2.6l4 3.3 4-3.3c2-3.3-2-5.2-4-2.6z"/></g><g class="acc acc-sweat"><path d="M100 26q3.4 5 0 8q-3.4-3 0-8z"/></g><g class="acc acc-paper"><rect x="92" y="78" width="16" height="20" rx="2.5"/><path d="M95 84h10M95 88h10M95 92h7"/></g></g></svg>`;
 
-const TABS=[['status','状态'],['team','团队'],['feed','动态']];
+const TABS=[['status','状态'],['team','团队'],['decisions','异动 / 决策'],['feed','动态']];
 export class Mascot {
   constructor(host,panel,{size=72}={}) {
     this.host=host;this.panel=panel;this.size=size;this.value={state:'offline',label:'离线',message:'等待快照'};
@@ -94,6 +95,7 @@ export class Mascot {
     host.innerHTML=`<p id="mascot-bubble" class="companion-bubble" aria-hidden="true" hidden></p><button id="mascot-touch" class="companion-bot" type="button" aria-label="MODI 团队伙伴：点按打开面板，可拖动" aria-haspopup="dialog" aria-expanded="false">${svg('bot')}<span id="mascot-status" class="companion-chip">—</span></button>`;
     panel.innerHTML=`<header class="companion-head"><div class="companion-face m-host" aria-hidden="true">${svg('panel')}</div><div><h2 id="mascot-drawer-title">MODI 团队伙伴</h2><p id="companion-mood">—</p></div><button data-close type="button" aria-label="关闭面板">关闭</button></header><p id="companion-tip" class="companion-tip"></p><div class="companion-tabs" role="tablist" aria-label="伙伴面板">${TABS.map(([k,n])=>`<button type="button" role="tab" id="companion-tab-${k}" aria-controls="companion-panel-${k}" aria-selected="${k==='status'}" tabindex="${k==='status'?0:-1}">${n}</button>`).join('')}</div><section id="companion-panel-status" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-status"></section><section id="companion-panel-team" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-team" hidden><p id="team-updated" class="muted">等待团队数据</p><div id="mascot-report-list"></div></section><section id="companion-panel-feed" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-feed" hidden><ol id="companion-feed" class="companion-feed"></ol></section><div class="companion-foot"><button id="companion-dock" type="button">收进边缘</button></div>`;
     this.button=host.querySelector('#mascot-touch');this.bubble=host.querySelector('#mascot-bubble');this.face=panel.querySelector('.companion-face');
+    panel.querySelector('.companion-foot').insertAdjacentHTML('beforebegin','<section id="companion-panel-decisions" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-decisions" hidden></section>');
     this.eyes=host.querySelector('.m-eyes');
     this.restore();this.bindPointer();this.bindPanel();this.bindEyes();
     const media=matchMedia('(prefers-reduced-motion: reduce)');
@@ -263,12 +265,13 @@ export class Mascot {
     this.tab=tab;
     for(const [k] of TABS){const t=this.panel.querySelector('#companion-tab-'+k),on=k===tab;t.setAttribute('aria-selected',String(on));t.tabIndex=on?0:-1;this.panel.querySelector('#companion-panel-'+k).hidden=!on;}
     this.render();
+    if(tab==='decisions')document.dispatchEvent(new CustomEvent('modi-decisions-open'));
   }
   open(){this.render();if(!this.panel.open)this.panel.showModal();this.button.setAttribute('aria-expanded','true');}
   render(){
     this.panel.querySelector('#companion-mood').textContent=this.value.message;
     this.panel.querySelector('#companion-tip').textContent=contextTip(this.context);
-    if(this.tab==='status')this.renderStatus();else if(this.tab==='team')this.renderReports();else this.renderFeed();
+    if(this.tab==='status')this.renderStatus();else if(this.tab==='team')this.renderReports();else if(this.tab==='decisions')this.panel.querySelector('#companion-panel-decisions').innerHTML=decisionsMarkup(this.context.decisions);else this.renderFeed();
   }
   renderStatus(){
     const c=this.context,metric=(label,value,cls='')=>`<div><span>${label}</span><strong class="${cls}">${value}</strong></div>`;

@@ -1,0 +1,31 @@
+name: Validate dashboard and runtime package
+
+on:
+  push:
+    branches: [master]
+    paths: ['runtime/**', 'deploy/**', 'tools/**', 'assets/**', 'tests/**', 'index.html', 'runtime-config.json', '.github/workflows/validate-runtime.yml']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pip install -r runtime/requirements-test.txt
+      - run: python -m unittest discover -s tests
+      - run: npm test
+      - run: python tools/package_runtime.py --output crypto-panel-runtime.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crypto-panel-runtime
+          path: crypto-panel-runtime.zip

@@ -7,7 +7,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from okx_demo_trader import OKX, OKXError, Mirror, new_state, configure_volume_test, dashboard_actions
+from okx_demo_trader import OKX, OKXError, Mirror, new_state, configure_volume_test, dashboard_actions, decision_snapshot
+from runtime_guard import atomic_json
 
 
 def stop(data, client, wait=time.sleep):
@@ -16,13 +17,13 @@ def stop(data, client, wait=time.sleep):
     state = json.loads(path.read_text()) if path.exists() else new_state()
     targets = {k: m for k, m in state['mirrored'].items() if m['status'] == 'open'}
     state['paused'] = True
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=1))
+    atomic_json(path, state)
     public = out / 'summary.json'
     summary = json.loads(public.read_text()) if public.exists() else None
     control = dict(status='pending', requested_at=datetime.now(timezone.utc).isoformat())
     if summary:
         summary.update(paused=True, stop_control=control)
-        public.write_text(json.dumps(summary, ensure_ascii=False, indent=1))
+        atomic_json(public, summary)
     now = datetime.now(timezone.utc)
     mirror = Mirror(client, state, {'positions': {}}, now)
     error = None
@@ -54,16 +55,17 @@ def stop(data, client, wait=time.sleep):
     finally:
         state['paused'] = True
         state['stop_control'] = control
-        path.write_text(json.dumps(state, ensure_ascii=False, indent=1))
+        atomic_json(path, state)
         log = out / 'actions.jsonl'
         with log.open('a') as f:
             f.writelines(json.dumps(a, ensure_ascii=False) + '\n' for a in mirror.actions)
         if summary:
+            summary.update(decision_snapshot(data))
             rows = [json.loads(l) for l in log.read_text().splitlines()[-30:]]
             summary['recent_actions'], tests_closed = dashboard_actions(out, rows)
             summary.update(paused=True, stop_control=control, execution_test_trades=tests_closed,
                            closed_trades=sum(m['status'] == 'done' for m in state['mirrored'].values()) + tests_closed)
-            public.write_text(json.dumps(summary, ensure_ascii=False, indent=1))
+            atomic_json(public, summary)
     if error:
         raise OKXError(error)
     return control

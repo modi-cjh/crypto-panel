@@ -1,4 +1,5 @@
 export const STOP_WORKFLOW = 'https://github.com/modi-cjh/crypto-panel/actions/workflows/stop-demo.yml';
+import { runtimeConfig } from './runtime.mjs';
 
 export function executionProfileText(data, now = Date.now()) {
   const p = data?.execution_profile;
@@ -18,7 +19,7 @@ export function stopControlText(data) {
   if (data.paused && data.stop_control?.status === 'completed') return '程序持仓已全部平仓，交易已停止。';
   if (data.paused && data.stop_control?.status === 'pending') return '已暂停新开仓，正在等待平仓回执。';
   if (data.paused) return '当前已暂停新开仓，仍可执行全部平仓。';
-  return '全部平仓后保持暂停，需登录 GitHub 执行。';
+  return data.execution_runtime==='persistent'?'全部平仓后保持暂停，需登录控制台执行。':'全部平仓后保持暂停，需登录 GitHub 执行。';
 }
 
 export function renderTradeControls(data) {
@@ -29,7 +30,16 @@ export function renderTradeControls(data) {
 export function initTradeControls() {
   const dialog = document.getElementById('stop-dialog');
   document.querySelectorAll('[data-stop-demo]').forEach(el => {
-    el.addEventListener('click', () => dialog.showModal());
+    el.addEventListener('click', async () => {
+      dialog.showModal();
+      const config=await runtimeConfig(),direct=config.mode==='persistent';
+      document.getElementById('stop-github-instructions').hidden=direct||config.mode==='unavailable';
+      document.getElementById('stop-runtime-instructions').hidden=!direct;
+      document.getElementById('stop-config-error').hidden=config.mode!=='unavailable';
+      const link=document.getElementById('stop-workflow-link');link.hidden=config.mode==='unavailable';
+      link.href=direct?config.control_url:STOP_WORKFLOW;
+      link.textContent=direct?'前往控制台确认全部平仓并停止 ↗':'前往 GitHub 执行全部平仓并停止 ↗';
+    });
   });
   document.getElementById('stop-dialog-close').addEventListener('click', () => dialog.close());
   document.getElementById('stop-workflow-link').href = STOP_WORKFLOW;

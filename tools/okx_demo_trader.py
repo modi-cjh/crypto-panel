@@ -27,10 +27,12 @@ import re
 import subprocess
 import sys
 import time
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from pathlib import Path
 from volume_test import profile as volume_profile, describe as describe_volume
+from runtime_guard import entries_allowed, atomic_json
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -64,7 +66,7 @@ class OKX:
     """Minimal signed client for OKX demo trading."""
     def __init__(self, key, secret, passphrase, curl='curl', attempts=3):
         self.key, self.secret, self.passphrase, self.curl = key, secret, passphrase, curl
-        self.attempts = attempts
+        self.attempts = 1 if os.environ.get('PANEL_RUNTIME_CONTROL_FILE') else attempts
 
     def request(self, method, path, body=None):
         payload = json.dumps(body, separators=(',', ':')) if body is not None else ''
@@ -76,7 +78,8 @@ class OKX:
         if payload:
             config += 'data = "' + payload.replace('\\', '\\\\').replace('"', '\\"') + '"\n'
         for attempt in range(self.attempts):
-            out = subprocess.run([self.curl, '-sS', '-m', '20', '-K', '-'], input=config, capture_output=True, text=True)
+            timeout = '5' if os.environ.get('PANEL_RUNTIME_CONTROL_FILE') else '20'
+            out = subprocess.run([self.curl, '-sS', '-m', timeout, '-K', '-'], input=config, capture_output=True, text=True)
             if out.returncode == 0:
                 try:
                     return json.loads(out.stdout)
@@ -147,6 +150,32 @@ def dashboard_actions(out, actions):
     return sorted(unique.values(), key=lambda a: a['ts'], reverse=True)[:30], len(closed)
 
 
+def decision_snapshot(data):
+    """Publish only fixed signal fields, never source notes, chat or order identifiers."""
+    root = Path(data); rows = []
+    try:
+        with (root/'combined/events.jsonl').open() as f: lines = deque(f,maxlen=2000)
+    except OSError: lines = []
+    reasons = {'same_side_risk','max_positions','daily_halt','already_at_mean','insufficient_margin','stop','target','timeout'}
+    for line in lines:
+        try:
+            raw = json.loads(line)
+            if not isinstance(raw,dict) or not isinstance(raw.get('ts'),str): continue
+            if raw.get('type') not in {'signal','skip','daily_halt'}: continue
+            stamp = datetime.fromisoformat(raw['ts'].replace('Z','+00:00'))
+            if stamp.tzinfo is None: continue
+            inst = raw.get('inst')
+            if inst is not None and not re.fullmatch(r'[A-Z0-9]+-USDT-SWAP',inst): continue
+            rows.append(dict(ts=stamp.isoformat(),type=raw['type'],inst=inst,
+                             strategy=raw.get('strategy') if raw.get('strategy') in TAG else None,
+                             side=raw.get('side') if raw.get('side') in (-1,1) else None,
+                             reason=raw.get('reason') if raw.get('reason') in reasons else None))
+        except (ValueError,KeyError,TypeError): continue
+    try: updated = json.loads((root/'summary.json').read_text()).get('updated_at')
+    except (OSError,ValueError): updated = None
+    return dict(strategy_updated_at=updated,strategy_decisions=sorted(rows,key=lambda r:r['ts'],reverse=True)[:50])
+
+
 class Mirror:
     def __init__(self, client, state, paper, now, dry_run=False):
         self.c, self.s, self.paper, self.now, self.dry = client, state, paper, now, dry_run
@@ -158,6 +187,8 @@ class Mirror:
         self.actions.append(dict(ts=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), action=kind, inst=inst, dry_run=self.dry, **kw))
 
     def post(self, path, body):
+        if path == '/api/v5/trade/order' and body.get('attachAlgoOrds') and not entries_allowed():
+            return dict(code='RUNTIME_PAUSED', msg='New entries blocked by runtime stop latch', data=[])
         if self.dry:
             return {'code': '0', 'data': [{'sCode': '0', 'dry_run': True}]}
         return self.c.request('POST', path, body)
@@ -205,6 +236,8 @@ class Mirror:
 
     # ---- actions ---------------------------------------------------------------
     def open(self, key, inst, p):
+        if not entries_allowed():
+            return self.log('skip', inst, reason='runtime_paused')
         px = self.price(inst)
         side = p['side']
         if not px:
@@ -409,16 +442,17 @@ def main():
     if not dry and hasattr(mirror, 'equity'):
         mirror.record_equity()
     if not dry:
-        state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True))
+        atomic_json(state_path, state)
         with (out / 'actions.jsonl').open('a') as f:
             f.writelines(json.dumps(a, ensure_ascii=False) + '\n' for a in mirror.actions)
         if hasattr(mirror, 'equity'):
             summary = mirror.summary()
+            summary.update(decision_snapshot(args.data))
             lines = (out / 'actions.jsonl').read_text().splitlines()[-30:]
             summary['recent_actions'], tests_closed = dashboard_actions(out, [json.loads(l) for l in lines])
             summary['execution_test_trades'] = tests_closed
             summary['closed_trades'] += tests_closed
-            (out / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1))
+            atomic_json(out / 'summary.json', summary)
     if error:
         sys.exit(1)
 

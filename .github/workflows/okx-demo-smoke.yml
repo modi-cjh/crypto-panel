@@ -33,7 +33,7 @@ jobs:
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
           OKX_API_PASSPHRASE: ${{ secrets.OKX_API_PASSPHRASE }}
         run: python3 code/tools/okx_demo_smoke.py --output data/okx_demo/smoke-test-20261104.json
-      - name: Refresh dashboard from account and existing execution reports (read only)
+      - name: Refresh dashboard decisions, account and execution reports (read only)
         env:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
           OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}

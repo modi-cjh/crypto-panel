@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>MODI · 模拟交易控制台</title><link rel="stylesheet" href="/assets/runtime-console.css"><script type="module" src="/assets/runtime-console.mjs"></script></head>
+<body><main><a href="/">← 返回看板</a><h1>模拟交易控制台</h1><p class="note">仅控制 OKX 模拟账户。停止会关闭本程序管理的模拟仓位，并保持暂停。</p>
+<section id="login"><h2>管理员登录</h2><label>账号<input id="username" autocomplete="username" value="admin"></label><label>密码<input id="password" type="password" autocomplete="current-password"></label><button id="login-button" type="button">登录</button></section>
+<section id="controls" hidden><div class="heading"><h2>执行状态</h2><button id="logout-button" type="button">退出登录</button></div><p id="service-status">正在读取服务状态…</p><p id="heartbeat"></p><p id="cycle"></p><p id="account-state"></p>
+<button id="stop-button" type="button" class="danger">全部平仓并停止</button><button id="resume-button" type="button">恢复按策略交易</button>
+<h2>最新控制回执</h2><p id="receipt">暂无控制请求</p><p class="note">“请求已提交”表示后台已接收。只有回执显示完成才代表平仓已确认。恢复不会清除日亏停手限制。</p></section>
+<p id="message" role="status" aria-live="polite"></p></main></body></html>

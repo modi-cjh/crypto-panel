@@ -1,5 +1,11 @@
 __pycache__/
 *.pyc
+runtime-data/
+runtime-private/
+*.sqlite3
+*.sqlite3-*
+.env
+.env.*
 node_modules/
 .DS_Store
 paper/*.tmp

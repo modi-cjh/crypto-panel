@@ -1,0 +1,26 @@
+[Unit]
+Description=MODI demo trading runtime and authenticated control
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=crypto-panel
+Group=crypto-panel
+WorkingDirectory=/opt/crypto-panel
+EnvironmentFile=/etc/crypto-panel/runtime.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/crypto-panel/.venv/bin/python -m runtime.server
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=200
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/crypto-panel
+
+[Install]
+WantedBy=multi-user.target
