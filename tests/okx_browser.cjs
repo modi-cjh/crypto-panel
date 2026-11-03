@@ -54,6 +54,8 @@ let feed = {
   await page.waitForFunction(() => document.querySelector('#home-okx-positions').textContent.includes('+15.00 USDT'));
   assert.match(await page.locator('#home-okx-positions').innerText(), /标记价（实时）\s*70,500/);
   await page.waitForFunction(() => document.querySelector('#pinned-equity').textContent.trim() === '5,015.00');   // 5,012.50 − 12.50 + 15.00
+  // Exchange REST/WebSockets are blocked here, so the top-bar status comes from the demo price feed alone.
+  await page.waitForFunction(() => document.querySelector('#connection-text').textContent === '实时', null, { timeout: 12000 });
   await page.locator('#legacy-toggle').click();
   assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), true);   // original bot still reachable
   await page.locator('#legacy-toggle').click();

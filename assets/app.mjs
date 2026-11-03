@@ -54,6 +54,7 @@ let publicAccount = null, publicBusy = false;
 let team = null, teamBusy = false, teamRole = '', teamMeeting = '';
 const teamStateOptions = () => ({offlineMinutes:config.offlineMinutes,snapshotAt:publicAccount?.updated_at ?? snapshot?.updated_at ?? snapshot?.generated_at});
 let scanExpanded=false,signalsExpanded=false,eventsBusy=false,eventsData=null,simData=null,simBusy=false;
+const okxMarks=new Map();let okxMarkStream=null,okxMarkKey='',okxMarkFrame=0;   // OKX demo mark prices (see syncOkxMarks)
 let scan = null, scanBusy = false, scanSort = 'quote_24h', scanDirection = -1;
 function syncHomeCoin() {
   focusSymbol = meetingSymbol(team?.status.meeting, configuredSymbol, new Set([...tickers.map(t=>t.id),...(scan?.instruments || []).map(r=>r.instId)]));
@@ -201,7 +202,7 @@ async function refreshPrices() {
     if (!data.length) throw new Error('接口未返回有效 USDT 永续行情');
     const firstLoad = !tickers.length; tickers = data;
     top = data.filter(r => r.turnover !== null).sort((a, b) => b.turnover - a.turnover).slice(0, MARKET_SIZE).map((r, i) => ({ ...r, rank: i + 1 }));
-    priceAt = Date.now(); setError('prices', null);
+    priceAt = Date.now(); setError('prices', null); updateStreamStatus();
     $('price-updated').textContent = `${time(priceAt)} UTC+7 更新`;
     if (firstLoad) syncHomeCoin();
     renderMarket(); if (route === 'coin') renderQuote(); if (route === 'home') renderHome(); if (route === 'paper') historyPage.setPrices(tickers); if (route === 'sim' || route === 'home') renderSim(); // live PnL on paper positions
@@ -512,9 +513,11 @@ function simContext(){
 function updateStreamStatus(){
   const live=candleStream?.state==='实时' && Date.now()-candleStream.lastData<45000;
 
-  const quotesLive=quoteStream?.state==='实时' && Date.now()-quoteStream.lastData<45000;
-  $('connection-text').textContent=quotesLive?'实时':priceAt && Date.now()-priceAt<24000?'轮询':'离线';
-  $('connection-dot').className='dot '+(quotesLive || priceAt && Date.now()-priceAt<24000?'live':'error');
+  // Live when any price WebSocket (exchange quotes or the OKX demo mark prices) pushed recently; polling when the
+  // 8-second REST refresh is fresh. Recomputed on every refresh, so it cannot stick on a stale value.
+  const quotesLive=[quoteStream,okxMarkStream].some(s=>s?.state==='实时' && Date.now()-s.lastData<45000),polling=priceAt && Date.now()-priceAt<24000;
+  $('connection-text').textContent=quotesLive?'实时':polling?'轮询':'离线';
+  $('connection-dot').className='dot '+(quotesLive || polling?'live':'error');
   document.documentElement.classList.toggle('has-live-state',quotesLive || live || priceAt && Date.now()-priceAt<24000 || Object.keys(ROLES).some(r=>roleState(team,r,teamStateOptions()).state!=='offline'));
 }
 // Ticker and mark-price pushes arrive several times per second; render once per frame.
@@ -609,7 +612,6 @@ async function refreshSim(){
 // The OKX demo account takes over the home page while the original bot is paused, stopped or stale;
 // once the bot publishes fresh snapshots again, the original home page comes back on its own.
 // Demo-market mark prices for the OKX demo positions (demo prices differ from the live exchange).
-const okxMarks=new Map();let okxMarkStream=null,okxMarkKey='',okxMarkFrame=0;
 function syncOkxMarks(){
   const symbols=document.hidden?[]:[...new Set((simData?.positions || []).map(p=>p.inst))].sort(),key=symbols.join(',');
   if(key===okxMarkKey)return;
@@ -665,7 +667,7 @@ document.addEventListener('visibilitychange',()=>{
  else {syncStreams();refreshPrices();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSim();if(['home','coin'].includes(route))refreshCandles(true);}
 });
 navigate();refreshPrices();refreshEvents();
-setInterval(()=>{if(!document.hidden){refreshPrices();renderPinnedBalance();if(route==='home')renderHome();}},8000);
+setInterval(()=>{if(!document.hidden){refreshPrices();renderPinnedBalance();updateStreamStatus();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
  if(['home','coin'].includes(route))refreshCandles();
  refreshSnapshot();if(route==='paper')historyPage.refresh();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();refreshSim();
