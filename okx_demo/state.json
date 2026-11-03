@@ -10,11 +10,18 @@
  ],
  "mirrored": {
   "XRP-USDT-SWAP|1793718000000": {
+   "clOrdId": "mrxrp1793718000",
+   "contracts": "15.8",
    "inst": "XRP-USDT-SWAP",
-   "posSide": "net",
-   "reason": "too_old",
+   "leverage": 10,
+   "opened_at": 1793739297164,
+   "ordId": "4068035287708057600",
+   "posSide": "short",
    "side": -1,
-   "status": "skipped"
+   "status": "open",
+   "stop": 1.2918394291025557,
+   "strategy": "mean_reversion",
+   "target": 1.2557450000000001
   }
  },
  "paused": false,

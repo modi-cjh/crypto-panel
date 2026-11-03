@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-03T20:46:48Z",
+ "updated_at": "2026-11-03T20:54:57Z",
  "equity": 5000.0,
  "available": 5000.0,
  "day_start": 5000.0,
@@ -7,16 +7,56 @@
  "halted": false,
  "dry_run": false,
  "positions": [],
- "open_mirrors": [],
+ "open_mirrors": [
+  {
+   "inst": "XRP-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "mean_reversion",
+   "contracts": "15.8",
+   "stop": 1.2918394291025557,
+   "target": 1.2557450000000001,
+   "leverage": 10,
+   "clOrdId": "mrxrp1793718000",
+   "opened_at": 1793739297164,
+   "status": "open",
+   "ordId": "4068035287708057600",
+   "key": "XRP-USDT-SWAP|1793718000000"
+  }
+ ],
  "start_equity": 5000.0,
  "history": [
   [
    1793738808073,
    5000.0
+  ],
+  [
+   1793739297164,
+   5000.0
   ]
  ],
  "closed_trades": 0,
  "recent_actions": [
+  {
+   "ts": "2026-11-03T20:54:57Z",
+   "action": "open",
+   "inst": "XRP-USDT-SWAP",
+   "dry_run": false,
+   "side": -1,
+   "strategy": "mean_reversion",
+   "contracts": "15.8",
+   "price": 1.2602,
+   "stop": "1.2918",
+   "target": "1.2557",
+   "leverage": 10,
+   "risk_usdt": 50.0
+  },
+  {
+   "ts": "2026-11-03T20:54:57Z",
+   "action": "follow_current",
+   "inst": "-",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-03T19:34:40Z",
    "action": "skip",
