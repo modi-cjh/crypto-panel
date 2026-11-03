@@ -52,7 +52,7 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 
 ## 学习用模拟交易（GitHub Actions）
 
-`tools/paper_trader.py` 由 `.github/workflows/paper-trading.yml` 每 30 分钟（UTC 第 7、37 分钟）检查一次（只处理新的已收盘 K 线，重复运行无副作用），只读 OKX 公共 K 线，不需要密钥、不下单。**一个 100 USDT 的合并账户**由三套策略共同交易 5 个主流 USDT 永续（BTC、ETH、SOL、XRP、DOGE）：共享余额、同向风险上限与日亏停手，一个币同时只持一个仓（先发信号的策略开仓），每笔成交记录来源策略。1H 策略在每根 1 小时 K 线收盘后行动，日线策略在每个 UTC 日收盘后行动：
+`tools/paper_trader.py` 由 `.github/workflows/paper-trading.yml` 约每 5 分钟（cron `2-59/5`，GitHub 定时任务常有延迟）检查一次（只处理新的已收盘 K 线，重复运行无副作用），只读 OKX 公共 K 线，不需要密钥、不下单。**一个 100 USDT 的合并账户**由三套策略共同交易 5 个主流 USDT 永续（BTC、ETH、SOL、XRP、DOGE）：共享余额、同向风险上限与日亏停手，一个币同时只持一个仓（先发信号的策略开仓），每笔成交记录来源策略。1H 策略在每根 1 小时 K 线收盘后行动，日线策略在每个 UTC 日收盘后行动：
 
 - **均值回归**：看板 `assets/indicators.mjs` 的入场规则（RSI 25 / 趋势 2%），止损 1.5×ATR（0.5%–4%），止盈 20 根中轨，最长 24 小时。
 - **趋势突破只做多**：收盘突破前 48 小时高点且 EMA50 > EMA200，止损 2×ATR，3×ATR 跟随止损，最长 168 小时，最多 6 仓。
