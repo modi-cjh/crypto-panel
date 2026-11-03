@@ -189,6 +189,9 @@ function renderQuote() {
   const ticker = tickers.find(r => r.id === coin);
   $('coin-quote').innerHTML = ticker ? `<span class="${tone(ticker.change)}">${price(ticker.last)} USDT　${signed(ticker.change)}%</span>　<span class="muted">24h 变动 · ${time(priceAt)} UTC+7 更新</span>` : '等待该合约实时行情';
 }
+// Market page: top contracts by 24h turnover. Funding rates are one request per contract, so ranks past
+// FUNDING_FAST refresh every 3 minutes instead of every minute to stay well inside OKX's public rate limit.
+const MARKET_SIZE = 100, FUNDING_FAST = 30;
 async function refreshPrices() {
   if(route==='paper' && !mainAccounts(publicAccount).some(a=>a.status!=='已停止' && a.positions.length))return;
   if (priceBusy) return;
@@ -197,7 +200,7 @@ async function refreshPrices() {
     const data = normalizeTickers(await api.get('market/tickers', { instType: 'SWAP' }, 10));
     if (!data.length) throw new Error('接口未返回有效 USDT 永续行情');
     const firstLoad = !tickers.length; tickers = data;
-    top = data.filter(r => r.turnover !== null).sort((a, b) => b.turnover - a.turnover).slice(0, 30).map((r, i) => ({ ...r, rank: i + 1 }));
+    top = data.filter(r => r.turnover !== null).sort((a, b) => b.turnover - a.turnover).slice(0, MARKET_SIZE).map((r, i) => ({ ...r, rank: i + 1 }));
     priceAt = Date.now(); setError('prices', null);
     $('price-updated').textContent = `${time(priceAt)} UTC+7 更新`;
     if (firstLoad) syncHomeCoin();
@@ -210,7 +213,7 @@ async function refreshSlow() {
   if(route==='paper')return;
   if (slowBusy || !top.length) return;
   slowBusy = true;
-  const wanted = [...new Set([...top.map(r => r.id), ...(coin ? [coin] : [])])];
+  const wanted = [...new Set([...(coin ? [coin] : []), ...top.map(r => r.id)])], slowRank = new Set(top.slice(FUNDING_FAST).map(r => r.id));
   try {
     const tasks = [];
     if (Date.now() - slowAt >= 60000) tasks.push((async () => {
@@ -222,7 +225,7 @@ async function refreshSlow() {
         slowAt = at; setError('oi', null);
       } catch (error) { setError('oi', `持仓量：${description(error)}`); }
     })());
-    const due = wanted.filter(id => Date.now() - (funding.get(id)?.at || 0) >= 60000);
+    const due = wanted.filter(id => Date.now() - (funding.get(id)?.at || 0) >= (slowRank.has(id) && id !== coin ? 180000 : 60000));
     if (due.length) tasks.push((async () => {
       const results = await Promise.allSettled(due.map(async id => {
         const rows = await api.get('public/funding-rate', { instId: id });
@@ -235,7 +238,7 @@ async function refreshSlow() {
       setError('funding', failed.length ? `资金费率：${failed.length} 个合约获取失败` : null);
     })());
     await Promise.all(tasks);
-    $('slow-updated').textContent = `资金费率 / 持仓量 · 60 秒刷新 · ${slowAt ? '最近持仓数据 ' + time(slowAt) + ' UTC+7' : '持仓量等待获取'}`;
+    $('slow-updated').textContent = `持仓量与前 30 资金费率 60 秒刷新，其余资金费率 3 分钟 · ${slowAt ? '最近持仓数据 ' + time(slowAt) + ' UTC+7' : '持仓量等待获取'}`;
     if (route === 'market') renderMarket();
   } finally { slowBusy = false; }
 }

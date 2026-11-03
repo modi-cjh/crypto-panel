@@ -169,6 +169,10 @@
 - 资金曲线每 15 分钟存一个点（最多 3000 个，约 31 天），摘要里的曲线末尾总是最新一次运行的权益。
 - 看板：数据超过 90 分钟未更新即显示“数据延迟”（原 3 小时），文案改为“约每 5 分钟更新”。
 
+### PR #29 市场行情扩展到前 100
+- 市场行情页由成交额前 30 改为前 100（`MARKET_SIZE`）。行情与持仓量本来就是整批接口，请求数不变；资金费率是逐个合约请求，前 30 名每 60 秒刷新、第 31–100 名每 3 分钟刷新，并继续走共享限速队列（每 150 ms 一个、最多 3 个并发），不超过 OKX 公共接口限额。
+- 新增浏览器验收 `tests/market_browser.cjs`：120 个模拟合约只显示前 100、资金费率全部到齐且 2 秒内请求数 ≤ 20、搜索、320/390 无溢出。
+
 ---
 
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
@@ -193,6 +197,7 @@ python3 -m unittest discover -s tests -p 'test_*.py' # Python 单元测试
 python3 -m http.server 8008 --bind 127.0.0.1 &      # 浏览器验收前启动本地服务
 PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/okx_browser.cjs
+PANEL_URL=http://127.0.0.1:8008/ node tests/market_browser.cjs
 ```
 
 已知情况：`tests/team_browser.cjs`、`tests/browser_smoke.cjs` 在基线 `cc25dc5` 上就已失败（仍查找 v3 删除的角色卡），本次改动未改变其结果。
