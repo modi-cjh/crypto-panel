@@ -1,19 +1,19 @@
 {
- "updated_at": "2026-11-03T20:54:39Z",
+ "updated_at": "2026-11-03T20:59:59Z",
  "start_equity": 100.0,
  "accounts": {
   "combined": {
    "name": "合并账户",
-   "equity": 104.0191,
+   "equity": 103.8726,
    "cash": 103.979256,
-   "return_pct": 4.02,
+   "return_pct": 3.87,
    "max_drawdown_pct": 3.64,
    "closed_trades": 14,
    "win_rate_pct": 50.0,
    "avg_r": 0.282,
    "payoff": 1.7,
    "halted": false,
-   "last_bar": "2026-11-03T19:00:00Z",
+   "last_bar": "2026-11-03T20:00:00Z",
    "started": "2026-10-04T18:00:00Z",
    "live_since": "2026-11-03T18:27:45Z",
    "by_strategy": [
@@ -61,8 +61,8 @@
      "leverage": 10,
      "qty": 73.25057332750447,
      "margin": 9.358819,
-     "mark": 1.278,
-     "unrealized": -0.026046
+     "mark": 1.2791,
+     "unrealized": -0.106622
     }
    ],
    "pending": [],
