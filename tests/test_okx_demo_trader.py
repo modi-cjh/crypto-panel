@@ -1,0 +1,156 @@
+import json
+import sys
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+import okx_demo_trader as odt
+
+NOW = datetime(2026, 11, 4, 1, 30, tzinfo=timezone.utc)
+NOW_MS = int(NOW.timestamp() * 1000)
+SPECS = {'BTC-USDT-SWAP': dict(ctVal='0.01', lotSz='0.01', minSz='0.01', tickSz='0.1'), 'XRP-USDT-SWAP': dict(ctVal='100', lotSz='1', minSz='1', tickSz='0.0001')}
+
+
+class FakeOKX:
+    def __init__(self, equity=5000, positions=(), prices=None, algos=(), acct='2', perm='read_only,trade', pos_mode='long_short_mode'):
+        self.equity, self.positions, self.algos = equity, list(positions), list(algos)
+        self.prices = prices or {'BTC-USDT-SWAP': 70000.0, 'XRP-USDT-SWAP': 1.25}
+        self.acct, self.perm, self.pos_mode, self.posts = acct, perm, pos_mode, []
+
+    def request(self, method, path, body=None):
+        if method == 'POST':
+            self.posts.append((path, body))
+            return {'code': '0', 'data': [{'sCode': '0', 'ordId': '42'}]}
+        if path.startswith('/api/v5/account/config'):
+            return {'code': '0', 'data': [{'acctLv': self.acct, 'perm': self.perm, 'posMode': self.pos_mode}]}
+        if path.startswith('/api/v5/account/balance'):
+            return {'code': '0', 'data': [{'details': [{'ccy': 'USDT', 'eq': str(self.equity), 'availBal': str(self.equity)}]}]}
+        if path.startswith('/api/v5/account/positions'):
+            return {'code': '0', 'data': self.positions}
+        if path.startswith('/api/v5/trade/orders-algo-pending'):
+            return {'code': '0', 'data': self.algos if 'conditional' in path else []}
+        if path.startswith('/api/v5/public/instruments'):
+            inst = path.split('instId=')[1]
+            return {'code': '0', 'data': [SPECS[inst]]}
+        if path.startswith('/api/v5/market/ticker'):
+            return {'code': '0', 'data': [{'last': str(self.prices[path.split('instId=')[1]])}]}
+        raise AssertionError(path)
+
+
+def paper(**positions):
+    return {'positions': positions}
+
+
+def long_btc(opened_ago_min=30, stop=68600.0, **kw):
+    return dict(strategy='breakout_long', side=1, entry=70000.0, stop=stop, tp=None, leverage=10, opened=NOW_MS - opened_ago_min * 60_000, **kw)
+
+
+def run(fake, paper_state, state=None, action='run', dry=False):
+    state = state or dict(odt.new_state(), paused=False)
+    m = odt.Mirror(fake, state, paper_state, NOW, dry)
+    m.run(action)
+    return m, state
+
+
+class MirrorTests(unittest.TestCase):
+    def test_fresh_paper_entry_opens_isolated_with_exchange_stop_sized_to_one_percent(self):
+        fake = FakeOKX()
+        m, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        paths = [p for p, _ in fake.posts]
+        self.assertEqual(paths, ['/api/v5/account/set-leverage', '/api/v5/trade/order'])
+        order = fake.posts[1][1]
+        self.assertEqual((order['tdMode'], order['side'], order['posSide'], order['ordType']), ('isolated', 'buy', 'long', 'market'))
+        self.assertEqual(order['attachAlgoOrds'][0]['slTriggerPx'], '68600')
+        # 1% of 5000 = 50 USDT risk at a 2% stop -> 2500 USDT notional = 0.0357 BTC = 3.57 contracts of 0.01 BTC
+        self.assertEqual(order['sz'], '3.57')
+        self.assertLessEqual(int(fake.posts[0][1]['lever']), 10)
+        key = f"BTC-USDT-SWAP|{long_btc()['opened']}"
+        self.assertEqual(state['mirrored'][key]['status'], 'open')
+        # A second pass does not open again.
+        fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3.57')]; fake.posts.clear()
+        run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), state)
+        self.assertEqual(fake.posts, [])
+
+    def test_mean_reversion_short_attaches_target_and_net_mode_omits_pos_side(self):
+        fake = FakeOKX(pos_mode='net_mode')
+        p = dict(strategy='mean_reversion', side=-1, entry=1.25, stop=1.27, tp=1.23, leverage=10, opened=NOW_MS - 600_000)
+        run(fake, paper(**{'XRP-USDT-SWAP': p}))
+        order = fake.posts[-1][1]
+        self.assertEqual(order['side'], 'sell'); self.assertNotIn('posSide', order)
+        self.assertEqual(order['attachAlgoOrds'][0]['tpTriggerPx'], '1.23')
+
+    def test_old_or_crossed_entries_are_skipped_without_orders(self):
+        fake = FakeOKX()
+        _, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=180)}))
+        self.assertEqual(fake.posts, []); self.assertEqual(list(state['mirrored'].values())[0]['status'], 'skipped')
+        fake = FakeOKX(prices={'BTC-USDT-SWAP': 68500.0})          # already below the stop
+        m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        self.assertEqual(fake.posts, []); self.assertEqual(m.actions[-1]['reason'], 'stop_too_close_or_crossed')
+
+    def test_paper_close_closes_mirror_and_exchange_stop_is_never_reopened(self):
+        fake = FakeOKX(); _, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3.57')]; fake.posts.clear()
+        run(fake, paper(), state)                                     # paper position gone
+        self.assertEqual(fake.posts[0][0], '/api/v5/trade/close-position')
+        self.assertTrue(fake.posts[0][1]['autoCxl'])
+        fake2 = FakeOKX(); _, s2 = run(fake2, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        fake2.posts.clear()                                           # exchange stop hit: position vanished
+        run(fake2, paper(**{'BTC-USDT-SWAP': long_btc()}), s2)
+        self.assertEqual(fake2.posts, []); self.assertEqual(list(s2['mirrored'].values())[0]['status'], 'done')
+
+    def test_trailing_paper_stop_amends_the_exchange_stop_only_upwards_for_longs(self):
+        fake = FakeOKX(); _, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3.57')]
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1')]; fake.posts.clear()
+        run(fake, paper(**{'BTC-USDT-SWAP': long_btc(stop=69300.0)}), state)
+        self.assertEqual(fake.posts, [('/api/v5/trade/amend-algos', {'instId': 'BTC-USDT-SWAP', 'algoId': 'a1', 'newSlTriggerPx': '69300'})])
+        fake.posts.clear(); run(fake, paper(**{'BTC-USDT-SWAP': long_btc(stop=69000.0)}), state)   # never loosened
+        self.assertEqual(fake.posts, [])
+
+    def test_daily_loss_halt_flattens_and_blocks_entries_until_next_day(self):
+        fake = FakeOKX(); _, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3.57')]; fake.equity = 4500; fake.posts.clear()
+        m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), state)
+        self.assertTrue(state['halted']); self.assertEqual(fake.posts[0][0], '/api/v5/trade/close-position')
+        fake.positions = []; fake.posts.clear()
+        run(fake, paper(**{'XRP-USDT-SWAP': dict(strategy='mean_reversion', side=-1, entry=1.25, stop=1.27, tp=1.2, leverage=10, opened=NOW_MS - 60_000)}), state)
+        self.assertEqual(fake.posts, [])
+
+    def test_a_new_mirror_starts_paused_so_nothing_trades_before_resume(self):
+        fake = FakeOKX()
+        m, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), odt.new_state())
+        self.assertTrue(state['paused']); self.assertEqual(fake.posts, [])
+        m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), odt.new_state(), dry=True)   # dry-run previews what resume would do
+        self.assertEqual([a['action'] for a in m.actions], ['open']); self.assertEqual(fake.posts, [])
+
+    def test_dry_run_sends_nothing_and_unsafe_accounts_are_refused(self):
+        fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), dry=True)
+        self.assertEqual(fake.posts, []); self.assertEqual(m.actions[-1]['action'], 'open'); self.assertTrue(m.actions[-1]['dry_run'])
+        with self.assertRaises(odt.OKXError): run(FakeOKX(acct='1'), paper())
+        with self.assertRaises(odt.OKXError): run(FakeOKX(perm='read_only,trade,withdraw'), paper())
+
+    def test_manual_positions_are_left_alone_and_pause_flatten_work(self):
+        fake = FakeOKX(positions=[dict(instId='BTC-USDT-SWAP', posSide='long', pos='1')])
+        m, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        self.assertEqual(fake.posts, []); self.assertEqual(m.actions[-1]['reason'], 'exchange_position_exists_not_ours')
+        run(fake, paper(), state, action='flatten')                   # not ours: still untouched
+        self.assertEqual(fake.posts, []); self.assertTrue(state['paused'])
+        fake = FakeOKX(); _, state = run(fake, paper(), action='pause')
+        run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), state)
+        self.assertEqual(fake.posts, [])
+        run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), state, action='resume')
+        self.assertEqual(fake.posts[-1][0], '/api/v5/trade/order')
+
+    def test_signed_requests_carry_the_demo_header_and_keep_secrets_off_argv(self):
+        import tempfile
+        fake = Path(tempfile.mkdtemp()) / 'curl'
+        fake.write_text('#!/bin/sh\necho "$@" > "$(dirname "$0")/args"\ncat > "$(dirname "$0")/stdin"\necho \'{"code":"0","data":[]}\'\n')
+        fake.chmod(0o755)
+        odt.OKX('KEY1', 'SECRET1', 'PASS1', curl=str(fake)).request('POST', '/api/v5/trade/order', {'instId': 'BTC-USDT-SWAP', 'sz': '1'})
+        args, cfg = (fake.parent / 'args').read_text(), (fake.parent / 'stdin').read_text()
+        for s in ('KEY1', 'SECRET1', 'PASS1'): self.assertNotIn(s, args)
+        self.assertIn('x-simulated-trading: 1', cfg); self.assertIn('request = "POST"', cfg); self.assertIn('\\"instId\\"', cfg)
+
+
+if __name__ == '__main__':
+    unittest.main()

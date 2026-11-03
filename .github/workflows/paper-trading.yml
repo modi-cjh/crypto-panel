@@ -17,6 +17,11 @@ on:
         description: 'Start fresh accounts this many days ago and replay to now (0-90)'
         type: string
         default: '0'
+      okx_demo:
+        description: 'OKX demo mirror: run (default) / dry-run (log only) / pause / resume / flatten (close all and pause)'
+        type: choice
+        options: [run, dry-run, pause, resume, flatten]
+        default: run
 
 permissions:
   contents: write
@@ -56,6 +61,17 @@ jobs:
           if [ "$RESET" = "true" ]; then args+=(--reset); fi
           if [[ "$BACKFILL" =~ ^[0-9]+$ ]] && [ "$BACKFILL" -gt 0 ]; then args+=(--backfill-days "$BACKFILL"); fi
           python3 code/tools/paper_trader.py "${args[@]}"
+
+      # Mirrors the paper account onto OKX demo trading (simulated funds only). Skips itself when the
+      # OKX_* secrets are absent; a failure here never blocks committing the paper results.
+      - name: Mirror to OKX demo trading
+        continue-on-error: true
+        env:
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
+          OKX_API_PASSPHRASE: ${{ secrets.OKX_API_PASSPHRASE }}
+          ACTION: ${{ inputs.okx_demo || 'run' }}
+        run: python3 code/tools/okx_demo_trader.py --data data --action "$ACTION"
 
       - name: Commit results
         working-directory: data
