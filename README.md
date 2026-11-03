@@ -48,6 +48,17 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 - 单币研究已删除放量突破六条件，改为均值回归入场条件，阈值来自主力盘启用配置中的 `rsi`、`trend`。逐项展示连续 201 根原生 1H 已收盘样本、趋势偏离、EMA50 五根斜率 / ATR、ATR / 收盘、成交额倍数、前一根 RSI、布林带回归；同运行器 `bt60.engine.make_signal` 的 EWM `adjust=False`、布林标准差 `ddof=0`。RSI 多头 `< rsi`、空头 `> 100−rsi`；偏离 `|EMA50/EMA200−1| < trend`；斜率 `< 0.8`；ATR / 价格范围 0.2%–3.5%；成交额 ≥ 前20根均值0.8倍。4H 仅供研究，不判定原生1H执行条件。
 - 已删除归档回测表、归档行情30、旧四盘入口和突破参数。
 
+## 学习用模拟交易（GitHub Actions）
+
+`tools/paper_trader.py` 由 `.github/workflows/paper-trading.yml` 每小时（UTC 第 7 分钟）运行一次，只读 OKX 公共 K 线，不需要密钥、不下单。两个独立的 100 USDT 模拟账户跑同一批 23 个主流 USDT 永续：
+
+- **均值回归**：看板 `assets/indicators.mjs` 的入场规则（RSI 25 / 趋势 2%），止损 1.5×ATR（0.5%–4%），止盈 20 根中轨，最长 24 小时。
+- **趋势突破只做多**：收盘突破前 48 小时高点且 EMA50 > EMA200，止损 2×ATR，3×ATR 跟随止损，最长 168 小时，最多 6 仓。
+
+共同规则与研究回测一致：已收盘 K 线出信号、下一根开盘成交、每笔风险 1%、逐仓 10× / 5×、同向风险 ≤ 5%、每币一仓、UTC+7 日亏 8% 停手、单边 0.05% 手续费 + 0.02% 滑点。每次只处理比上次更新的 K 线，重复运行无副作用，漏跑的小时会自动补上。
+
+结果写入单独的 `paper-data` 分支（`master` 与看板不受影响）：`summary.json`、`README.md` 汇总表，以及每个账户的 `state.json`、`trades.csv`、`equity.csv`、`events.jsonl`。可在 Actions 页面手动运行（workflow_dispatch）。回测显示这两套规则在过去一年都不赚钱，这里仅用于观察执行与学习。
+
 ## 账户历史
 
 所有新增内容集中在 `#/paper` 的五个可折叠分区，手机使用卡片列表。
