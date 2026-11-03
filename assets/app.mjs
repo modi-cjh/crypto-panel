@@ -4,10 +4,10 @@ import { runtimeConfig, refreshRuntimeHealth } from './runtime.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
-import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-connect';
+import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-quotes443';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
-import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261104-connect';
+import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261104-quotes443';
 import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
@@ -28,7 +28,7 @@ const notify = (line, announce = line.text) => { toast(announce); mascot.say(lin
 const teamRecords=new NewRecords(),fillRecords=new NewRecords(),eventRecords=new NewRecords(),liveQuotes=new Map();
 let quoteStream=null,candleStream=null,quoteStreamKey='',candleStreamKey='',streamReason='';
 // Connection diagnostics (tap the status in the header): recent script errors and stream state changes.
-const BUILD='2026-11-04 · 行情与账户状态 v2',diagLog=[];
+const BUILD='2026-11-04 · 模拟行情 443 / 8443 双通道',diagLog=[];
 const diagNote=text=>{diagLog.push(`${new Date().toISOString().slice(11,19)}Z ${text}`);diagLog.splice(0,diagLog.length-12);};
 addEventListener('error',e=>diagNote(`脚本错误：${e.message || e.type}${e.filename?' @ '+e.filename.split('/').pop()+':'+e.lineno:''}`));
 addEventListener('unhandledrejection',e=>diagNote(`未处理的异常：${e.reason?.message || e.reason}`));
@@ -521,7 +521,7 @@ function simContext(){
 }
 const ago=ms=>ms?`${Math.round((Date.now()-ms)/1000)} 秒前`:'从未';
 function diagText(){
-  const ws=s=>s?`${s.state} · 最近数据 ${ago(s.lastData)} · 连续失败 ${s.failures}`:'未启动';
+  const ws=s=>s?`${s.state} · ${s.activeUrl||s.url} · 最近数据 ${ago(s.lastData)} · 连续失败 ${s.failures}`:'未启动';
   const marks=[...okxMarks].map(([k,v])=>`${k.split('-')[0]} ${v.price}（${ago(v.at)}）`).join('，') || '无';
   return [`版本：${BUILD}`,`时间：${new Date().toISOString()}`,`页面可见：${!document.hidden} · 路由：${route}`,`浏览器：${navigator.userAgent}`,
     `行情 REST：最近成功 ${ago(priceAt)} · 正在请求 ${priceBusy} · 合约数 ${tickers.length}`,`当前报错：${[...errors.values()].join(' / ') || '无'}`,
@@ -557,8 +557,8 @@ async function probeRest(url,headers={}){
 }
 $('diag-test').addEventListener('click',async()=>{
   const out=$('diag-test-out');out.textContent='测试中…（最多约 10 秒）';
-  const [rest,demoRest,live,demo]=await Promise.all([probeRest('https://www.okx.com/api/v5/public/time'),probeRest('https://www.okx.com/api/v5/public/mark-price?instType=SWAP&instId=XRP-USDT-SWAP',{'x-simulated-trading':'1'}),probeSocket('wss://ws.okx.com:8443/ws/v5/public','XRP-USDT-SWAP'),probeSocket(OKX_DEMO_PUBLIC_WS,'XRP-USDT-SWAP')]);
-  out.textContent=`REST www.okx.com：${rest}\n模拟盘 REST：${demoRest}\n真实盘 WS ws.okx.com：${live}\n模拟盘 WS wspap.okx.com：${demo}`;
+  const [rest,demoRest,live,demo,backup]=await Promise.all([probeRest('https://www.okx.com/api/v5/public/time'),probeRest('https://www.okx.com/api/v5/public/mark-price?instType=SWAP&instId=XRP-USDT-SWAP',{'x-simulated-trading':'1'}),probeSocket('wss://ws.okx.com:8443/ws/v5/public','XRP-USDT-SWAP'),probeSocket(OKX_DEMO_PUBLIC_WS,'XRP-USDT-SWAP'),probeSocket(OKX_DEMO_FALLBACK_WS,'XRP-USDT-SWAP')]);
+  out.textContent=`REST www.okx.com：${rest}\n模拟盘 REST：${demoRest}\n真实盘 WS ws.okx.com：${live}\n模拟盘 WS wspap.okx.com：${demo}\n模拟盘 WS 8443 备用：${backup}`;
   $('diag-body').textContent=diagText();
 });
 function updateStreamStatus(){
@@ -674,7 +674,7 @@ function syncOkxMarks(){
   if(key===okxMarkKey)return;
   okxMarkStream?.stop();okxMarkStream=null;okxMarkKey=key;
   if(!symbols.length)return;
-  okxMarkStream=new PublicStream({url:OKX_DEMO_PUBLIC_WS,args:symbols.map(instId=>({channel:'mark-price',instId})),maxFailures:config.wsMaxFailures,onState:(state,reason)=>{diagNote(`模拟盘标记价 WS：${state}${reason?' · '+reason:''}`);updateStreamStatus();},onData:body=>{
+  okxMarkStream=new PublicStream({url:OKX_DEMO_PUBLIC_WS,fallbackUrls:[OKX_DEMO_FALLBACK_WS],connectTimeout:8000,args:symbols.map(instId=>({channel:'mark-price',instId})),maxFailures:config.wsMaxFailures,onState:(state,reason)=>{diagNote(`模拟盘标记价 WS：${state}${reason?' · '+reason:''}`);updateStreamStatus();},onData:body=>{
     const id=body.arg?.instId,row=body.data[0],value=number(row?.markPx);
     if(!symbols.includes(id) || !(value>0))return false;
     okxMarks.set(id,{price:value,at:Date.now()});

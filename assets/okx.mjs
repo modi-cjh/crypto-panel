@@ -42,7 +42,8 @@ export const okxStart = d => finite(num(d?.start_equity)) && d.start_equity > 0 
 // OKX demo trading has its own markets: its prices differ from the live exchange (XRP was 1.2686 on demo vs 1.2811 live).
 // Floating PnL therefore uses demo mark prices (marks: Map inst -> {price, at}, from the demo public WebSocket), which is
 // also what OKX itself uses for unrealised PnL; without a fresh demo mark it shows the values recorded on the last run.
-export const OKX_DEMO_PUBLIC_WS = 'wss://wspap.okx.com:8443/ws/v5/public';
+export const OKX_DEMO_PUBLIC_WS = 'wss://wspap.okx.com/ws/v5/public';
+export const OKX_DEMO_FALLBACK_WS = 'wss://wspap.okx.com:8443/ws/v5/public';
 const MARK_FRESH = 30000;
 export function okxLive(d, marks = new Map(), now = Date.now()) {
   const positions = d.positions.map(p => {

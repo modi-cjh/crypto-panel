@@ -108,3 +108,12 @@ test('实时 K 线只替换最后一根或追加；成交/持仓标记映射到�
  const timestamp=new Date(210000).toISOString();const d={accounts:[{id:'paper_main',positions:[{...p,entry_time:timestamp}],fills:[{symbol:p.symbol,kind:'open',side:1,timestamp}]}]};
  const markers=tradeMarkers(d,p.symbol,bars);assert.equal(markers.length,1);assert.equal(markers[0].time,200);assert.match(markers[0].text,/开仓多/);
 });
+
+test('demo WebSocket starts on 443 and can recover through a separately allowed fallback',()=>{
+ const urls=[];class Socket{constructor(url){urls.push(url);this.readyState=1;Socket.last=this;}send(){}close(){this.onclose?.();}}
+ const primary='wss://wspap.okx.com/ws/v5/public',backup='wss://wspap.okx.com:8443/ws/v5/public';
+ const stream=new PublicStream({url:primary,fallbackUrls:[backup],args:[],WebSocketImpl:Socket,now:()=>now,onData:()=>true});
+ stream.later=(fn,ms)=>{stream.pending={fn,ms};};stream.start();assert.equal(urls[0],primary);
+ Socket.last.onclose();assert.equal(stream.pending.ms,1000);stream.pending.fn();assert.equal(urls[1],backup);
+ Socket.last.onmessage({data:JSON.stringify({data:[{markPx:'1.27'}]})});assert.equal(stream.state,'实时');assert.equal(stream.activeUrl,backup);stream.stop();
+});

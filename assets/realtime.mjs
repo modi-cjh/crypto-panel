@@ -2,20 +2,22 @@ import { mainAccounts } from './account.mjs';
 // OKX public read-only transport. Open sockets are not evidence of live data.
 export const backoffDelay = failures => Math.min(30000,1000*2**Math.max(0,failures-1));
 export class PublicStream {
-  constructor({url,args,onData=()=>{},onState=()=>{},maxFailures=4,WebSocketImpl=globalThis.WebSocket,now=()=>Date.now()}){
-    Object.assign(this,{url,args,onData,onState,maxFailures,WebSocketImpl,now});
+  constructor({url,args,fallbackUrls=[],connectTimeout=12000,onData=()=>{},onState=()=>{},maxFailures=4,WebSocketImpl=globalThis.WebSocket,now=()=>Date.now()}){
+    Object.assign(this,{url,args,fallbackUrls,connectTimeout,onData,onState,maxFailures,WebSocketImpl,now});
+    this.endpointIndex=0;
     this.failures=0;this.lastData=0;this.state='离线';this.stopped=true;this.timers=new Set();
   }
   stateChange(state,reason){this.state=state;this.onState(state,reason);}
   later(fn,ms){const id=setTimeout(()=>{this.timers.delete(id);fn();},ms);this.timers.add(id);return id;}
-  start(){this.stop();this.stopped=false;this.failures=0;this.connect();}
+  start(){this.stop();this.stopped=false;this.failures=0;this.endpointIndex=0;this.connect();}
   connect(){
     if(this.stopped)return;
     this.stateChange('离线',this.failures?'连接中断，指数退避重连':'等待首条实时数据');
     let socket;
-    try {socket=new this.WebSocketImpl(this.url);this.socket=socket;}catch{this.failed();return;}
+    this.activeUrl=[this.url,...this.fallbackUrls][this.endpointIndex];
+    try {socket=new this.WebSocketImpl(this.activeUrl);this.socket=socket;}catch{this.failed();return;}
     let received=this.now(),payloadAt=this.now();
-    const timeout=this.later(()=>socket.close(),12000);
+    const timeout=this.later(()=>socket.close(),this.connectTimeout);
     socket.onopen=()=>{socket.send(JSON.stringify({op:'subscribe',args:this.args}));heartbeat();};
     const heartbeat=()=>this.later(()=>{
       if(this.stopped || socket!==this.socket)return;
@@ -39,9 +41,10 @@ export class PublicStream {
     if(this.stopped)return;
     for(const timer of this.timers)clearTimeout(timer);this.timers.clear();
     this.failures++;
+    this.endpointIndex=(this.endpointIndex+1)%(1+this.fallbackUrls.length);
     if(this.failures>=this.maxFailures){
       this.stateChange('轮询','实时连接连续失败，回退 REST；60 秒后重新尝试 WebSocket');
-      this.later(()=>{this.failures=0;this.connect();},60000);return;
+      this.later(()=>{this.failures=0;this.endpointIndex=0;this.connect();},60000);return;
     }
     this.stateChange('离线','连接中断，指数退避重连');this.later(()=>this.connect(),backoffDelay(this.failures));
   }
