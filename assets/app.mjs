@@ -53,7 +53,7 @@ const teamStateOptions = () => ({offlineMinutes:config.offlineMinutes,snapshotAt
 let scanExpanded=false,signalsExpanded=false;
 let scan = null, scanBusy = false, scanSort = 'quote_24h', scanDirection = -1;
 function syncHomeCoin() {
-  focusSymbol = meetingSymbol(team?.status.meeting, configuredSymbol);
+  focusSymbol = meetingSymbol(team?.status.meeting, configuredSymbol, new Set([...tickers.map(t=>t.id),...(scan?.instruments || []).map(r=>r.instId)]));
   const universe = chartUniverse(publicAccount, scan, focusSymbol);
   const active = new Set(universe.choices.filter(c=>c.held || c.pending).map(c=>c.id));
   if (!universe.choices.some(c => c.id === manualHomeCoin) || previousActive.has(manualHomeCoin) && !active.has(manualHomeCoin)) manualHomeCoin = null;
@@ -189,10 +189,11 @@ async function refreshPrices() {
   try {
     const data = normalizeTickers(await api.get('market/tickers', { instType: 'SWAP' }, 10));
     if (!data.length) throw new Error('接口未返回有效 USDT 永续行情');
-    tickers = data;
+    const firstLoad = !tickers.length; tickers = data;
     top = data.filter(r => r.turnover !== null).sort((a, b) => b.turnover - a.turnover).slice(0, 30).map((r, i) => ({ ...r, rank: i + 1 }));
     priceAt = Date.now(); setError('prices', null);
     $('price-updated').textContent = `${time(priceAt)} UTC+7 更新`;
+    if (firstLoad) syncHomeCoin();
     renderMarket(); if (route === 'coin') renderQuote(); if (route === 'home') renderHome(); if (route === 'paper') historyPage.setPrices(tickers);
     if (['home', 'market', 'coin'].includes(route)) refreshSlow();
   } catch (error) { setError('prices', `行情：${description(error)}`); if (!tickers.length) renderMarket();if(route==='paper')historyPage.setPrices([]);if(route==='home')renderPublicHome(); }
@@ -262,7 +263,6 @@ async function refreshCandles(force = false) {
     const bars = parseCandles(await api.get('market/candles', { instId: id, bar, limit: 300 }, 8));
     if (!bars.length) throw new Error('接口未返回有效 K 线');
     const at = Date.now(); candleCache.set(key, { bars, at });
-    if (id === focusSymbol && bar === '1H') setError('technical', null);
     if (route === 'home') renderHome();
     if (!['home', 'coin'].includes(route) || coin !== id || timeframe !== bar) return;
     // 同一合约被离开又进入时也可使用刚完成的数据。
@@ -352,7 +352,7 @@ function renderPublicHome() {
   $('home-snapshot-status').textContent=publicAccount?`${stale || sourceStale?'数据可能延迟 · ':''}${time(publicAccount.updated_at)} UTC+7`:'暂无快照时间';
   $('home-snapshot-status').className=stale || sourceStale?'stale':'muted';
   const positions=mainAccounts(publicAccount).filter(a=>a.status!=='未启动').flatMap(a=>a.positions.map(p=>{
-    const quote=quoteFor(p,liveQuotes,a.status==='已停止'?[]:tickers,a.status==='已停止' || errors.has('prices')?0:priceAt);
+    const quote=a.status==='已停止'?{mark:p.mark_price,source:'快照标记价 · 已停止'}:quoteFor(p,liveQuotes,tickers,errors.has('prices')?0:priceAt);
     return {...p,...positionAmounts(p,quote.mark),source:quote.source};
   }));
   $('live-position-count').textContent=summary?positions.length+' 仓':'—';
@@ -393,18 +393,6 @@ function renderDecisions() {
   $('decisions-panel').innerHTML=`<p>${escape(d.meeting || '暂无会议名称')} · 版本 ${escape(d.version || '—')}</p><small>${time(d.updated_at)} UTC+7</small><p>全局仓位系数 ${num(d.global_size_factor)}</p>${Object.entries(d.symbols).map(([symbol,r])=>`<article><strong>${escape(symbol.replace('-USDT-SWAP',''))} · ${bias[r.bias] || '—'}</strong><small>仓位系数 ${num(r.size_factor)}</small><p>${escape(r.note || '暂无')}</p></article>`).join('') || '<p>暂无币种决议</p>'}<h3>事件窗口</h3>${windows.length?windows.map(w=>`<article><span class="${Date.parse(w.start)<=Date.now()?'down':'muted'}">${Date.parse(w.start)<=Date.now()?'生效中':'待生效'} · ${escape(w.symbols.join(' / '))}</span><p>${time(w.start)} → ${time(w.end)} UTC+7</p><small>${escape(w.reason || '暂无原因')}</small></article>`).join(''):'<p class="muted">暂无</p>'}`;
 }
 
-async function refreshTechnical() {
-  const key = focusSymbol + '/1H', cached = candleCache.get(key);
-  if (cached && Date.now() - cached.at < 60000 || candleBusy.has(key)) return;
-  candleBusy.add(key);
-  try {
-    const bars = parseCandles(await api.get('market/candles', { instId: focusSymbol, bar: '1H', limit: 300 }, 8));
-    if (!bars.length) throw new Error('接口未返回有效 K 线');
-    candleCache.set(key, { bars, at: Date.now() }); setError('technical', null);
-    if (route === 'home') { renderHome(); if (coin === focusSymbol && timeframe === '1H') showCandles(bars, candleCache.get(key).at); }
-  } catch (error) { setError('technical', `技术卡：${description(error)}`); }
-  finally { candleBusy.delete(key); }
-}
 function navigate() {
   routeVersion++;
   const hash = location.hash || '#/';
@@ -432,7 +420,7 @@ function navigate() {
     renderDecisions();
     const cached = candleCache.get(coin + '/' + timeframe); if (cached) showCandles(cached.bars, cached.at);
     refreshCandles(); refreshSlow();
-    if (route === 'home') { syncHomeCoin(); refreshTeam(); refreshScan(); renderHome(); refreshTechnical(); if (snapshot) renderEquity(); }
+    if (route === 'home') { syncHomeCoin(); refreshTeam(); refreshScan(); renderHome(); if (snapshot) renderEquity(); }
   } else if (route === 'paper') { historyPage.refresh(); }
   else { renderMarket(); refreshSlow(); }
   if (route === 'home' || route === 'paper') refreshSnapshot();
@@ -487,6 +475,15 @@ function updateStreamStatus(){
   $('connection-dot').className='dot '+(quotesLive || priceAt && Date.now()-priceAt<24000?'live':'error');
   document.documentElement.classList.toggle('has-live-state',quotesLive || live || priceAt && Date.now()-priceAt<24000 || Object.keys(ROLES).some(r=>roleState(team,r,teamStateOptions()).state!=='offline'));
 }
+// Ticker and mark-price pushes arrive several times per second; render once per frame.
+let liveRenderPending=false;
+function scheduleLiveRender(){
+  if(liveRenderPending)return;liveRenderPending=true;
+  requestAnimationFrame(()=>{
+    liveRenderPending=false;
+    renderPinnedBalance();if(route==='paper')historyPage.setPrices([...liveQuotes].filter(([,q])=>Date.now()-q.at<45000).map(([id,q])=>({id,last:q.price})));if(route==='home')renderPublicHome();if(route==='coin')renderQuote();
+  });
+}
 function syncStreams(){
   if(document.hidden)return;
   const symbols=[...new Set([...(route==='paper'?[]:[coin]),...pendingOrders(publicAccount,scan).map(p=>p.symbol),...mainAccounts(publicAccount).filter(a=>!['未启动','已停止','暂停'].includes(a.status)).flatMap(a=>a.positions.map(p=>p.symbol))])].filter(Boolean).sort();
@@ -500,8 +497,8 @@ function syncStreams(){
         if(!(value>0) || !at || Date.now()-at>45000 || at>Date.now()+60000)return false;
         const previous=liveQuotes.get(id);if(previous && previous.at>at)return false;
         liveQuotes.set(id,{price:value,at});
-        const ticker=tickers.find(t=>t.id===id);if(ticker)ticker.last=value;
-        renderPinnedBalance();if(route==='paper')historyPage.setPrices([...liveQuotes].filter(([,q])=>Date.now()-q.at<45000).map(([id,q])=>({id,last:q.price})));if(route==='home')renderPublicHome();if(route==='coin')renderQuote();
+        if(body.arg?.channel==='tickers'){const ticker=tickers.find(t=>t.id===id);if(ticker)ticker.last=value;}
+        scheduleLiveRender();
         return true;
       }});quoteStream.start();
   }

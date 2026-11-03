@@ -23,10 +23,13 @@ export function scanRows(data, filter = 'all', key = 'quote_24h', direction = -1
     return (typeof av === 'string' ? av.localeCompare(bv) : av-bv)*direction || a.instId.localeCompare(b.instId);
   });
 }
-export function meetingSymbol(meeting, fallback) {
+// Bare tokens such as "P3", "RSI" or "FOMC" are only accepted when they name a
+// known instrument; an unknown instId would break the shared WebSocket subscription.
+export function meetingSymbol(meeting, fallback, known = null) {
   const full = typeof meeting === 'string' && meeting.match(/\b[A-Z][A-Z0-9]*-USDT-SWAP\b/);
   if (full) return full[0];
-  const coin = typeof meeting === 'string' && meeting.match(/\b[A-Z][A-Z0-9]{1,14}\b/g)?.find(s => !['UTC','USDT','OKX','AI'].includes(s));
+  if (!known?.size) return fallback;
+  const coin = typeof meeting === 'string' && meeting.match(/\b[A-Z][A-Z0-9]{1,14}\b/g)?.find(s => known.has(s+'-USDT-SWAP'));
   return coin ? coin+'-USDT-SWAP' : fallback;
 }
 export function chartUniverse(account, scan, meeting) {

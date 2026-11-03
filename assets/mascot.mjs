@@ -11,7 +11,7 @@ export function mascotState(snapshot) {
   if(pause?.paused || account.status==='暂停')return {state:'paused',label:'暂停',message:'模拟盘暂停中'};
   const recent=t=>Number.isFinite(stamp(t)) && now-stamp(t)>=0 && now-stamp(t)<=15*60000;
   const events=snapshot.events || [];
-  if(events.some(e=>recent(e.ts) && (e.type==='trade_closed' || e.type==='liquidated') && /止损|stop|强平/.test(e.reason??e.type)) || (account.trades||[]).some(t=>recent(t.timestamp) && /stop|liquidat/.test(t.reason)))return {state:'sad',label:'刚止损',message:'刚刚止损，按风控计划休息一下'};
+  if(events.some(e=>recent(e.ts) && (e.type==='trade_closed' || e.type==='liquidated') && /止损|stop|强平/.test(e.reason??e.type)))return {state:'sad',label:'刚止损',message:'刚刚止损，按风控计划休息一下'};
   if(events.some(e=>recent(e.ts) && e.type==='trade_opened') || (account.fills||[]).some(f=>f.kind==='open' && recent(f.timestamp)) || (account.positions||[]).some(p=>recent(p.entry_time)))return {state:'excited',label:'刚开仓',message:'刚开仓，正在关注持仓'};
   const wakes=(snapshot.alerts || events).filter(a=>a.wake===true && recent(a.ts));
   if(wakes.length)return {state:'alert',label:'发现异动',message:`刚发现 ${wakes.length} 条异动`};

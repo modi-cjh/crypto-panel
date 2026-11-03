@@ -41,3 +41,9 @@ test('账户为持仓真源：实盘和空仓不混入扫描快照的旧模拟�
  assert.equal(chartUniverse(live,stale,'ZEC-USDT-SWAP').defaultSymbol,'ZEC-USDT-SWAP');
  assert.equal(chartUniverse(live,stale,'ZEC-USDT-SWAP').choices.some(c=>c.id==='OLD-USDT-SWAP' && c.held),false);
 });
+test('会议名中的裸词只在已知合约中才作为焦点币',()=>{
+  const fallback='ZEC-USDT-SWAP',known=new Set(['BTC-USDT-SWAP','ETH-USDT-SWAP']);
+  for(const name of ['P3 风控复盘','RSI 背离讨论','FOMC 事件会议'])assert.equal(meetingSymbol(name,fallback,known),fallback);
+  assert.equal(meetingSymbol('BTC 复盘',fallback),fallback);
+  assert.equal(meetingSymbol('P2 · BTC 复盘',fallback,known),'BTC-USDT-SWAP');
+});

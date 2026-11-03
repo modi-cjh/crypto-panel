@@ -1,5 +1,5 @@
 import { coinIcon } from './coins.mjs';
-import {localDay} from './account.mjs';
+import {localDay,isolatedPnL} from './account.mjs';
 const finite=Number.isFinite;
 export const closeReason=code=>({stop:'止损',stop_live:'止损',stop_loss:'止损',target:'止盈',target_live:'止盈',take_profit:'止盈',timeout:'到期',expired:'到期',manual:'手动',manual_close:'手动',paused_flatten:'手动（暂停平仓）',decision_close:'手动',decision_ban:'手动（决议禁开）',liquidation_live:'强平',liquidation:'强平',liquidated:'强平'})[code] || code || '—';
 export function equityRange(points,range='all',now=Date.now()) {
@@ -119,7 +119,10 @@ export class HistoryPage {
   renderRisk(){
     if(!$('history-risk'))return;
     const a=this.account?{...this.account,positions:this.account.positions.map(p=>({...p,mark_price:this.account.status==='已停止'?p.mark_price:this.prices.get(p.symbol)??p.mark_price}))}:null;
-    if(a && a.status!=='已停止' && a.positions.every(p=>finite(p.mark_price)) && finite(a.balance))a.equity=a.balance+a.positions.reduce((sum,p)=>sum+Math.max(-p.margin,p.side*p.qty*(p.mark_price-p.entry)),0);
+    if(a && a.status!=='已停止' && finite(a.balance)){
+      const pnl=a.positions.map(p=>isolatedPnL(p,p.mark_price));
+      if(pnl.every(finite))a.equity=a.balance+pnl.reduce((sum,n)=>sum+n,0);
+    }
     const risk=riskProgress(a);
     $('history-overview').innerHTML=metric(a?.status==='已停止'?'主力盘历史权益':'主力盘权益',fmt(a?.equity)+' USDT')+metric('现金余额',fmt(a?.balance)+' USDT')+metric('当前持仓',a?.status==='暂停'?'无持仓（已暂停）':a?a.positions.length+' 仓':'—');
     const bar=(label,r)=>`<div class="history-risk-row"><div><span>${label}</span><strong class="${r.used>=100?'down':''}">${r.ratio===null?'—':fmt(r.ratio*100)+'%'} / ${fmt(r.limit*100,0)}%</strong></div><progress max="100" value="${r.used??0}" aria-label="${label}" ${r.used===null?'data-missing="true"':''}></progress><small>${r.ratio===null?'缺少有效基准':`剩余 ${fmt(r.remaining*100)} 个百分点`}${r.amount==null?'':' · 风险 '+fmt(r.amount)+' USDT'}</small></div>`;
