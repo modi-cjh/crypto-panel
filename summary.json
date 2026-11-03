@@ -1,71 +1,72 @@
 {
- "updated_at": "2026-11-03T17:49:39Z",
+ "updated_at": "2026-11-03T18:27:45Z",
  "start_equity": 100.0,
  "accounts": {
-  "mean_reversion": {
-   "name": "均值回归",
-   "equity": 105.8699,
-   "cash": 105.993562,
-   "return_pct": 5.87,
-   "max_drawdown_pct": 3.2,
-   "closed_trades": 11,
-   "win_rate_pct": 63.6,
-   "avg_r": 0.539,
-   "payoff": 1.49,
+  "combined": {
+   "name": "合并账户",
+   "equity": 103.5723,
+   "cash": 103.979256,
+   "return_pct": 3.57,
+   "max_drawdown_pct": 3.64,
+   "closed_trades": 14,
+   "win_rate_pct": 50.0,
+   "avg_r": 0.282,
+   "payoff": 1.7,
    "halted": false,
-   "last_bar": "2026-11-03T16:00:00Z",
-   "started": "2026-10-04T15:00:00Z",
-   "live_since": "2026-11-03T15:21:00Z",
+   "last_bar": "2026-11-03T17:00:00Z",
+   "started": "2026-10-04T18:00:00Z",
+   "live_since": "2026-11-03T18:27:45Z",
+   "by_strategy": [
+    {
+     "key": "mean_reversion",
+     "name": "均值回归",
+     "pnl": 5.9732,
+     "positions": 1,
+     "closed_trades": 11,
+     "win_rate_pct": 63.6,
+     "avg_r": 0.539,
+     "payoff": 1.5
+    },
+    {
+     "key": "breakout_long",
+     "name": "趋势突破只做多",
+     "pnl": -1.994,
+     "positions": 0,
+     "closed_trades": 3,
+     "win_rate_pct": 0.0,
+     "avg_r": -0.656,
+     "payoff": null
+    },
+    {
+     "key": "breakout_daily",
+     "name": "日线趋势突破",
+     "pnl": 0,
+     "positions": 0,
+     "closed_trades": 0,
+     "win_rate_pct": null,
+     "avg_r": null,
+     "payoff": null
+    }
+   ],
    "open_positions": [
     {
      "inst": "XRP-USDT-SWAP",
+     "strategy": "mean_reversion",
+     "strategy_name": "均值回归",
      "side": -1,
      "entry": 1.27764442,
      "stop": 1.29183943,
      "target": 1.255745,
      "opened": "2026-11-03T15:00:00Z",
      "leverage": 10,
-     "qty": 74.6695976119303,
-     "margin": 9.540119,
-     "mark": 1.2849,
-     "unrealized": -0.541771
+     "qty": 73.25057332750447,
+     "margin": 9.358819,
+     "mark": 1.2821,
+     "unrealized": -0.326374
     }
    ],
-   "pending": []
-  },
-  "breakout_long": {
-   "name": "趋势突破只做多",
-   "equity": 98.0216,
-   "cash": 98.021573,
-   "return_pct": -1.98,
-   "max_drawdown_pct": 3.68,
-   "closed_trades": 3,
-   "win_rate_pct": 0.0,
-   "avg_r": -0.656,
-   "payoff": null,
-   "halted": false,
-   "last_bar": "2026-11-03T16:00:00Z",
-   "started": "2026-10-04T15:00:00Z",
-   "live_since": "2026-11-03T15:21:00Z",
-   "open_positions": [],
-   "pending": []
-  },
-  "breakout_daily": {
-   "name": "日线趋势突破",
-   "equity": 100.0,
-   "cash": 100.0,
-   "return_pct": 0.0,
-   "max_drawdown_pct": 0.0,
-   "closed_trades": 0,
-   "win_rate_pct": null,
-   "avg_r": null,
-   "payoff": null,
-   "halted": false,
-   "last_bar": "2026-11-02T00:00:00Z",
-   "started": "2026-10-04T00:00:00Z",
-   "live_since": "2026-11-03T15:21:00Z",
-   "open_positions": [],
-   "pending": []
+   "pending": [],
+   "pending_detail": []
   }
  }
 }

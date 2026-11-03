@@ -1,0 +1,28 @@
+{
+ "cash": 103.97925551513298,
+ "day": "2026-11-04",
+ "day_start": 103.57230609496618,
+ "halted": false,
+ "last_marks": {
+  "XRP-USDT-SWAP": 1.2832
+ },
+ "last_ts": 1793725200000,
+ "live_since": "2026-11-03T18:27:45Z",
+ "pending": {},
+ "positions": {
+  "XRP-USDT-SWAP": {
+   "bars": 3,
+   "entry": 1.2776444200000001,
+   "leverage": 10,
+   "margin": 9.358818627368693,
+   "opened": 1793718000000,
+   "qty": 73.25057332750447,
+   "risk": 1.0397925551513298,
+   "side": -1,
+   "stop": 1.2918394291025557,
+   "strategy": "mean_reversion",
+   "tp": 1.2557450000000001
+  }
+ },
+ "started": "2026-10-04T18:00:00Z"
+}
