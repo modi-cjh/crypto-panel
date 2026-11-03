@@ -67,3 +67,13 @@ test('simChanges narrates new opens, closes and halts once; simFeed lists them n
   const feed = simFeed(after);
   assert.equal(feed.length, 4); assert.ok(feed.every((r, i) => i === 0 || feed[i - 1].ts >= r.ts));
 });
+
+test('combined curve starts where every account has data and carries earlier values forward', () => {
+  const hourly = account({ curve: [[now - 7200e3, 100], [now - 3600e3, 101]] });
+  const daily = account({ curve: [[now - 86400e3, 100]] });              // one older daily point only
+  const svg = simCurveSVG(data({ mean_reversion: hourly, breakout_daily: daily }));
+  const lines = [...svg.matchAll(/points="([^"]+)"/g)].map(m => m[1].split(' '));
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0][0].split(',')[0], lines[1][0].split(',')[0]);   // both start at the left edge
+  assert.match(simCurveSVG(data({ a: account({ curve: [[now, 100]] }), b: account({ curve: [[now, 100]] }) })), /第一根新 K 线后出现/);
+});

@@ -50,10 +50,15 @@ export function simCardsMarkup(data) {
 }
 
 export function simCurveSVG(data) {
-  const series = Object.entries(data.accounts).map(([key, a]) => ({ key, name: a.name, pts: a.curve })).filter(s => s.pts.length);
+  const raw = Object.entries(data.accounts).map(([key, a]) => ({ key, name: a.name, pts: a.curve })).filter(s => s.pts.length);
+  if (raw.flatMap(s => s.pts).length < 2) return '<p class="empty">资金曲线将在第一根新 K 线后出现（每小时更新）</p>';
+  // Start where every account has data (a daily account's first point is a day older than the hourly ones);
+  // an account carries its last earlier value forward to that start.
+  const start = Math.max(...raw.map(s => s.pts[0][0]));
+  const series = raw.map(s => { const before = s.pts.filter(p => p[0] <= start).at(-1); return { ...s, pts: [[start, before[1]], ...s.pts.filter(p => p[0] > start)] }; });
   const all = series.flatMap(s => s.pts);
-  if (all.length < 2) return '<p class="empty">资金曲线将在第一根新 K 线后出现（每小时更新）</p>';
-  const t0 = Math.min(...all.map(p => p[0])), t1 = Math.max(...all.map(p => p[0])) || t0 + 1;
+  const t0 = start, t1 = Math.max(...all.map(p => p[0]));
+  if (t1 === t0) return '<p class="empty">资金曲线将在第一根新 K 线后出现（每小时更新）</p>';
   const vals = all.map(p => p[1]), lo = Math.min(...vals, 100), hi = Math.max(...vals, 100), pad = Math.max((hi - lo) * .12, .5);
   const W = 680, H = 230, L = 52, R = 12, T = 14, B = 34, x = t => L + (t - t0) / ((t1 - t0) || 1) * (W - L - R), y = v => T + (hi + pad - v) / (hi - lo + pad * 2) * (H - T - B);
   const grid = [hi + pad, 100, lo - pad].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="${v === 100 ? 'sim-base' : 'equity-grid'}"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt(v)}</text>`).join('');
@@ -122,4 +127,10 @@ export function simFeed(data, limit = 20) {
     ...a.trades.map(t => ({ ts: Date.parse(t.exit_time), text: `${a.name} 平仓 ${coin(t.inst)} ${sideText(t.side)} ${signed(t.pnl)} USDT`, mood: t.pnl < 0 ? 'sad' : 'happy' })),
     ...a.open_positions.map(p => ({ ts: Date.parse(p.opened), text: `${a.name} 开仓 ${coin(p.inst)} ${sideText(p.side)} @ ${+p.entry.toPrecision(6)}`, mood: 'excited' })),
   ]).filter(r => finite(r.ts)).sort((x, y) => y.ts - x.ts).slice(0, limit);
+}
+
+// Orders signalled on the last closed bar that fill at the next bar's open.
+export function simPendingText(data) {
+  const rows = Object.values(data?.accounts || {}).flatMap(a => (a.pending || []).map(inst => `${a.name} ${coin(inst)}`));
+  return rows.length ? `待成交（下一根 K 线开盘模拟成交）：${rows.join('、')}` : '';
 }

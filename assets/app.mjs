@@ -2,7 +2,7 @@ import { HomePositions, equitySVG, rangePoints } from './home.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
-import { SIM_URL, SIM_COLORS, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simTotals, simMascotState, simChanges, simFeed } from './sim.mjs';
+import { SIM_URL, SIM_COLORS, SIM_STALE, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simTotals, simMascotState, simChanges, simFeed, simPendingText } from './sim.mjs';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs';
@@ -474,7 +474,17 @@ function renderPinnedBalance(){
   $('pinned-time').textContent=publicAccount?`${stale?'延迟 · ':''}${time(publicAccount.updated_at)} UTC+7`:'— UTC+7';
   $('pinned-time').className=stale?'stale':'';
   if(route==='home')rollNumber($('total-equity'),current?.equity);
+  if(simPrimary())renderPinnedSim();
+  else $('pinned-label-text').textContent='主力盘余额';
   updateCompanion(current);
+}
+function renderPinnedSim(){
+  const t=simTotals(simData),stale=Date.now()-Date.parse(simData.updated_at)>SIM_STALE;
+  $('pinned-label-text').textContent='模拟盘合计';$('pinned-mode').textContent=`${t.count} 账户`;
+  rollNumber($('pinned-equity'),t.equity);
+  $('pinned-daily').textContent=`收益 ${signed(t.ret)}% · 持仓 ${t.positions}`;$('pinned-daily').className=tone(t.ret);
+  $('pinned-source').textContent='学习用模拟 · 每小时更新';
+  $('pinned-time').textContent=`${stale?'延迟 · ':''}${time(simData.updated_at)} UTC+7`;$('pinned-time').className=stale?'stale':'';
 }
 const BIAS={long:'偏多',short:'偏空',watch:'观察',ban:'禁开仓'};
 function updateCompanion(current=liveBalance(publicAccount,effectiveQuotes())){
@@ -588,8 +598,31 @@ async function refreshSim(){
  }catch{if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='模拟交易数据暂时读取失败，保留已有数据，稍后自动重试。';}}
  finally{simBusy=false;}
 }
+// The paper accounts take over the home page while the original bot is paused, stopped or stale;
+// once the bot publishes fresh snapshots again, the original home page comes back on its own.
+function simPrimary(){
+  if(!simData)return false;
+  const main=mainAccounts(publicAccount)[0];
+  return !publicAccount || Boolean(publicAccount.pause?.paused) || ['暂停','已停止','未启动'].includes(main?.status) || isStale(publicAccount.updated_at,Date.now(),config.offlineMinutes);
+}
+let showLegacy=false;
+$('legacy-toggle').addEventListener('click',()=>{showLegacy=!showLegacy;renderSim();});
 function renderSim(){
- $('sim-summary').hidden=!simData;if(simData)$('sim-summary').innerHTML=simSummaryMarkup(simData);
+ const primary=simPrimary();
+ document.documentElement.classList.toggle('sim-primary',primary);document.documentElement.classList.toggle('show-legacy',primary && showLegacy);
+ $('sim-summary').hidden=!simData || primary;if(simData)$('sim-summary').innerHTML=simSummaryMarkup(simData);
+ $('home-sim').hidden=!primary;
+ $('legacy-toggle').textContent=showLegacy?'收起原主力盘':'显示原主力盘（crypto-bot · 已暂停）';$('legacy-toggle').setAttribute('aria-expanded',String(showLegacy));
+ if(primary && route==='home'){
+  const t=simTotals(simData),prices=errors.has('prices')?0:priceAt;
+  $('sim-total-equity').textContent=num(t.equity);
+  $('sim-total-ret').innerHTML=`合计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
+  $('sim-total-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;
+  $('home-sim-curve').innerHTML=simCurveSVG(simData);$('home-sim-cards').innerHTML=simCardsMarkup(simData);
+  const pending=simPendingText(simData);$('home-sim-pending').hidden=!pending;$('home-sim-pending').textContent=pending;
+  $('home-sim-positions').innerHTML=simPositionsMarkup(simData,tickers,prices);$('home-sim-trades').innerHTML=simTradesMarkup(simData,10);
+ }
+ renderPinnedBalance();
  if(route!=='sim')return;
  if(!simData){$('sim-cards').innerHTML='<p class="empty">正在读取模拟账户…</p>';return;}
  $('sim-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;

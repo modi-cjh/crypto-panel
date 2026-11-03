@@ -16,12 +16,23 @@ let feed = { ...base, updated_at: new Date().toISOString() };
   const page = await context.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(BASE);
-  await page.waitForSelector('#sim-summary:not([hidden])');
-  assert.match(await page.locator('#sim-summary').innerText(), /3 个账户/);
-  await page.locator('#sim-summary').click();
+  // The original bot snapshot is paused, so the paper accounts lead the home page.
+  await page.waitForSelector('#home-sim:not([hidden])');
+  assert.ok(await page.evaluate(() => document.documentElement.classList.contains('sim-primary')));
+  assert.equal(await page.locator('#pause-banner').isVisible(), false);
+  assert.equal(await page.locator('#sim-summary').isVisible(), false);
+  assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), false);
+  assert.equal(await page.locator('#home-sim .sim-card').count(), 3);
+  assert.match(await page.locator('#pinned-label-text').innerText(), /模拟盘合计/);
+  assert.match(await page.locator('#pinned-equity').innerText(), /285\.25/);
+  await page.locator('#legacy-toggle').click();
+  assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), true);   // original bot still reachable
+  await page.locator('#legacy-toggle').click();
+  assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), false);
+  await page.locator('[data-nav="sim"]').click();
   await page.waitForSelector('#sim-page:not([hidden]) .sim-card');
   assert.equal(await page.locator('[data-nav="sim"]').getAttribute('aria-current'), 'page');
-  assert.equal(await page.locator('.sim-card').count(), 3);
+  assert.equal(await page.locator('#sim-page .sim-card').count(), 3);
   assert.equal(await page.locator('#sim-curve polyline').count(), 3);
   assert.ok(await page.locator('#sim-trades li').count() > 0);
   assert.equal(await page.locator('#pause-banner').isVisible(), false); // the old bot's banner does not leak onto this page
@@ -46,5 +57,5 @@ let feed = { ...base, updated_at: new Date().toISOString() };
   assert.match(await page.locator('#sim-error').innerText(), /读取失败/);
   assert.deepEqual(errors, []);
   await browser.close();
-  console.log('模拟交易页验收通过：首页摘要、导航、三账户卡片、三条资金曲线、持仓与成交、旧暂停横幅不外溢、320/360/390 无溢出、伙伴跟随模拟盘并播报平仓、读取失败提示、pageerror=0。');
+  console.log('模拟交易页验收通过：首页以模拟盘为主（旧暂停横幅与旧区块收起、顶栏合计余额、可展开原主力盘）、导航、三账户卡片、三条资金曲线、持仓与成交、旧暂停横幅不外溢、320/360/390 无溢出、伙伴跟随模拟盘并播报平仓、读取失败提示、pageerror=0。');
 })().catch(e => { console.error(e); process.exit(1); });
