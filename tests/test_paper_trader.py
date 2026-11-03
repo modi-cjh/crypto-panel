@@ -246,6 +246,9 @@ class PaperTraderTests(unittest.TestCase):
         self.assertAlmostEqual(low['unrealized'], -pos['margin'], places=5)  # capped at the posted margin
         dash = json.loads((Path(self.tmp) / 'dashboard.json').read_text())['accounts']['breakout_long']['open_positions'][0]
         self.assertIn('unrealized', dash)
+        acct = s['accounts']['breakout_long']
+        self.assertAlmostEqual(acct['cash'] + p['unrealized'], acct['cash'] + pos['qty'] * pos['entry'] * .01, places=5)
+        self.assertIn('cash', dash and json.loads((Path(self.tmp) / 'dashboard.json').read_text())['accounts']['breakout_long'])
 
 
 if __name__ == '__main__':

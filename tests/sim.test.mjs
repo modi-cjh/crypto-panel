@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validSim, livePnl, simTotals, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simMascotState, simChanges, simFeed, simLiveSince, simBackfillNote } from '../assets/sim.mjs';
+import { validSim, livePnl, simTotals, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simMascotState, simChanges, simFeed, simLiveSince, simBackfillNote, liveEquity } from '../assets/sim.mjs';
 
 const now = Date.parse('2026-11-03T15:00:00Z');
 const account = (over = {}) => ({ name: '日线趋势突破', rules: '20 日新高', equity: 101.5, return_pct: 1.5, max_drawdown_pct: .8, closed_trades: 1, win_rate_pct: 100, avg_r: 1.5,
@@ -96,4 +96,15 @@ test('without a fresh browser price, positions fall back to the price recorded b
   const html = simPositionsMarkup(data({ x: account({ open_positions: [p] }) }), [], 0, now);
   assert.match(html, /最新价（/); assert.match(html, /-2\.00 USDT \/ -40\.00%/);
   assert.match(simPositionsMarkup(data({ x: account() }), [], 0, now), /等待行情/);   // nothing recorded yet
+});
+
+test('account equity moves with live prices: cash plus floating PnL, recorded equity as fallback', () => {
+  const a = account({ cash: 100, equity: 101, open_positions: [{ ...account().open_positions[0], mark: 101, unrealized: 1 }] });
+  assert.deepEqual(liveEquity(a, [{ id: 'BTC-USDT-SWAP', last: 103 }], now - 1000, now), { equity: 103, live: true });
+  assert.deepEqual(liveEquity(a, [], 0, now), { equity: 101, live: false });              // recorded price
+  assert.equal(liveEquity(account({ equity: 101.5 }), [{ id: 'BTC-USDT-SWAP', last: 103 }], now - 1000, now).equity, 101.5);  // no cash yet
+  assert.equal(liveEquity(account({ cash: 100, open_positions: [] }), [], 0, now).equity, 100);
+  const totals = simTotals(data({ a, b: account({ cash: 99, equity: 99, open_positions: [] }) }), [{ id: 'BTC-USDT-SWAP', last: 103 }], now - 1000, now);
+  assert.equal(totals.equity, 202); assert.ok(Math.abs(totals.ret - 1) < 1e-9);
+  assert.match(simCardsMarkup(data({ a }), [{ id: 'BTC-USDT-SWAP', last: 103 }], now - 1000, now), /103\.00[\s\S]*\+3\.00%/);
 });
