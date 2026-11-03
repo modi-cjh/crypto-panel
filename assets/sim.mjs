@@ -1,7 +1,10 @@
 // Learning-only paper accounts produced hourly by tools/paper_trader.py on the paper-data branch.
 import { coinIcon } from './coins.mjs';
 export const SIM_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/dashboard.json';
-export const SIM_COLORS = { mean_reversion: '#c53045', breakout_long: '#916000', breakout_daily: '#087c50' };
+export const SIM_COLORS = { combined: '#06727d', mean_reversion: '#c53045', breakout_long: '#916000', breakout_daily: '#087c50' };
+// In the combined account every position and trade names the strategy that made it.
+const who = (a, item) => item.strategy_name || a.name;
+const colorOf = (key, item) => SIM_COLORS[item.strategy] || SIM_COLORS[key] || '#06727d';
 const finite = Number.isFinite;
 const symbol = s => typeof s === 'string' && /^[A-Z0-9]+-USDT-SWAP$/.test(s);
 const stamp = t => typeof t === 'string' && finite(Date.parse(t));
@@ -53,14 +56,19 @@ export function simTotals(data, tickers = [], priceAt = 0, now = Date.now()) {
 export function simSummaryMarkup(data, tickers, priceAt, now = Date.now()) {
   if (!data) return '';
   const t = simTotals(data, tickers, priceAt, now);
-  return `<span class="eyebrow">PAPER / 学习用模拟交易</span><strong>${t.count} 个账户 · 合计 ${fmt(t.equity)} USDT <span class="${tone(t.ret)}">${signed(t.ret)}%</span></strong><small>持仓 ${t.positions} · 已平仓 ${t.trades} 笔 · 更新 ${time(data.updated_at)} UTC+7 · 查看详情 →</small>`;
+  return `<span class="eyebrow">PAPER / 学习用模拟交易</span><strong>${t.count === 1 ? esc(Object.values(data.accounts)[0].name) + ' · 权益' : t.count + ' 个账户 · 合计'} ${fmt(t.equity)} USDT <span class="${tone(t.ret)}">${signed(t.ret)}%</span></strong><small>持仓 ${t.positions} · 已平仓 ${t.trades} 笔 · 更新 ${time(data.updated_at)} UTC+7 · 查看详情 →</small>`;
 }
 
 export function simCardsMarkup(data, tickers, priceAt, now = Date.now()) {
   return Object.entries(data.accounts).map(([key, a]) => ({ key, a, eq: liveEquity(a, tickers, priceAt, now).equity })).map(({ key, a, eq }) => `<article class="history-card sim-card" style="--sim-color:${SIM_COLORS[key] || '#06727d'}"><div class="history-card-head"><h3><i class="sim-dot" aria-hidden="true"></i>${esc(a.name)}</h3>${a.halted ? '<span class="pill down">今日停手</span>' : ''}</div><p class="panel-caption">${esc(a.rules)}</p><div class="history-metrics">` +
     [['权益 USDT', fmt(eq)], ['收益', `${signed((eq / (data.start_equity || 100) - 1) * 100)}%`, tone(eq - (data.start_equity || 100))], ['最大回撤', `${fmt(a.max_drawdown_pct)}%`, a.max_drawdown_pct > 0 ? 'down' : ''], ['已平仓', `${a.closed_trades} 笔`],
      ['胜率', a.win_rate_pct == null ? '—' : `${fmt(a.win_rate_pct, 1)}%`], ['平均 R', a.avg_r == null ? '—' : signed(a.avg_r)]]
-      .map(([k, v, c = '']) => `<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('') + `</div><small class="muted">持仓 ${a.open_positions.length} · 最新 K 线 ${time(a.last_bar)} UTC+7</small></article>`).join('');
+      .map(([k, v, c = '']) => `<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('') + `</div>${strategyBreakdown(a)}<small class="muted">持仓 ${a.open_positions.length} · 最新 K 线 ${time(a.last_bar)} UTC+7</small></article>`).join('');
+}
+
+function strategyBreakdown(a) {
+  if (!Array.isArray(a.by_strategy) || !a.by_strategy.length) return '';
+  return `<table class="sim-strategies"><thead><tr><th>策略</th><th>已平仓</th><th>胜率</th><th>盈亏 USDT</th><th>持仓</th></tr></thead><tbody>${a.by_strategy.map(b => `<tr><td><i class="sim-dot" style="--sim-color:${SIM_COLORS[b.key] || '#06727d'}"></i>${esc(b.name)}</td><td>${b.closed_trades}</td><td>${b.win_rate_pct == null ? '—' : fmt(b.win_rate_pct, 1) + '%'}</td><td class="${tone(b.pnl)}">${signed(b.pnl)}</td><td>${b.positions}</td></tr>`).join('')}</tbody></table>`;
 }
 
 export function simCurveSVG(data) {
@@ -78,24 +86,24 @@ export function simCurveSVG(data) {
   const grid = [hi + pad, 100, lo - pad].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="${v === 100 ? 'sim-base' : 'equity-grid'}"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt(v)}</text>`).join('');
   const lines = series.map(s => `<polyline points="${s.pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ')}" fill="none" stroke="${SIM_COLORS[s.key] || '#06727d'}" stroke-width="2" vector-effect="non-scaling-stroke"/>`).join('');
   const b = simLiveSince(data), live = b && b.live > t0 && b.live <= t1 ? `<line x1="${x(b.live).toFixed(1)}" x2="${x(b.live).toFixed(1)}" y1="${T}" y2="${H - B}" class="sim-live"/><text x="${(x(b.live) - 4).toFixed(1)}" y="${T + 10}" text-anchor="end" class="sim-live-label">← 历史补跑</text><text x="${(x(b.live) + 4).toFixed(1)}" y="${T + 10}" class="sim-live-label">实时 →</text>` : '';
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="三个模拟账户资金曲线">${grid}${live}${lines}<text x="${L}" y="${H - 10}">${time(new Date(t0).toISOString())}</text><text x="${W - R}" y="${H - 10}" text-anchor="end">${time(new Date(t1).toISOString())} UTC+7</text></svg>` +
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="模拟盘资金曲线">${grid}${live}${lines}<text x="${L}" y="${H - 10}">${time(new Date(t0).toISOString())}</text><text x="${W - R}" y="${H - 10}" text-anchor="end">${time(new Date(t1).toISOString())} UTC+7</text></svg>` +
     `<div class="sim-legend">${series.map(s => `<span><i style="background:${SIM_COLORS[s.key]}"></i>${esc(s.name)}</span>`).join('')}</div>`;
 }
 
 export function simPositionsMarkup(data, tickers, priceAt, now = Date.now()) {
-  const rows = Object.entries(data.accounts).flatMap(([key, a]) => a.open_positions.map(p => ({ key, account: a.name, ...p, ...livePnl(p, tickers, priceAt, now) })));
+  const rows = Object.entries(data.accounts).flatMap(([key, a]) => a.open_positions.map(p => ({ key, account: who(a, p), color: colorOf(key, p), ...p, ...livePnl(p, tickers, priceAt, now) })));
   const priceLabel = p => p.live ? '现价（实时）' : p.mark == null ? '现价' : `最新价（${time(data.updated_at)}）`;
   if (!rows.length) return '<p class="empty">当前没有持仓</p>';
-  return rows.map(p => `<article class="history-card sim-position" style="--sim-color:${SIM_COLORS[p.key] || '#06727d'}"><div class="history-card-head"><h3 class="coin-label">${coinIcon(p.inst)}${esc(p.inst.split('-')[0])} <span class="${p.side === 1 ? 'up' : 'down'}">${p.side === 1 ? '多' : '空'} · ${p.leverage}×</span></h3><span class="pill">${esc(p.account)}</span></div><div class="history-metrics">` +
+  return rows.map(p => `<article class="history-card sim-position" style="--sim-color:${p.color}"><div class="history-card-head"><h3 class="coin-label">${coinIcon(p.inst)}${esc(p.inst.split('-')[0])} <span class="${p.side === 1 ? 'up' : 'down'}">${p.side === 1 ? '多' : '空'} · ${p.leverage}×</span></h3><span class="pill">${esc(p.account)}</span></div><div class="history-metrics">` +
     [['开仓价', fmt(p.entry, 6)], ['止损', fmt(p.stop, 6)], ['止盈', p.target == null ? '跟随止损' : fmt(p.target, 6)], ['保证金 USDT', fmt(p.margin)],
      [priceLabel(p), p.mark == null ? '等待行情' : fmt(p.mark, 6)], ['浮动盈亏', p.pnl == null ? '—' : `${signed(p.pnl)} USDT / ${signed(p.pct)}%`, tone(p.pnl)]]
       .map(([k, v, c = '']) => `<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('') + `</div><small class="muted">开仓 ${time(p.opened)} UTC+7</small></article>`).join('');
 }
 
 export function simTradesMarkup(data, limit = 20) {
-  const rows = Object.entries(data.accounts).flatMap(([key, a]) => a.trades.map(t => ({ key, account: a.name, ...t }))).sort((a, b) => Date.parse(b.exit_time) - Date.parse(a.exit_time)).slice(0, limit);
+  const rows = Object.entries(data.accounts).flatMap(([key, a]) => a.trades.map(t => ({ key, account: who(a, t), color: colorOf(key, t), ...t }))).sort((a, b) => Date.parse(b.exit_time) - Date.parse(a.exit_time)).slice(0, limit);
   if (!rows.length) return '<li class="empty">还没有平仓记录</li>';
-  return rows.map(t => `<li><div><span class="coin-label">${coinIcon(t.inst)}${esc(t.inst.split('-')[0])}</span><span class="${t.side === 1 ? 'up' : 'down'}">${t.side === 1 ? '多' : '空'}</span><span class="pill" style="--sim-color:${SIM_COLORS[t.key] || '#06727d'}">${esc(t.account)}</span><time>${time(t.exit_time)}</time></div><div><span>${esc(REASONS[t.reason] || t.reason)} · ${signed(t.r)}R</span><span class="${tone(t.pnl)}">${signed(t.pnl)} USDT</span></div></li>`).join('');
+  return rows.map(t => `<li><div><span class="coin-label">${coinIcon(t.inst)}${esc(t.inst.split('-')[0])}</span><span class="${t.side === 1 ? 'up' : 'down'}">${t.side === 1 ? '多' : '空'}</span><span class="pill" style="--sim-color:${t.color}">${esc(t.account)}</span><time>${time(t.exit_time)}</time></div><div><span>${esc(REASONS[t.reason] || t.reason)} · ${signed(t.r)}R</span><span class="${tone(t.pnl)}">${signed(t.pnl)} USDT</span></div></li>`).join('');
 }
 
 // ---- Companion (mascot) driven by the paper accounts ----------------------------
@@ -109,15 +117,15 @@ export function simMascotState(data, now = Date.now()) {
     return { state: 'offline', label: '离线', message: '模拟盘数据超过 3 小时未更新，我在等下一次运行' };
   const accounts = Object.values(data.accounts);
   const halted = accounts.filter(a => a.halted);
-  if (halted.length) return { state: 'paused', label: '停手', message: `${halted.map(a => a.name).join('、')} 今日触发日亏停手` };
+  if (halted.length) return { state: 'paused', label: '停手', message: `${halted.map(a => a.name).join('、')} 今日触发日亏停手，不再开新仓` };
   const recent = t => finite(Date.parse(t)) && now - Date.parse(t) >= 0 && now - Date.parse(t) <= RECENT;
   const stopped = accounts.flatMap(a => a.trades.filter(t => recent(t.exit_time) && t.pnl < 0).map(t => ({ a, t })));
-  if (stopped.length) { const { a, t } = stopped[0]; return { state: 'sad', label: '刚止损', message: `${a.name} ${coin(t.inst)} 止损 ${signed(t.pnl)} USDT，按计划休息` }; }
+  if (stopped.length) { const { a, t } = stopped[0]; return { state: 'sad', label: '刚止损', message: `${who(a, t)} ${coin(t.inst)} 止损 ${signed(t.pnl)} USDT，按计划休息` }; }
   const opened = accounts.flatMap(a => a.open_positions.filter(p => recent(p.opened)).map(p => ({ a, p })));
-  if (opened.length) { const { a, p } = opened[0]; return { state: 'excited', label: '刚开仓', message: `${a.name} 刚开仓 ${coin(p.inst)} ${sideText(p.side)}` }; }
+  if (opened.length) { const { a, p } = opened[0]; return { state: 'excited', label: '刚开仓', message: `${who(a, p)} 刚开仓 ${coin(p.inst)} ${sideText(p.side)}` }; }
   const t = simTotals(data);
-  if (t.ret > 0) return { state: 'happy', label: '盈利中', message: `三个模拟账户合计 ${signed(t.ret)}%` };
-  return { state: 'idle', label: '待命', message: t.positions ? `持仓 ${t.positions} 个，盯着止损和跟随止损` : '三个账户空仓，等待新信号' };
+  if (t.ret > 0) return { state: 'happy', label: '盈利中', message: `模拟盘累计 ${signed(t.ret)}%` };
+  return { state: 'idle', label: '待命', message: t.positions ? `持仓 ${t.positions} 个，盯着止损和跟随止损` : '空仓中，等待新信号' };
 }
 
 // Lines to narrate when a newer dashboard arrives: opens, closes (with PnL) and new halts.
@@ -129,10 +137,10 @@ export function simChanges(prev, next) {
     if (!before) continue;
     const had = new Set(before.open_positions.map(p => p.inst + '|' + p.opened));
     for (const p of a.open_positions) if (!had.has(p.inst + '|' + p.opened))
-      lines.push({ text: `${a.name} 开仓 ${coin(p.inst)} ${sideText(p.side)} @ ${+p.entry.toPrecision(6)}`, mood: 'excited' });
+      lines.push({ text: `${who(a, p)} 开仓 ${coin(p.inst)} ${sideText(p.side)} @ ${+p.entry.toPrecision(6)}`, mood: 'excited' });
     const done = new Set(before.trades.map(t => t.inst + '|' + t.exit_time));
     for (const t of [...a.trades].reverse()) if (!done.has(t.inst + '|' + t.exit_time))
-      lines.push({ text: `${a.name} 平仓 ${coin(t.inst)} ${sideText(t.side)} ${signed(t.pnl)} USDT`, mood: t.pnl < 0 ? 'sad' : 'happy' });
+      lines.push({ text: `${who(a, t)} 平仓 ${coin(t.inst)} ${sideText(t.side)} ${signed(t.pnl)} USDT`, mood: t.pnl < 0 ? 'sad' : 'happy' });
     if (a.halted && !before.halted) lines.push({ text: `${a.name} 触发日亏停手，今天不再开新仓`, mood: 'sad' });
   }
   return lines;
@@ -140,14 +148,14 @@ export function simChanges(prev, next) {
 
 export function simFeed(data, limit = 20) {
   return Object.values(data?.accounts || {}).flatMap(a => [
-    ...a.trades.map(t => ({ ts: Date.parse(t.exit_time), text: `${a.name} 平仓 ${coin(t.inst)} ${sideText(t.side)} ${signed(t.pnl)} USDT`, mood: t.pnl < 0 ? 'sad' : 'happy' })),
-    ...a.open_positions.map(p => ({ ts: Date.parse(p.opened), text: `${a.name} 开仓 ${coin(p.inst)} ${sideText(p.side)} @ ${+p.entry.toPrecision(6)}`, mood: 'excited' })),
+    ...a.trades.map(t => ({ ts: Date.parse(t.exit_time), text: `${who(a, t)} 平仓 ${coin(t.inst)} ${sideText(t.side)} ${signed(t.pnl)} USDT`, mood: t.pnl < 0 ? 'sad' : 'happy' })),
+    ...a.open_positions.map(p => ({ ts: Date.parse(p.opened), text: `${who(a, p)} 开仓 ${coin(p.inst)} ${sideText(p.side)} @ ${+p.entry.toPrecision(6)}`, mood: 'excited' })),
   ]).filter(r => finite(r.ts)).sort((x, y) => y.ts - x.ts).slice(0, limit);
 }
 
 // Orders signalled on the last closed bar that fill at the next bar's open.
 export function simPendingText(data) {
-  const rows = Object.values(data?.accounts || {}).flatMap(a => (a.pending || []).map(inst => `${a.name} ${coin(inst)}`));
+  const rows = Object.values(data?.accounts || {}).flatMap(a => Array.isArray(a.pending_detail) ? a.pending_detail.map(o => `${o.strategy_name} ${coin(o.inst)} ${sideText(o.side)}`) : (a.pending || []).map(inst => `${a.name} ${coin(inst)}`));
   return rows.length ? `待成交（下一根 K 线开盘模拟成交）：${rows.join('、')}` : '';
 }
 

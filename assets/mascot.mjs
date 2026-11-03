@@ -70,8 +70,8 @@ export function contextTip(c={}){
   if(c.route==='coin')return `你在看 ${coinName(c.coin)}，${c.decision?'会议结论：'+c.decision:'暂无会议结论'}。`;
   if(c.route==='paper')return '这里是账户历史：最大回撤按所选范围从峰值到之后低点计算。';
   if(c.route==='market')return '点任一币种，可以看均值回归入场条件和 K 线。';
-  if(c.route==='sim')return '这里是三个学习用模拟账户，每小时自动更新；持仓浮盈按实时价计算。';
-  if(c.sim)return `三个模拟账户合计 ${signed(c.sim.totals.ret)}%，持仓 ${c.sim.totals.positions} 个；有开平仓我会马上告诉你。`;
+  if(c.route==='sim')return '这里是学习用模拟盘：一个账户、三套策略，每 30 分钟检查一次；持仓浮盈按实时价计算。';
+  if(c.sim)return `模拟盘累计 ${signed(c.sim.totals.ret)}%，持仓 ${c.sim.totals.positions} 个；有开平仓我会马上告诉你。`;
   if(c.paused)return '模拟盘暂停中，重新开始后我会第一时间播报开平仓。';
   if(c.positions>0)return `当前 ${c.positions} 个持仓，点持仓行可展开 K 线。`;
   return '暂无持仓，有新信号或成交我会马上告诉你。';
@@ -275,8 +275,10 @@ export class Mascot {
     const tone=v=>Number.isFinite(v)?v>=0?'up':'down':'';
     if(c.sim){
       const t=c.sim.totals;
-      this.panel.querySelector('#companion-panel-status').innerHTML=`<div class="companion-metrics">${metric('合计权益 USDT',fmt(t.equity))}${metric('合计收益',`${signed(t.ret)}%`,tone(t.ret))}${metric('当前持仓',t.positions+' 仓')}${metric('已平仓',t.trades+' 笔')}</div>`+
-        `<ul class="companion-accounts">${c.sim.accounts.map(a=>`<li><span><i style="background:${esc(a.color)}"></i>${esc(a.name)}${a.halted?' · <b class="down">停手</b>':''}</span><span>${fmt(a.equity)} <b class="${tone(a.return_pct)}">${signed(a.return_pct)}%</b> · 持仓 ${a.positions}</span></li>`).join('')}</ul>`;
+      this.panel.querySelector('#companion-panel-status').innerHTML=`<div class="companion-metrics">${metric('账户权益 USDT',fmt(t.equity))}${metric('累计收益',`${signed(t.ret)}%`,tone(t.ret))}${metric('当前持仓',t.positions+' 仓')}${metric('已平仓',t.trades+' 笔')}</div>`+
+        (c.sim.strategies?.length
+          ? `<ul class="companion-accounts">${c.sim.strategies.map(b=>`<li><span><i style="background:${esc(b.color)}"></i>${esc(b.name)}</span><span>已平仓 ${b.closed_trades} · <b class="${tone(b.pnl)}">${signed(b.pnl)} U</b> · 持仓 ${b.positions}</span></li>`).join('')}</ul>`
+          : `<ul class="companion-accounts">${c.sim.accounts.map(a=>`<li><span><i style="background:${esc(a.color)}"></i>${esc(a.name)}${a.halted?' · <b class="down">停手</b>':''}</span><span>${fmt(a.equity)} <b class="${tone(a.return_pct)}">${signed(a.return_pct)}%</b> · 持仓 ${a.positions}</span></li>`).join('')}</ul>`);
       return;
     }
     const bar=(label,r)=>{const used=r && Number.isFinite(r.ratio) && r.limit>0?Math.min(100,Math.max(0,r.ratio/r.limit*100)):null;

@@ -480,10 +480,10 @@ function renderPinnedBalance(){
 }
 function renderPinnedSim(){
   const t=simTotals(simData,tickers,simPriceAt()),stale=Date.now()-Date.parse(simData.updated_at)>SIM_STALE;
-  $('pinned-label-text').textContent='模拟盘合计';$('pinned-mode').textContent=`${t.count} 账户`;
+  $('pinned-label-text').textContent=t.count===1?'模拟盘权益':'模拟盘合计';$('pinned-mode').textContent=t.count===1?'合并账户':`${t.count} 账户`;
   rollNumber($('pinned-equity'),t.equity);
   $('pinned-daily').textContent=`收益 ${signed(t.ret)}% · 持仓 ${t.positions}`;$('pinned-daily').className=tone(t.ret);
-  $('pinned-source').textContent='学习用模拟 · 每小时更新';
+  $('pinned-source').textContent='学习用模拟 · 每 30 分钟更新';
   $('pinned-time').textContent=`${stale?'延迟 · ':''}${time(simData.updated_at)} UTC+7`;$('pinned-time').className=stale?'stale':'';
 }
 const BIAS={long:'偏多',short:'偏空',watch:'观察',ban:'禁开仓'};
@@ -499,7 +499,8 @@ function updateCompanion(current=liveBalance(publicAccount,effectiveQuotes())){
 function simContext(){
   if(!simData)return {};
   return {simState:simMascotState(simData),simFeed:simFeed(simData),sim:{totals:simTotals(simData,tickers,simPriceAt()),
-    accounts:Object.entries(simData.accounts).map(([key,a])=>{const eq=liveEquity(a,tickers,simPriceAt()).equity;return {name:a.name,color:SIM_COLORS[key] || '#06727d',equity:eq,return_pct:(eq/(simData.start_equity || 100)-1)*100,positions:a.open_positions.length,halted:a.halted};})}};
+    accounts:Object.entries(simData.accounts).map(([key,a])=>{const eq=liveEquity(a,tickers,simPriceAt()).equity;return {name:a.name,color:SIM_COLORS[key] || '#06727d',equity:eq,return_pct:(eq/(simData.start_equity || 100)-1)*100,positions:a.open_positions.length,halted:a.halted};}),
+    strategies:Object.values(simData.accounts).flatMap(a=>a.by_strategy || []).map(b=>({...b,color:SIM_COLORS[b.key] || '#06727d'}))}};
 }
 function updateStreamStatus(){
   const live=candleStream?.state==='实时' && Date.now()-candleStream.lastData<45000;
@@ -617,7 +618,7 @@ function renderSim(){
  if(primary && route==='home'){
   const prices=simPriceAt(),t=simTotals(simData,tickers,prices);
   rollNumber($('sim-total-equity'),t.equity);
-  $('sim-total-ret').innerHTML=`合计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
+  $('sim-total-ret').innerHTML=`累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
   $('sim-total-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;
   const note=simBackfillNote(simData);$('home-sim-backfill').hidden=!note;$('home-sim-backfill').textContent=note;
   $('home-sim-curve').innerHTML=simCurveSVG(simData);$('home-sim-cards').innerHTML=simCardsMarkup(simData,tickers,prices);

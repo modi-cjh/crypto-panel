@@ -22,9 +22,12 @@ let feed = { ...base, updated_at: new Date().toISOString() };
   assert.equal(await page.locator('#pause-banner').isVisible(), false);
   assert.equal(await page.locator('#sim-summary').isVisible(), false);
   assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), false);
-  assert.equal(await page.locator('#home-sim .sim-card').count(), 3);
-  assert.match(await page.locator('#pinned-label-text').innerText(), /模拟盘合计/);
-  assert.match(await page.locator('#pinned-equity').innerText(), /285\.25/);
+  assert.equal(await page.locator('#home-sim .sim-card').count(), 1);                 // one combined account
+  assert.equal(await page.locator('#home-sim .sim-strategies tbody tr').count(), 3);  // with a row per strategy
+  assert.match(await page.locator('#pinned-label-text').innerText(), /模拟盘权益/);
+  assert.match(await page.locator('#pinned-mode').innerText(), /合并账户/);
+  assert.match(await page.locator('#pinned-equity').innerText(), /^10\d\.\d\d$/);
+  assert.match(await page.locator('#home-sim-positions').innerText(), /均值回归/);      // positions name their strategy
   await page.locator('#legacy-toggle').click();
   assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), true);   // original bot still reachable
   await page.locator('#legacy-toggle').click();
@@ -32,8 +35,8 @@ let feed = { ...base, updated_at: new Date().toISOString() };
   await page.locator('[data-nav="sim"]').click();
   await page.waitForSelector('#sim-page:not([hidden]) .sim-card');
   assert.equal(await page.locator('[data-nav="sim"]').getAttribute('aria-current'), 'page');
-  assert.equal(await page.locator('#sim-page .sim-card').count(), 3);
-  assert.equal(await page.locator('#sim-curve polyline').count(), 3);
+  assert.equal(await page.locator('#sim-page .sim-card').count(), 1);
+  assert.equal(await page.locator('#sim-curve polyline').count(), 1);
   assert.ok(await page.locator('#sim-trades li').count() > 0);
   assert.equal(await page.locator('#pause-banner').isVisible(), false); // the old bot's banner does not leak onto this page
   for (const width of [320, 360, 390]) {
@@ -41,16 +44,16 @@ let feed = { ...base, updated_at: new Date().toISOString() };
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `overflow at ${width}`);
   }
   // The companion follows the paper accounts and narrates a newly closed trade.
-  await page.waitForFunction(() => document.querySelector('#mascot').dataset.state === 'idle');
-  assert.match(await page.locator('#mascot-status').innerText(), /待命/);
-  const next = structuredClone(feed), acct = next.accounts.mean_reversion;
-  acct.trades.unshift({ inst: 'BTC-USDT-SWAP', side: 1, entry_time: new Date(Date.now() - 7200e3).toISOString(), exit_time: new Date(Date.now() - 600e3).toISOString(), entry: 100, exit: 99, pnl: -1.05, r: -1.05, reason: 'stop' });
+  await page.waitForFunction(() => document.querySelector('#mascot').dataset.state === 'happy');   // fixture account is in profit
+  assert.match(await page.locator('#mascot-status').innerText(), /盈利中/);
+  const next = structuredClone(feed), acct = next.accounts.combined;
+  acct.trades.unshift({ inst: 'BTC-USDT-SWAP', strategy: 'mean_reversion', strategy_name: '均值回归', side: 1, entry_time: new Date(Date.now() - 7200e3).toISOString(), exit_time: new Date(Date.now() - 600e3).toISOString(), entry: 100, exit: 99, pnl: -1.05, r: -1.05, reason: 'stop' });
   acct.closed_trades += 1; feed = next;
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await page.waitForFunction(() => document.querySelector('#mascot').dataset.state === 'sad');
   await page.waitForFunction(() => document.querySelector('#toasts').textContent.includes('模拟盘 · 均值回归 平仓 BTC'));
   await page.locator('#mascot-touch').click(); await page.waitForSelector('#mascot-drawer[open]');
-  assert.match(await page.locator('#companion-panel-status').innerText(), /合计权益/);
+  assert.match(await page.locator('#companion-panel-status').innerText(), /账户权益/);
   assert.equal(await page.locator('.companion-accounts li').count(), 3);
   await page.keyboard.press('Escape');
   mode = 'missing'; await page.reload(); await page.waitForSelector('#sim-error:not([hidden])');
