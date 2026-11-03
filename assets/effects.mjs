@@ -42,11 +42,12 @@ export function roleEffect(role,kind,label='止损'){
   document.body.append(dot);setTimeout(()=>dot.remove(),1800);
  }
 }
-export function rollNumber(element,value){
+// minStep: changes smaller than this update the text quietly instead of playing the roll animation.
+export function rollNumber(element,value,minStep=0){
  if(!element)return;
  if(!Number.isFinite(value)){element.textContent='—';delete element.dataset.value;return;}
  const text=value.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}),old=Number(element.dataset.value);
- const changed=element.dataset.value!==undefined && Math.round(old*100)!==Math.round(value*100);
+ const changed=element.dataset.value!==undefined && Math.round(old*100)!==Math.round(value*100) && Math.abs(value-old)>=minStep;
  element.dataset.value=value;
  if(!changed){if(element.textContent!==text)element.textContent=text;return;}
  element.classList.remove('up','down');element.classList.add(value>old?'up':'down');
