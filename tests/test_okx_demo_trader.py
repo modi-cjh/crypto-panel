@@ -1,7 +1,7 @@
 import json
 import sys
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import okx_demo_trader as odt
@@ -144,12 +144,15 @@ class MirrorTests(unittest.TestCase):
     def test_summary_carries_equity_curve_start_equity_and_contract_value(self):
         fake = FakeOKX(positions=[dict(instId='BTC-USDT-SWAP', posSide='long', pos='3', avgPx='70000', markPx='70100', upl='3', lever='5')])
         m, state = run(fake, paper())
-        m.record_equity(); fake.equity = 5010; m2, _ = run(fake, paper(), state); m2.record_equity()
-        s = m2.summary()
-        self.assertEqual(s['start_equity'], 5000); self.assertEqual([p[1] for p in s['history']], [5000, 5010])
+        m.record_equity(); fake.equity = 5010
+        m2 = odt.Mirror(fake, state, paper(), NOW + timedelta(minutes=5)); m2.run(); m2.record_equity()
+        s = m2.summary()                                  # 5 minutes later: not stored, but the curve ends at the latest equity
+        self.assertEqual(s['start_equity'], 5000); self.assertEqual([p[1] for p in s['history']], [5000, 5010]); self.assertEqual(len(state['history']), 1)
+        m3 = odt.Mirror(fake, state, paper(), NOW + timedelta(minutes=16)); m3.run(); m3.record_equity()
+        self.assertEqual([p[1] for p in state['history']], [5000, 5010])
         self.assertEqual(s['positions'][0]['ctVal'], float(SPECS['BTC-USDT-SWAP']['ctVal']))
         self.assertEqual(s['closed_trades'], 0)
-        state['history'] = [[i, 1.0] for i in range(odt.HISTORY_POINTS + 5)]; m2.record_equity()
+        state['history'] = [[i, 1.0] for i in range(odt.HISTORY_POINTS + 5)]; m3.record_equity()
         self.assertEqual(len(state['history']), odt.HISTORY_POINTS)
 
     def test_signed_requests_carry_the_demo_header_and_keep_secrets_off_argv(self):

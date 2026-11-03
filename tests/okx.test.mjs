@@ -44,6 +44,8 @@ test('status reflects stale, halted, paused and running', () => {
   assert.equal(okxStatus(summary({ paused: true }), NOW).label, '已暂停');
   assert.equal(okxStatus(summary({ halted: true, paused: true }), NOW).label, '日亏停手');
   assert.equal(okxStatus(summary(), NOW + 6 * 3600e3).label, '数据延迟');
+  assert.equal(okxStatus(summary(), Date.parse('2026-11-03T13:00:00Z')).label, '运行中');   // 80 min old: still fresh
+  assert.equal(okxStatus(summary(), Date.parse('2026-11-03T13:15:00Z')).label, '数据延迟'); // 95 min old
 });
 
 test('curve draws the equity history and waits for enough points', () => {

@@ -487,7 +487,7 @@ function renderPinnedSim(){
   $('pinned-label-text').textContent='OKX 模拟权益';$('pinned-mode').textContent='交易所模拟';
   rollNumber($('pinned-equity'),t.equity,EQUITY_ROLL_STEP);
   $('pinned-daily').textContent=`收益 ${signed(t.ret)}% · 持仓 ${t.positions}`;$('pinned-daily').className=tone(t.ret);
-  $('pinned-source').textContent='OKX 模拟交易 · 每 30 分钟更新';
+  $('pinned-source').textContent='OKX 模拟交易 · 约每 5 分钟更新';
   $('pinned-time').textContent=`${stale?'延迟 · ':''}${time(simData.updated_at)} UTC+7`;$('pinned-time').className=stale?'stale':'';
 }
 const BIAS={long:'偏多',short:'偏空',watch:'观察',ban:'禁开仓'};

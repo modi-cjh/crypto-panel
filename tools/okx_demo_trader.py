@@ -33,7 +33,8 @@ from pathlib import Path
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
 RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .08
-HISTORY_POINTS = 3000            # equity curve points kept (~60 days at two runs an hour)
+HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
+HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
 OPEN_WINDOW = 2 * 3600_000        # only mirror paper entries that are at most this old
 MIN_STOP_DIST = .002              # skip entries whose stop is already too close to the current price
 AMEND_TOLERANCE = .001            # amend the exchange stop when the paper stop moved more than 0.1%
@@ -278,15 +279,23 @@ class Mirror:
         return dict(updated_at=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), equity=self.equity, available=self.available,
                     day_start=self.s.get('day_start'), paused=self.s['paused'], halted=self.s['halted'], dry_run=self.dry, positions=pos,
                     open_mirrors=[dict(m, key=k) for k, m in self.s['mirrored'].items() if m['status'] == 'open'],
-                    start_equity=self.s.get('start_equity'), history=self.s.get('history', [])[-HISTORY_POINTS:],
+                    start_equity=self.s.get('start_equity'), history=self.curve(),
                     closed_trades=sum(1 for m in self.s['mirrored'].values() if m['status'] == 'done'))
 
     def record_equity(self):
-        """Equity curve for the dashboard: one point per live run, capped."""
+        """Equity curve for the dashboard: at most one stored point per HISTORY_STEP, capped."""
         self.s.setdefault('start_equity', self.equity)
         hist = self.s.setdefault('history', [])
-        hist.append([self.now_ms, round(self.equity, 2)])
+        if not hist or self.now_ms - hist[-1][0] >= HISTORY_STEP:
+            hist.append([self.now_ms, round(self.equity, 2)])
         del hist[:-HISTORY_POINTS]
+
+    def curve(self):
+        """Stored points plus the current equity, so the curve always ends at the latest run."""
+        hist = self.s.get('history', [])[-HISTORY_POINTS:]
+        if hasattr(self, 'equity') and (not hist or hist[-1][0] != self.now_ms):
+            hist = hist + [[self.now_ms, round(self.equity, 2)]]
+        return hist
 
 
 def main():

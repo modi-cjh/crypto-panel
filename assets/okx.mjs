@@ -4,7 +4,7 @@
 import { coinIcon } from './coins.mjs';
 
 export const OKX_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/okx_demo/summary.json';
-export const OKX_STALE = 3 * 3600000;      // runs every 30 minutes; GitHub cron can lag
+export const OKX_STALE = 90 * 60000;       // runs every 5 minutes; GitHub cron can lag
 export const OKX_COLOR = '#06727d';
 const RECENT = 3 * 3600000;
 const DEFAULT_START = 5000;
@@ -67,7 +67,7 @@ export function okxStatus(d, now = Date.now()) {
 
 export function okxCurveSVG(d) {
   const pts = (d.history || []).slice().sort((a, b) => a[0] - b[0]);
-  if (pts.length < 2 || pts.at(-1)[0] === pts[0][0]) return '<p class="empty">资金曲线会在跟单运行几次后出现（约每 30 分钟一个点）</p>';
+  if (pts.length < 2 || pts.at(-1)[0] === pts[0][0]) return '<p class="empty">资金曲线会在跟单运行几次后出现（每 15 分钟一个点）</p>';
   const base = okxStart(d), t0 = pts[0][0], t1 = pts.at(-1)[0], vals = pts.map(p => p[1]);
   const lo = Math.min(...vals, base), hi = Math.max(...vals, base), pad = Math.max((hi - lo) * .12, base * .002);
   const W = 680, H = 230, L = 62, R = 12, T = 14, B = 34, x = t => L + (t - t0) / (t1 - t0) * (W - L - R), y = v => T + (hi + pad - v) / (hi - lo + pad * 2) * (H - T - B);
@@ -124,7 +124,7 @@ export function okxChanges(prev, next) {
 }
 
 export function okxMascotState(d, now = Date.now()) {
-  if (!d || now - Date.parse(d.updated_at) > OKX_STALE) return { state: 'offline', label: '离线', message: 'OKX 模拟账户超过 3 小时没有更新，我在等下一次运行' };
+  if (!d || now - Date.parse(d.updated_at) > OKX_STALE) return { state: 'offline', label: '离线', message: 'OKX 模拟账户超过 90 分钟没有更新，我在等下一次运行' };
   if (d.halted) return { state: 'paused', label: '停手', message: '今日触发日亏停手，不再开新仓' };
   if (d.paused) return { state: 'paused', label: '暂停', message: '跟单已暂停，恢复后我会播报开平仓' };
   const recent = (d.recent_actions || []).filter(a => finite(Date.parse(a.ts)) && now - Date.parse(a.ts) >= 0 && now - Date.parse(a.ts) <= RECENT);
