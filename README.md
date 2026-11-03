@@ -80,6 +80,9 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 
 看板 `#/sim`（导航“模拟交易”）和首页（旧主力盘暂停时）显示 OKX 模拟交易账户：读取 `paper-data/okx_demo/summary.json`（约 5 分钟缓存），包括权益、累计 / 今日收益、资金曲线、交易所持仓与最近交易动作。100 USDT 策略模拟盘只在后台运行、作为信号来源，看板不再显示。验收：`PANEL_URL=http://127.0.0.1:8008/ node tests/okx_browser.cjs`。全部仅为模拟资金，用于观察执行与学习。
 
+首页与模拟交易页提供“全部平仓并停止”。公开静态页面通过需要仓库权限的 GitHub Actions 控制任务执行，浏览器不保存交易密钥或 GitHub token：打开提示框 → 前往 GitHub → 在 `stop-demo.yml` 任务页选择 master 并点击 Run workflow。只有这一步才提交停止请求，任务可能排队。
+`tools/stop_demo.py` 先持久化暂停新开仓，再关闭本程序管理的全部模拟仓位，读取交易所仓位确认后公布成功状态；平仓失败或无法确认时保留暂停和待管理仓位，并在看板标明结果未确认。人工仓位保持由人工管理。任务与交易程序共享并发组，失败也发布暂停状态和回执；添加按钮不会执行停止操作。恢复需显式在 Paper trading 任务中选择 `resume`。
+
 ## 账户历史
 
 所有新增内容集中在 `#/paper` 的五个可折叠分区，手机使用卡片列表。

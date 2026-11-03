@@ -24,9 +24,17 @@
     <aside id="pause-banner" class="pause-banner" role="status" hidden></aside>
     <div id="diag" class="diag" role="dialog" aria-modal="true" aria-labelledby="diag-title" hidden><div class="diag-box"><div class="diag-head"><h2 id="diag-title">连接诊断</h2><button id="diag-close" class="pill" type="button">关闭</button></div><p class="muted">截图发给开发者即可。不含密钥或账户信息。</p><pre id="diag-body"></pre><div class="diag-actions"><button id="diag-test" class="pill" type="button">测试连接</button><button id="diag-copy" class="pill" type="button">复制</button></div><pre id="diag-test-out"></pre></div></div>
     <div id="alerts" role="status" aria-live="polite"></div>
+    <dialog id="stop-dialog" class="trade-control-dialog" aria-labelledby="stop-dialog-title">
+      <div class="trade-dialog-head"><h2 id="stop-dialog-title">全部平仓并停止模拟交易</h2><button id="stop-dialog-close" class="pill" type="button">取消</button></div>
+      <p>关闭本程序管理的全部 OKX 模拟仓位，然后保持暂停，不再开新仓。人工仓位不在本按钮的操作范围内。</p>
+      <ol><li>点击下方按钮，在 GitHub 登录仓库所有者账号。</li><li>在任务页点击 <b>Run workflow</b>（运行工作流），分支选择 <b>master</b>。</li><li>任务完成后返回看板刷新，核对停止状态与平仓回执。</li></ol>
+      <p class="muted">打开任务页不会停止交易。任务排队可能延迟，平仓结果以交易所回执为准。</p>
+      <a id="stop-workflow-link" class="trade-stop-link" href="https://github.com/modi-cjh/crypto-panel/actions/workflows/stop-demo.yml" target="_blank" rel="noopener noreferrer">前往 GitHub 执行全部平仓并停止 ↗</a>
+    </dialog>
 
     <section id="home-page" class="page" aria-label="交易室首页">
       <section id="home-sim" class="home-sim" hidden aria-label="OKX 模拟交易账户">
+        <div class="trade-controls"><p data-stop-status role="status">全部平仓后保持暂停，需登录 GitHub 执行。</p><button type="button" class="trade-stop-button" data-stop-demo aria-haspopup="dialog" aria-controls="stop-dialog">全部平仓并停止</button></div>
         <section class="panel sim-capital"><div class="capital-total"><div><h1>OKX 模拟账户权益 <span class="mode-tag">交易所模拟</span></h1><div class="equity-number"><strong id="okx-total-equity">—</strong><small>USDT</small></div><p id="okx-total-ret">—</p></div><div class="okx-side"><span id="home-okx-status" class="pill">—</span><small id="okx-total-updated"></small></div></div><div class="panel-heading"><h2>资金曲线</h2><a href="#/sim" class="pill">完整页面 →</a></div><div id="home-okx-curve" class="sim-curve"></div></section>
         <section class="panel"><div class="panel-heading"><h2>当前持仓</h2><small class="muted">止损挂在交易所 · 浮盈按 OKX 实时价</small></div><div id="home-okx-positions" class="sim-positions"></div></section>
         <section class="panel"><div class="panel-heading"><h2>最近交易动作</h2><small class="muted">UTC+7</small></div><ol id="home-okx-actions" class="fills-list"></ol></section>
@@ -66,6 +74,7 @@
     <section id="sim-page" class="page history-page" hidden aria-labelledby="sim-title">
       <div class="page-heading"><div><div class="eyebrow">OKX DEMO / 交易所模拟交易</div><h1 id="sim-title">OKX 模拟交易</h1><p>OKX 模拟交易账户 · 三套策略出信号 · 约每 5 分钟自动运行 · 止损挂在交易所 · 仅模拟资金</p></div><span id="sim-updated" class="pill">等待数据</span></div>
       <p id="sim-error" class="alert" hidden></p>
+      <div class="trade-controls"><p data-stop-status role="status">全部平仓后保持暂停，需登录 GitHub 执行。</p><button type="button" class="trade-stop-button" data-stop-demo aria-haspopup="dialog" aria-controls="stop-dialog">全部平仓并停止</button></div>
       <section class="panel"><div class="panel-heading"><h2>账户</h2><span id="okx-status" class="pill">—</span></div><div id="okx-metrics" class="okx-body"></div></section>
       <section class="panel"><div class="panel-heading"><h2>资金曲线</h2><span id="okx-start" class="pill">—</span></div><div id="okx-curve" class="sim-curve"></div></section>
       <section class="panel"><div class="panel-heading"><h2>当前持仓</h2><small class="muted">浮动盈亏按 OKX 实时价计算</small></div><div id="okx-positions" class="sim-positions"></div></section>

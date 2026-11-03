@@ -1,4 +1,5 @@
 import { HomePositions, equitySVG, rangePoints } from './home.mjs';
+import { initTradeControls, renderTradeControls } from './control.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
@@ -699,6 +700,7 @@ function retLine(t){
  return `累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 今日 <span class="${tone(t.day)}">${Number.isFinite(t.day)?signed(t.day)+' USDT':'—'}</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
 }
 function renderSim(){
+ renderTradeControls(simData);
  const primary=simPrimary();
  document.documentElement.classList.toggle('sim-primary',primary);document.documentElement.classList.toggle('show-legacy',primary && showLegacy);
  $('home-sim').hidden=!primary;
@@ -726,7 +728,7 @@ document.addEventListener('visibilitychange',()=>{
  if(document.hidden){quoteStream?.stop();candleStream?.stop();quoteStreamKey='';candleStreamKey='';syncOkxMarks();}
  else {syncStreams();refreshPrices();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSim();if(['home','coin'].includes(route))refreshCandles(true);}
 });
-navigate();refreshPrices();refreshEvents();
+initTradeControls();navigate();refreshPrices();refreshEvents();
 setInterval(()=>{if(!document.hidden){refreshPrices();pollOkxMarks();renderPinnedBalance();updateStreamStatus();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
  if(['home','coin'].includes(route))refreshCandles();

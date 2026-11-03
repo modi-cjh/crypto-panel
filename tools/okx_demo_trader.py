@@ -328,6 +328,7 @@ class Mirror:
                for p in self.positions.values()]
         return dict(updated_at=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), equity=self.equity, available=self.available,
                     day_start=self.s.get('day_start'), paused=self.s['paused'], halted=self.s['halted'], dry_run=self.dry, positions=pos,
+                    stop_control=self.s.get('stop_control'),
                     open_mirrors=[dict(m, key=k) for k, m in self.s['mirrored'].items() if m['status'] == 'open'],
                     start_equity=self.s.get('start_equity'), history=self.curve(),
                     closed_trades=sum(1 for m in self.s['mirrored'].values() if m['status'] == 'done'))
