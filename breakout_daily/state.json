@@ -1,0 +1,10 @@
+{
+ "cash": 100.0,
+ "day": "2026-11-02",
+ "day_start": 100.0,
+ "halted": false,
+ "last_marks": {},
+ "last_ts": 1793577600000,
+ "pending": {},
+ "positions": {}
+}

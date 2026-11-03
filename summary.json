@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-03T14:02:09Z",
+ "updated_at": "2026-11-03T14:35:47Z",
  "start_equity": 100.0,
  "accounts": {
   "mean_reversion": {
@@ -27,6 +27,20 @@
    "payoff": null,
    "halted": false,
    "last_bar": "2026-11-03T13:00:00Z",
+   "open_positions": [],
+   "pending": []
+  },
+  "breakout_daily": {
+   "name": "日线趋势突破",
+   "equity": 100.0,
+   "return_pct": 0.0,
+   "max_drawdown_pct": 0.0,
+   "closed_trades": 0,
+   "win_rate_pct": null,
+   "avg_r": null,
+   "payoff": null,
+   "halted": false,
+   "last_bar": "2026-11-02T00:00:00Z",
    "open_positions": [],
    "pending": []
   }
