@@ -1,0 +1,21 @@
+# Read-only check of the OKX demo-trading API key stored in repository secrets. Never places orders.
+name: OKX demo connection check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the demo-trading key (read only)
+        env:
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_API_SECRET: ${{ secrets.OKX_API_SECRET }}
+          OKX_API_PASSPHRASE: ${{ secrets.OKX_API_PASSPHRASE }}
+        run: python3 tools/okx_demo_check.py

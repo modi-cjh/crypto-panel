@@ -1,7 +1,7 @@
 # 更新日志
 
 基线版本：`cc25dc5`（v3：浅色主题、权益首页、持仓列表与图标、吉祥物、暂停重置）。
-以下改动全部通过 PR #1 – #23 合并到 `master`（2026-11-03，时间为 UTC+7）。
+以下改动全部通过 PR #1 – #24 合并到 `master`（2026-11-03，时间为 UTC+7）。
 
 ---
 
@@ -143,6 +143,9 @@
 
 ### PR #23 权益小幅变动不再播放滚动动画
 - 持仓浮盈随 8 秒行情轮询每次变动几分钱，导致权益数字每 8 秒滚动一次。`rollNumber` 新增 `minStep`：模拟盘权益变动小于 0.10 USDT 时静默更新数字，达到 0.10 USDT 才播放动画。
+
+### PR #24 OKX 模拟交易连接检查（只读）
+- 新增 `tools/okx_demo_check.py` 与手动工作流 `.github/workflows/okx-demo-check.yml`：用仓库 Secrets（`OKX_API_KEY` / `OKX_API_SECRET` / `OKX_API_PASSPHRASE`）带 `x-simulated-trading: 1` 签名请求，检查密钥是否被模拟交易接受、权限（开启提现或缺少交易则失败）、账户模式与 USDT 余额。不下单；密钥经 stdin 传给 curl，不出现在命令行或日志中。
 
 ---
 
