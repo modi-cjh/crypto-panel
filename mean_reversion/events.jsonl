@@ -33,3 +33,4 @@
 {"ts": "2026-11-02T05:00:00Z", "type": "trade_opened", "inst": "ETH-USDT-SWAP", "side": -1, "price": 2291.621584, "stop": 2310.77874725, "target": 2271.8665, "leverage": 10}
 {"ts": "2026-11-02T15:00:00Z", "type": "trade_closed", "inst": "ETH-USDT-SWAP", "side": -1, "price": 2271.8665, "pnl": 0.958034, "reason": "target"}
 {"ts": "2026-11-03T14:00:00Z", "type": "signal", "inst": "XRP-USDT-SWAP", "side": -1}
+{"ts": "2026-11-03T15:00:00Z", "type": "trade_opened", "inst": "XRP-USDT-SWAP", "side": -1, "price": 1.27764442, "stop": 1.29183943, "target": 1.255745, "leverage": 10}
