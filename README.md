@@ -50,14 +50,15 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 
 ## 学习用模拟交易（GitHub Actions）
 
-`tools/paper_trader.py` 由 `.github/workflows/paper-trading.yml` 每小时（UTC 第 7 分钟）运行一次，只读 OKX 公共 K 线，不需要密钥、不下单。两个独立的 100 USDT 模拟账户跑同一批 23 个主流 USDT 永续：
+`tools/paper_trader.py` 由 `.github/workflows/paper-trading.yml` 每小时（UTC 第 7 分钟）运行一次，只读 OKX 公共 K 线，不需要密钥、不下单。三个独立的 100 USDT 模拟账户跑同一批 23 个主流 USDT 永续：
 
 - **均值回归**：看板 `assets/indicators.mjs` 的入场规则（RSI 25 / 趋势 2%），止损 1.5×ATR（0.5%–4%），止盈 20 根中轨，最长 24 小时。
 - **趋势突破只做多**：收盘突破前 48 小时高点且 EMA50 > EMA200，止损 2×ATR，3×ATR 跟随止损，最长 168 小时，最多 6 仓。
+- **日线趋势突破**：UTC 日线收盘突破前 20 日高点且 EMA50 > EMA200，止损 2×日线 ATR（0.5%–25%，止损较宽时自动降低杠杆，保证强平价在止损之外），3×ATR 跟随止损，最长 90 天，最多 6 仓。每天 UTC 0 点后的第一次运行处理新日线。
 
 共同规则与研究回测一致：已收盘 K 线出信号、下一根开盘成交、每笔风险 1%、逐仓 10× / 5×、同向风险 ≤ 5%、每币一仓、UTC+7 日亏 8% 停手、单边 0.05% 手续费 + 0.02% 滑点。每次只处理比上次更新的 K 线，重复运行无副作用，漏跑的小时会自动补上。
 
-结果写入单独的 `paper-data` 分支（`master` 与看板不受影响）：`summary.json`、`README.md` 汇总表，以及每个账户的 `state.json`、`trades.csv`、`equity.csv`、`events.jsonl`。可在 Actions 页面手动运行（workflow_dispatch）。回测显示这两套规则在过去一年都不赚钱，这里仅用于观察执行与学习。
+结果写入单独的 `paper-data` 分支（`master` 与看板不受影响）：`summary.json`、`README.md` 汇总表，以及每个账户的 `state.json`、`trades.csv`、`equity.csv`、`events.jsonl`。可在 Actions 页面手动运行（workflow_dispatch）。回测显示两套 1 小时规则过去一年都不赚钱；日线突破 2.7 年回测期望为正（+31.6%，最大回撤约 20%），但样本只有 92 笔。全部仅用于观察执行与学习。
 
 ## 账户历史
 
