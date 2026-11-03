@@ -60,6 +60,13 @@ def okx_get(path, retries=5):
     raise RuntimeError(f'OKX request failed: {path}')
 
 
+def fetch_open(inst, bar='1H'):
+    """The bar currently forming (not yet closed): only its open price is used, to fill pending orders."""
+    data = okx_get(f'market/candles?instId={inst}&bar={bar}&limit=1')
+    r = data[0] if data else None
+    return dict(ts=int(r[0]), o=float(r[1])) if r and len(r) >= 9 and r[8] == '0' else None
+
+
 def fetch_okx(inst, bar='1H', pages=5):
     """Closed bars (1H or 1Dutc), oldest first: dicts with ts/o/h/l/c/q (q = quote turnover)."""
     rows, after = {}, ''
@@ -155,7 +162,7 @@ def mark(acct, prices):
     return eq
 
 
-def replay(acct, cfg, series, ind, until=None, start_ts=None):
+def replay(acct, cfg, series, ind, until=None, start_ts=None, opens=None):
     """Advance one account over closed bars newer than acct['last_ts']. Returns (trades, equity_points, events)."""
     index = {inst: {b['ts']: i for i, b in enumerate(bars)} for inst, bars in series.items()}
     times = sorted({b['ts'] for bars in series.values() for b in bars})
@@ -177,36 +184,39 @@ def replay(acct, cfg, series, ind, until=None, start_ts=None):
     if new and new[0] - acct['last_ts'] > step:
         events.append(dict(ts=iso(new[0]), type='gap', missing_bars=(new[0] - acct['last_ts']) // step - 1))
     last_close = dict(acct.get('last_marks', {}))
+
+    def fill(inst, bar, t):
+        """Fill a pending order at this bar's open (sizing and checks exactly as at the signal)."""
+        o = acct['pending'].pop(inst); s = o['side']
+        entry = bar['o'] * (1 + SLIP * s)
+        dist = min(max(cfg['stop_k'] * o['atr'] / entry, .005), cfg.get('stop_cap', .04))
+        tp = o.get('mid')
+        if tp is not None and (tp - entry) * s <= 0:
+            events.append(dict(ts=iso(t), type='skip', inst=inst, reason='already_at_mean')); return
+        equity = mark(acct, last_close)
+        same = sum(p['risk'] for p in acct['positions'].values() if p['side'] == s)
+        if same + o['risk'] > SAME_SIDE_CAP * equity:
+            events.append(dict(ts=iso(t), type='skip', inst=inst, reason='same_side_risk')); return
+        if cfg['max_pos'] is not None and len(acct['positions']) >= cfg['max_pos']:
+            events.append(dict(ts=iso(t), type='skip', inst=inst, reason='max_positions')); return
+        qty = o['risk'] / (entry * dist)
+        lev = 10 if o['turn24'] >= 50e6 else 5
+        if dist >= .8 / lev:  # keep liquidation beyond the stop (only wide daily stops hit this)
+            lev = max(1, int(.8 / dist))
+        margin = qty * entry / lev
+        if margin > equity - sum(p['margin'] for p in acct['positions'].values()):
+            events.append(dict(ts=iso(t), type='skip', inst=inst, reason='margin')); return
+        acct['positions'][inst] = dict(side=s, entry=entry, stop=entry * (1 - s * dist), tp=tp, qty=qty, margin=margin,
+                                       risk=o['risk'], leverage=lev, opened=t, bars=0)
+        events.append(dict(ts=iso(t), type='trade_opened', inst=inst, side=s, price=round(entry, 8), stop=round(entry * (1 - s * dist), 8),
+                           target=None if tp is None else round(tp, 8), leverage=lev))
+
     for t in new:
         bars_now = {inst: series[inst][index[inst][t]] for inst in series if t in index[inst]}
         # 1) fill orders signalled on the previous bar at this bar's open
-        for inst, o in sorted(acct['pending'].items()):
-            if inst not in bars_now:
-                continue
-            del acct['pending'][inst]
-            bar, s = bars_now[inst], o['side']
-            entry = bar['o'] * (1 + SLIP * s)
-            dist = min(max(cfg['stop_k'] * o['atr'] / entry, .005), cfg.get('stop_cap', .04))
-            tp = o.get('mid')
-            if tp is not None and (tp - entry) * s <= 0:
-                events.append(dict(ts=iso(t), type='skip', inst=inst, reason='already_at_mean')); continue
-            equity = mark(acct, last_close)
-            same = sum(p['risk'] for p in acct['positions'].values() if p['side'] == s)
-            if same + o['risk'] > SAME_SIDE_CAP * equity:
-                events.append(dict(ts=iso(t), type='skip', inst=inst, reason='same_side_risk')); continue
-            if cfg['max_pos'] is not None and len(acct['positions']) >= cfg['max_pos']:
-                events.append(dict(ts=iso(t), type='skip', inst=inst, reason='max_positions')); continue
-            qty = o['risk'] / (entry * dist)
-            lev = 10 if o['turn24'] >= 50e6 else 5
-            if dist >= .8 / lev:  # keep liquidation beyond the stop (only wide daily stops hit this)
-                lev = max(1, int(.8 / dist))
-            margin = qty * entry / lev
-            if margin > equity - sum(p['margin'] for p in acct['positions'].values()):
-                events.append(dict(ts=iso(t), type='skip', inst=inst, reason='margin')); continue
-            acct['positions'][inst] = dict(side=s, entry=entry, stop=entry * (1 - s * dist), tp=tp, qty=qty, margin=margin,
-                                           risk=o['risk'], leverage=lev, opened=t, bars=0)
-            events.append(dict(ts=iso(t), type='trade_opened', inst=inst, side=s, price=round(entry, 8), stop=round(entry * (1 - s * dist), 8),
-                               target=None if tp is None else round(tp, 8), leverage=lev))
+        for inst in sorted(acct['pending']):
+            if inst in bars_now:
+                fill(inst, bars_now[inst], t)
         # 2) manage open positions on this bar
         for inst, p in sorted(acct['positions'].items()):
             if inst not in bars_now:
@@ -254,6 +264,13 @@ def replay(acct, cfg, series, ind, until=None, start_ts=None):
             acct['pending'][inst] = dict(side=s, atr=ind[inst]['atr'][i], mid=ind[inst]['mid'][i] if cfg['kind'] == 'mr' else None,
                                          turn24=turn24, risk=RISK * equity, signal_ts=t)
             events.append(dict(ts=iso(t), type='signal', inst=inst, side=s))
+    # The bar after the last closed one has already opened: its open price is known, so pending orders
+    # fill now and show up immediately. Exits on that bar are still judged when it closes, exactly as before.
+    nxt = acct['last_ts'] + step if acct['last_ts'] is not None else None
+    for inst in sorted(acct['pending']):
+        bar = (opens or {}).get(inst)
+        if bar and bar['ts'] == nxt and bar['o'] > 0:
+            fill(inst, bar, nxt)
     acct['last_marks'] = {k: v for k, v in last_close.items() if k in acct['positions']}  # seeded from the previous run
     return trades, points, events
 
@@ -344,7 +361,7 @@ def write_readme(data_dir, summary):
     (data_dir / 'README.md').write_text('\n'.join(lines))
 
 
-def run_once(data_dir, fetch=fetch_okx, until=None, now=None, backfill_days=0, reset=False):
+def run_once(data_dir, fetch=fetch_okx, until=None, now=None, backfill_days=0, reset=False, fetch_opens=None):
     data_dir = Path(data_dir); data_dir.mkdir(parents=True, exist_ok=True)
     now = now or datetime.now(timezone.utc)
     if reset:  # start over: remove every account's state and outputs (the branch history keeps the old data)
@@ -363,14 +380,17 @@ def run_once(data_dir, fetch=fetch_okx, until=None, now=None, backfill_days=0, r
         series = {k: v for k, v in series.items() if v}
         if until is not None:
             series = {k: [b for b in v if b['ts'] <= until] for k, v in series.items()}
-        books[bar] = (series, {inst: indicators(bars) for inst, bars in series.items()})
+        if fetch_opens is None and fetch is fetch_okx:
+            fetch_opens = fetch_open
+        opens = {inst: fetch_opens(inst, bar) for inst in series} if fetch_opens and until is None else {}
+        books[bar] = (series, {inst: indicators(bars) for inst, bars in series.items()}, opens)
     accounts = {}
     for key, cfg in STRATEGIES.items():
         d = data_dir / key; d.mkdir(exist_ok=True)
         acct = load_state(d / 'state.json')
-        series, ind = books[cfg.get('bar', '1H')]
+        series, ind, opens = books[cfg.get('bar', '1H')]
         fresh = acct['last_ts'] is None
-        trades, points, events = replay(acct, cfg, series, ind, start_ts=start_ts if fresh else None)
+        trades, points, events = replay(acct, cfg, series, ind, start_ts=start_ts if fresh else None, opens=opens)
         if fresh and acct['last_ts'] is not None:
             acct['started'] = iso(points[0][0])
             acct['live_since'] = now.isoformat(timespec='seconds').replace('+00:00', 'Z') if start_ts else acct['started']
