@@ -150,3 +150,4 @@ html.has-companion #toasts{position:fixed;width:1px;height:1px;overflow:hidden;c
 progress::-webkit-progress-bar{background:#e8ebef}progress{background:#e8ebef}
 .companion-head [data-close]{white-space:nowrap}.companion-foot button{width:auto;white-space:nowrap}.companion-bar progress{margin:0}
 #mascot .companion-bot,#mascot .companion-bot:hover,#mascot .companion-bot:active{background:transparent;box-shadow:none;border:0;-webkit-tap-highlight-color:transparent}#mascot.dragging .companion-bubble{display:none}
+#mascot,#mascot *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}

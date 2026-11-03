@@ -86,6 +86,17 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   assert.equal(await host.getAttribute('data-side'), 'left');
   assert.equal(await host.evaluate(e => e.style.left), '12px');
 
+  // Touch drag, including holding still first (iOS long-press) and an OS-cancelled gesture.
+  const cdp = await context.newCDPSession(page), touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+  for (const [hold, endType, target] of [[700, 'touchEnd', 'right'], [0, 'touchCancel', 'left']]) {
+    const r = await page.locator('#mascot-touch').boundingBox(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+    const toX = target === 'right' ? 330 : 40;
+    await touch('touchStart', [{ x, y }]); await wait(page, hold);
+    for (let i = 1; i <= 10; i++) await touch('touchMove', [{ x: x + (toX - x) * i / 10, y: y - 20 * i }]);
+    await touch(endType, []); await wait(page, 400);
+    assert.equal(await host.getAttribute('data-side'), target, `touch drag hold=${hold} ${endType}`);
+    assert.equal(await visible(page, '#mascot-drawer'), false);
+  }
   // Dock to the edge from the panel; a tap brings it back.
   await page.locator('#mascot-touch').click(); await page.waitForSelector('#mascot-drawer[open]');
   await page.locator('#companion-dock').click();

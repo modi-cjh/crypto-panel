@@ -139,28 +139,33 @@ export class Mascot {
     const end=cancel=>{
       const d=this.drag;this.drag=null;clearTimeout(this.pressTimer);if(!d)return;
       this.host.classList.remove('dragging');
-      if(d.moved && d.last && !cancel){
+      // A cancelled drag (e.g. the OS took the gesture) still snaps instead of leaving the robot mid-screen.
+      if(d.moved && d.last){
         this.pos=snapPosition(d.last,{width:innerWidth,height:innerHeight},this.size);
         this.host.classList.add('snapping');this.place();this.save();
         setTimeout(()=>this.host.classList.remove('snapping'),320);
       }
-      this.suppressClick=!cancel && (d.moved || d.longPress);
-      setTimeout(()=>{this.suppressClick=false;},0);
+      if(!cancel && !d.moved && !d.longPress)this.tap();
     };
     b.addEventListener('pointerup',()=>end(false));
     b.addEventListener('pointercancel',()=>end(true));
-    b.addEventListener('click',e=>{
-      if(this.suppressClick){this.suppressClick=false;return;}
-      if(this.docked){this.dock(false);this.react('wave',1200);return;}
-      if(e.detail===0){this.open();return;} // keyboard activation
-      this.taps++;clearTimeout(this.tapTimer);
-      this.tapTimer=setTimeout(()=>{
-        const n=this.taps;this.taps=0;
-        if(n>=3)this.say('别戳啦，头好晕～','dizzy',2400,{interrupt:true});
-        else if(n===2)this.say(GREETINGS[Math.floor(Math.random()*GREETINGS.length)],'wave',3000,{interrupt:true});
-        else {this.react('squash',450);this.open();}
-      },260);
-    });
+    b.addEventListener('lostpointercapture',()=>{if(this.drag)end(true);});
+    // iOS Safari otherwise claims a held touch for its callout / selection / zoom and cancels the drag.
+    // Taps are recognised on pointerup, so blocking native touch handling loses nothing.
+    for(const type of ['touchstart','touchmove'])b.addEventListener(type,e=>{if(e.cancelable)e.preventDefault();},{passive:false});
+    b.addEventListener('contextmenu',e=>e.preventDefault());
+    b.addEventListener('click',e=>{if(e.detail===0)this.tap(true);}); // keyboard activation only
+  }
+  tap(keyboard=false){
+    if(this.docked){this.dock(false);this.react('wave',1200);return;}
+    if(keyboard){this.open();return;}
+    this.taps++;clearTimeout(this.tapTimer);
+    this.tapTimer=setTimeout(()=>{
+      const n=this.taps;this.taps=0;
+      if(n>=3)this.say('别戳啦，头好晕～','dizzy',2400,{interrupt:true});
+      else if(n===2)this.say(GREETINGS[Math.floor(Math.random()*GREETINGS.length)],'wave',3000,{interrupt:true});
+      else {this.react('squash',450);this.open();}
+    },260);
   }
   // ---- eyes follow the pointer; idle glances when nothing moves -------------
   bindEyes(){
