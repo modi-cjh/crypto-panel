@@ -1,7 +1,7 @@
 # 更新日志
 
 基线版本：`cc25dc5`（v3：浅色主题、权益首页、持仓列表与图标、吉祥物、暂停重置）。
-以下改动全部通过 PR #1 – #24 合并到 `master`（2026-11-03，时间为 UTC+7）。
+以下改动全部通过 PR #1 – #25 合并到 `master`（2026-11-03，时间为 UTC+7）。
 
 ---
 
@@ -146,6 +146,11 @@
 
 ### PR #24 OKX 模拟交易连接检查（只读）
 - 新增 `tools/okx_demo_check.py` 与手动工作流 `.github/workflows/okx-demo-check.yml`：用仓库 Secrets（`OKX_API_KEY` / `OKX_API_SECRET` / `OKX_API_PASSPHRASE`）带 `x-simulated-trading: 1` 签名请求，检查密钥是否被模拟交易接受、权限（开启提现或缺少交易则失败）、账户模式与 USDT 余额。不下单；密钥经 stdin 传给 curl，不出现在命令行或日志中。
+
+### PR #25 OKX 模拟交易跟单
+- 新增 `tools/okx_demo_trader.py`：把合并模拟盘的决策执行到 OKX **模拟交易**账户（所有请求带 `x-simulated-trading: 1`）。模拟盘 2 小时内的新仓位按市价开仓（逐仓、杠杆 ≤ 10×、按模拟账户权益 1% 风险定量），止损 / 止盈作为交易所条件单附带；模拟盘止损上移时同步修改交易所止损；模拟盘平仓时平仓；交易所止损已触发的不再重开。
+- 保护：新建时默认暂停（先 `dry-run` 预览，再 `resume`）；只操作自己开的仓；UTC+7 日亏 8% 全部平仓并停止开仓至次日；`pause` / `resume` / `flatten`（全部平仓并暂停）；拒绝现货模式或带提现权限的密钥。
+- 工作流 `paper-trading.yml` 在模拟盘之后执行跟单（失败不影响模拟盘提交），手动运行可选 `okx_demo` 动作；结果写入 `paper-data` 分支 `okx_demo/`（`state.json`、`actions.jsonl`、`summary.json`）。
 
 ---
 
