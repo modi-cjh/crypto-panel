@@ -1,10 +1,11 @@
 {
- "updated_at": "2026-11-03T16:21:22Z",
+ "updated_at": "2026-11-03T16:35:40Z",
  "start_equity": 100.0,
  "accounts": {
   "mean_reversion": {
    "name": "均值回归",
    "equity": 105.8027,
+   "cash": 105.993562,
    "return_pct": 5.8,
    "max_drawdown_pct": 3.2,
    "closed_trades": 11,
@@ -26,8 +27,8 @@
      "leverage": 10,
      "qty": 74.6695976119303,
      "margin": 9.540119,
-     "mark": 1.2752,
-     "unrealized": 0.182524
+     "mark": 1.277,
+     "unrealized": 0.048119
     }
    ],
    "pending": []
@@ -35,6 +36,7 @@
   "breakout_long": {
    "name": "趋势突破只做多",
    "equity": 98.0216,
+   "cash": 98.021573,
    "return_pct": -1.98,
    "max_drawdown_pct": 3.68,
    "closed_trades": 3,
@@ -51,6 +53,7 @@
   "breakout_daily": {
    "name": "日线趋势突破",
    "equity": 100.0,
+   "cash": 100.0,
    "return_pct": 0.0,
    "max_drawdown_pct": 0.0,
    "closed_trades": 0,
