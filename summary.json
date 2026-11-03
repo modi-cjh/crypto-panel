@@ -1,19 +1,19 @@
 {
- "updated_at": "2026-11-03T16:54:51Z",
+ "updated_at": "2026-11-03T17:49:39Z",
  "start_equity": 100.0,
  "accounts": {
   "mean_reversion": {
    "name": "均值回归",
-   "equity": 105.8027,
+   "equity": 105.8699,
    "cash": 105.993562,
-   "return_pct": 5.8,
+   "return_pct": 5.87,
    "max_drawdown_pct": 3.2,
    "closed_trades": 11,
    "win_rate_pct": 63.6,
    "avg_r": 0.539,
    "payoff": 1.49,
    "halted": false,
-   "last_bar": "2026-11-03T15:00:00Z",
+   "last_bar": "2026-11-03T16:00:00Z",
    "started": "2026-10-04T15:00:00Z",
    "live_since": "2026-11-03T15:21:00Z",
    "open_positions": [
@@ -27,8 +27,8 @@
      "leverage": 10,
      "qty": 74.6695976119303,
      "margin": 9.540119,
-     "mark": 1.2782,
-     "unrealized": -0.041485
+     "mark": 1.2849,
+     "unrealized": -0.541771
     }
    ],
    "pending": []
@@ -44,7 +44,7 @@
    "avg_r": -0.656,
    "payoff": null,
    "halted": false,
-   "last_bar": "2026-11-03T15:00:00Z",
+   "last_bar": "2026-11-03T16:00:00Z",
    "started": "2026-10-04T15:00:00Z",
    "live_since": "2026-11-03T15:21:00Z",
    "open_positions": [],

@@ -4,14 +4,14 @@
  "day_start": 105.99356177855016,
  "halted": false,
  "last_marks": {
-  "XRP-USDT-SWAP": 1.2802
+  "XRP-USDT-SWAP": 1.2793
  },
- "last_ts": 1793718000000,
+ "last_ts": 1793721600000,
  "live_since": "2026-11-03T15:21:00Z",
  "pending": {},
  "positions": {
   "XRP-USDT-SWAP": {
-   "bars": 1,
+   "bars": 2,
    "entry": 1.2776444200000001,
    "leverage": 10,
    "margin": 9.540119473252808,
