@@ -160,6 +160,21 @@ class PaperTraderTests(unittest.TestCase):
         self.assertEqual(trades(self.tmp, 'breakout_long'), [])  # hourly accounts ignore daily data
         s = json.loads((Path(self.tmp) / 'summary.json').read_text())
         self.assertEqual(list(s['accounts']), ['mean_reversion', 'breakout_long', 'breakout_daily'])
+        dash = json.loads((Path(self.tmp) / 'dashboard.json').read_text())
+        daily = dash['accounts']['breakout_daily']
+        self.assertEqual(dash['schema_version'], 1); self.assertTrue(daily['rules'])
+        self.assertEqual(len(daily['trades']), 1); self.assertEqual(daily['trades'][0]['reason'], 'stop')
+        self.assertEqual(len(daily['curve']), 4); self.assertTrue(all(isinstance(ts, int) and v > 0 for ts, v in daily['curve']))
+
+    def test_dashboard_lists_open_positions_with_size_and_downsamples_long_curves(self):
+        rows = breakout_then([(1.0, 1.01, 0.995, 1.005)]); feed = Feed(rows)
+        run(self.tmp, feed, rows[-4]['ts'])
+        for r in rows[-3:]: run(self.tmp, feed, r['ts'])
+        pos = json.loads((Path(self.tmp) / 'dashboard.json').read_text())['accounts']['breakout_long']['open_positions']
+        self.assertEqual(len(pos), 1); self.assertGreater(pos[0]['qty'], 0); self.assertGreater(pos[0]['margin'], 0)
+        pts = [[i, float(i)] for i in range(5000)]
+        small = pt.downsample(pts, 720)
+        self.assertEqual(len(small), 720); self.assertEqual(small[0], pts[0]); self.assertEqual(small[-1], pts[-1])
 
 
 if __name__ == '__main__':

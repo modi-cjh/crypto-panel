@@ -70,6 +70,7 @@ export function contextTip(c={}){
   if(c.route==='coin')return `你在看 ${coinName(c.coin)}，${c.decision?'会议结论：'+c.decision:'暂无会议结论'}。`;
   if(c.route==='paper')return '这里是账户历史：最大回撤按所选范围从峰值到之后低点计算。';
   if(c.route==='market')return '点任一币种，可以看均值回归入场条件和 K 线。';
+  if(c.route==='sim')return '这里是三个学习用模拟账户，每小时自动更新；持仓浮盈按实时价计算。';
   if(c.paused)return '模拟盘暂停中，重新开始后我会第一时间播报开平仓。';
   if(c.positions>0)return `当前 ${c.positions} 个持仓，点持仓行可展开 K 线。`;
   return '暂无持仓，有新信号或成交我会马上告诉你。';

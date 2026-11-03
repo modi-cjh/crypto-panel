@@ -63,6 +63,7 @@ test('narration lines: fills, wake alerts, halts, reports and route tips',()=>{
  assert.match(contextTip({route:'coin',coin:'BTC-USDT-SWAP'}),/暂无会议结论/);
  assert.match(contextTip({route:'home',paused:true}),/暂停/);assert.match(contextTip({route:'home',positions:2}),/2 个持仓/);
  assert.match(contextTip({route:'paper'}),/回撤/);assert.match(contextTip({route:'market'}),/币种/);
+ assert.match(contextTip({route:'sim'}),/模拟账户/);
 });
 test('speech queue is bounded and drops repeats inside the dedupe window',()=>{
  let q=[];for(let i=0;i<8;i++)q=pushMessage(q,{text:'m'+i},{now:i});

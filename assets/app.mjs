@@ -2,6 +2,7 @@ import { HomePositions, equitySVG, rangePoints } from './home.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
+import { SIM_URL, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup } from './sim.mjs';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs';
@@ -52,7 +53,7 @@ let lastCandleRequest = '', candleBusy = new Set();
 let publicAccount = null, publicBusy = false;
 let team = null, teamBusy = false, teamRole = '', teamMeeting = '';
 const teamStateOptions = () => ({offlineMinutes:config.offlineMinutes,snapshotAt:publicAccount?.updated_at ?? snapshot?.updated_at ?? snapshot?.generated_at});
-let scanExpanded=false,signalsExpanded=false,eventsBusy=false,eventsData=null;
+let scanExpanded=false,signalsExpanded=false,eventsBusy=false,eventsData=null,simData=null,simBusy=false;
 let scan = null, scanBusy = false, scanSort = 'quote_24h', scanDirection = -1;
 function syncHomeCoin() {
   focusSymbol = meetingSymbol(team?.status.meeting, configuredSymbol, new Set([...tickers.map(t=>t.id),...(scan?.instruments || []).map(r=>r.instId)]));
@@ -200,7 +201,7 @@ async function refreshPrices() {
     priceAt = Date.now(); setError('prices', null);
     $('price-updated').textContent = `${time(priceAt)} UTC+7 更新`;
     if (firstLoad) syncHomeCoin();
-    renderMarket(); if (route === 'coin') renderQuote(); if (route === 'home') renderHome(); if (route === 'paper') historyPage.setPrices(tickers);
+    renderMarket(); if (route === 'coin') renderQuote(); if (route === 'home') renderHome(); if (route === 'paper') historyPage.setPrices(tickers); if (route === 'sim') renderSim();
     if (['home', 'market', 'coin'].includes(route)) refreshSlow();
   } catch (error) { setError('prices', `行情：${description(error)}`); if (!tickers.length) renderMarket();if(route==='paper')historyPage.setPrices([]);if(route==='home')renderPublicHome(); }
   finally { priceBusy = false; refreshHealth(); }
@@ -403,10 +404,10 @@ function navigate() {
   routeVersion++;
   const hash = location.hash || '#/';
   const match = /^#\/coin\/([A-Z0-9]+-USDT-SWAP)$/.exec(hash);
-  route = match ? 'coin' : hash === '#/paper' ? 'paper' : hash === '#/market' ? 'market' : 'home';
+  route = match ? 'coin' : hash === '#/paper' ? 'paper' : hash === '#/market' ? 'market' : hash === '#/sim' ? 'sim' : 'home';
   coin = match?.[1] || homeCoin;
   candleCharts?.destroy(); candleCharts = null;
-  for (const page of ['home', 'market', 'coin', 'paper']) $(`${page}-page`).hidden = route !== page;
+  for (const page of ['home', 'market', 'coin', 'paper', 'sim']) $(`${page}-page`).hidden = route !== page;
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === (route === 'coin' ? 'market' : route); a.classList.toggle('active', active); if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $('home-price-slot').append($('price-panel'));
   $('home-analysis-slot').append($('analysis-content'));
@@ -418,7 +419,7 @@ function navigate() {
 
   document.querySelectorAll('[data-timeframe]').forEach(b => { const active = b.dataset.timeframe === timeframe; b.classList.toggle('active', active); b.setAttribute('aria-pressed', String(active)); });
   setError('candles', null);
-  document.title = route === 'coin' ? `${coin.split('-')[0]} · MODI 交易团队` : 'MODI · AI 交易团队';
+  document.title = route === 'coin' ? `${coin.split('-')[0]} · MODI 交易团队` : route === 'sim' ? '模拟交易 · MODI 交易团队' : 'MODI · AI 交易团队';
   if (['home', 'coin'].includes(route)) {
     $('coin-title').textContent = coin.replace('-USDT-SWAP', '') + ' / USDT 永续'; renderQuote();
     $('signal-summary').innerHTML = '<strong>— <small>/ —</small></strong><span>等待 K 线数据</span>';
@@ -430,7 +431,7 @@ function navigate() {
   } else if (route === 'paper') { historyPage.refresh(); }
   else { renderMarket(); refreshSlow(); }
   if (route === 'home' || route === 'paper') refreshSnapshot();
-  document.documentElement.dataset.route=route;renderPinnedBalance();
+  document.documentElement.dataset.route=route;renderPinnedBalance();if(route==='sim' || route==='home'){renderSim();refreshSim();}
   refreshPublicAccount();syncStreams();
 }
 $('search').addEventListener('input', renderMarket);
@@ -569,6 +570,24 @@ async function refreshEvents(){
  finally{eventsBusy=false;}
 }
 
+// Learning-only paper accounts (tools/paper_trader.py) published on the paper-data branch.
+async function refreshSim(){
+ if(simBusy)return;simBusy=true;
+ try{
+  const response=await fetch(`${SIM_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
+  if(!response.ok)throw new Error();const data=await response.json();if(!validSim(data))throw new Error();
+  simData=data;$('sim-error').hidden=true;renderSim();
+ }catch{if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='模拟交易数据暂时读取失败，保留已有数据，稍后自动重试。';}}
+ finally{simBusy=false;}
+}
+function renderSim(){
+ $('sim-summary').hidden=!simData;if(simData)$('sim-summary').innerHTML=simSummaryMarkup(simData);
+ if(route!=='sim')return;
+ if(!simData){$('sim-cards').innerHTML='<p class="empty">正在读取模拟账户…</p>';return;}
+ $('sim-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;
+ $('sim-cards').innerHTML=simCardsMarkup(simData);$('sim-curve').innerHTML=simCurveSVG(simData);
+ $('sim-positions').innerHTML=simPositionsMarkup(simData,tickers,errors.has('prices')?0:priceAt);$('sim-trades').innerHTML=simTradesMarkup(simData);
+}
 document.addEventListener('visibilitychange',()=>{
  if(document.hidden){quoteStream?.stop();candleStream?.stop();quoteStreamKey='';candleStreamKey='';}
  else {syncStreams();refreshPrices();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();if(['home','coin'].includes(route))refreshCandles(true);}
@@ -577,7 +596,7 @@ navigate();refreshPrices();refreshEvents();
 setInterval(()=>{if(!document.hidden){refreshPrices();renderPinnedBalance();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
  if(['home','coin'].includes(route))refreshCandles();
- refreshSnapshot();if(route==='paper')historyPage.refresh();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();
+ refreshSnapshot();if(route==='paper')historyPage.refresh();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();if(route==='sim' || route==='home')refreshSim();
 }},60000);
 setInterval(()=>{if(!document.hidden){refreshHealth();if(route==='home')renderHome();
  for(const stream of [quoteStream,candleStream])if(stream?.state==='实时' && Date.now()-stream.lastData>45000)stream.socket?.close();

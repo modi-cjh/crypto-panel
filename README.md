@@ -58,7 +58,9 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 
 共同规则与研究回测一致：已收盘 K 线出信号、下一根开盘成交、每笔风险 1%、逐仓 10× / 5×、同向风险 ≤ 5%、每币一仓、UTC+7 日亏 8% 停手、单边 0.05% 手续费 + 0.02% 滑点。每次只处理比上次更新的 K 线，重复运行无副作用，漏跑的小时会自动补上。
 
-结果写入单独的 `paper-data` 分支（`master` 与看板不受影响）：`summary.json`、`README.md` 汇总表，以及每个账户的 `state.json`、`trades.csv`、`equity.csv`、`events.jsonl`。可在 Actions 页面手动运行（workflow_dispatch）。回测显示两套 1 小时规则过去一年都不赚钱；日线突破 2.7 年回测期望为正（+31.6%，最大回撤约 20%），但样本只有 92 笔。全部仅用于观察执行与学习。
+结果写入单独的 `paper-data` 分支（`master` 与看板不受影响）：`summary.json`、`README.md` 汇总表，以及每个账户的 `state.json`、`trades.csv`、`equity.csv`、`events.jsonl`。可在 Actions 页面手动运行（workflow_dispatch）。
+
+看板 `#/sim`（导航“模拟交易”，首页顶部摘要卡片可进入）读取 `paper-data` 分支的 `dashboard.json`（`https://raw.githubusercontent.com/...`，约 5 分钟缓存，已加入 CSP connect-src），显示三个账户的权益 / 收益 / 回撤 / 胜率 / 平均 R、资金曲线对比、当前持仓（按 OKX 实时价计算浮动盈亏，以保证金封顶）和最近 20 笔平仓。该页面不显示旧主力盘的暂停横幅。验收：`PANEL_URL=http://127.0.0.1:8008/ node tests/sim_browser.cjs`。回测显示两套 1 小时规则过去一年都不赚钱；日线突破 2.7 年回测期望为正（+31.6%，最大回撤约 20%），但样本只有 92 笔。全部仅用于观察执行与学习。
 
 ## 账户历史
 
