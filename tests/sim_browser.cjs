@@ -13,6 +13,11 @@ let feed = { ...base, updated_at: new Date().toISOString() };
   let mode = 'ok';
   await context.route(/okx\.com/, r => r.abort());
   await context.route('**/paper-data/dashboard.json*', r => mode === 'ok' ? r.fulfill({ body: JSON.stringify(feed), contentType: 'application/json' }) : r.fulfill({ status: 404, body: 'missing' }));
+  const okx = { updated_at: new Date().toISOString(), equity: 5012.5, available: 4900, day_start: 5000, paused: false, halted: false, dry_run: false,
+    positions: [{ inst: 'BTC-USDT-SWAP', side: 'long', contracts: '3', avgPx: '70000', markPx: '70400', upl: '12.5', uplRatio: '0.05', lever: '5', margin: '420', ours: true }],
+    recent_actions: [{ ts: new Date().toISOString(), action: 'open', inst: 'BTC-USDT-SWAP', side: 1, contracts: 3, price: 70000, stop: 69000, target: 72000, leverage: 5, dry_run: false },
+      { ts: new Date().toISOString(), action: 'skip', inst: 'XRP-USDT-SWAP', reason: 'paper_entry_too_old', dry_run: false }] };
+  await context.route('**/paper-data/okx_demo/summary.json*', r => r.fulfill({ body: JSON.stringify(okx), contentType: 'application/json' }));
   const page = await context.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(BASE);
@@ -43,6 +48,12 @@ let feed = { ...base, updated_at: new Date().toISOString() };
   assert.equal(await page.locator('#sim-page .sim-card').count(), 1);
   assert.equal(await page.locator('#sim-curve polyline').count(), 1);
   assert.ok(await page.locator('#sim-trades li').count() > 0);
+  // The OKX demo-trading mirror card shows exchange status, positions and recent actions.
+  await page.waitForSelector('#sim-okx:not([hidden]) .okx-positions');
+  const okxText = await page.locator('#sim-okx').innerText();
+  assert.match(okxText, /运行中/); assert.match(okxText, /5,012\.50/); assert.match(okxText, /\+12\.50/);
+  assert.match(okxText, /模拟盘开仓已超过 2 小时/); assert.match(okxText, /多 3 张 @ 70000/);
+  assert.equal(await page.locator('#home-okx').isHidden(), true);   // home card exists but the home page is not shown now
   assert.equal(await page.locator('#pause-banner').isVisible(), false); // the old bot's banner does not leak onto this page
   for (const width of [320, 360, 390]) {
     await page.setViewportSize({ width, height: 844 });

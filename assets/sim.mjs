@@ -168,3 +168,38 @@ export function simBackfillNote(data) {
   const b = simLiveSince(data);
   return b ? `${clock.format(b.started)} 起 · ${clock.format(b.live)} 之前为历史补跑（同一套规则按小时重放），之后为实时运行` : '';
 }
+
+// ---- OKX demo-trading mirror (tools/okx_demo_trader.py) -------------------------------------
+export const OKX_DEMO_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/okx_demo/summary.json';
+const ACTIONS = { open: '开仓', close: '平仓', amend_stop: '上移止损', closed_on_exchange: '交易所止损 / 止盈触发', skip: '跳过', daily_halt: '日亏停手',
+  pause: '暂停跟单', resume: '恢复跟单', flatten: '全部平仓并暂停', error: '出错' };
+const SKIPS = { paper_entry_too_old: '模拟盘开仓已超过 2 小时', stop_too_close_or_crossed: '价格已接近或越过止损', target_already_reached: '价格已到止盈',
+  size_below_minimum: '仓位小于最小下单量', insufficient_margin: '保证金不足', exchange_position_exists_not_ours: '交易所已有非本程序的仓位',
+  no_price: '取不到价格', no_instrument_spec: '取不到合约信息' };
+
+export function validOkxDemo(d) {
+  return d !== null && typeof d === 'object' && stamp(d.updated_at) && finite(d.equity) && Array.isArray(d.positions) &&
+    d.positions.every(p => symbol(p.inst)) && Array.isArray(d.recent_actions || []);
+}
+
+export function okxDemoStatus(d, now = Date.now()) {
+  if (now - Date.parse(d.updated_at) > SIM_STALE) return { label: '数据延迟', cls: 'down' };
+  if (d.halted) return { label: '日亏停手', cls: 'down' };
+  if (d.paused) return { label: '已暂停', cls: 'muted' };
+  return { label: '运行中', cls: 'up' };
+}
+
+const px = v => fmt(v, Math.abs(v) >= 100 ? 1 : Math.abs(v) >= 1 ? 3 : 5);
+export function okxDemoMarkup(d, now = Date.now()) {
+  const st = okxDemoStatus(d, now), num = v => Number(v);
+  const day = finite(d.day_start) && d.day_start > 0 ? d.equity - d.day_start : null;
+  const pos = d.positions.length ? `<div class="okx-scroll"><table class="okx-positions"><thead><tr><th>币</th><th>方向</th><th>张数</th><th>均价</th><th>标记价</th><th>浮动盈亏</th><th>杠杆</th></tr></thead><tbody>${d.positions.map(p => {
+      const side = p.side === 'long' ? '多' : p.side === 'short' ? '空' : num(p.contracts) > 0 ? '多' : '空';
+      return `<tr><td>${coinIcon(p.inst)}${esc(p.inst.split('-')[0])}${p.ours ? '' : ' <small class="muted">(非跟单)</small>'}</td><td class="${side === '多' ? 'up' : 'down'}">${side}</td><td>${esc(Math.abs(num(p.contracts)))}</td><td>${px(num(p.avgPx))}</td><td>${px(num(p.markPx))}</td><td class="${tone(num(p.upl))}">${signed(num(p.upl))}</td><td>${esc(p.lever)}×</td></tr>`;
+    }).join('')}</tbody></table></div>` : '<p class="empty">交易所暂无持仓</p>';
+  const acts = (d.recent_actions || []).slice(0, 8).map(a => `<li><div><span>${esc(ACTIONS[a.action] || a.action)}${a.inst && a.inst !== '-' ? ' · ' + esc(a.inst.split('-')[0]) : ''}${a.dry_run ? ' <small class="muted">(空跑)</small>' : ''}</span><time>${time(a.ts)}</time></div><div><small class="muted">${esc(a.action === 'skip' ? SKIPS[a.reason] || a.reason : a.action === 'open' ? `${a.side === 1 ? '多' : '空'} ${a.contracts} 张 @ ${a.price} · 止损 ${a.stop}${a.target ? ' · 止盈 ' + a.target : ''} · ${a.leverage}×` : a.action === 'amend_stop' ? `${a.old} → ${a.new}` : a.action === 'error' ? a.detail || a.step : a.reason || '')}</small></div></li>`).join('');
+  return `<div class="okx-head"><span class="pill ${st.cls}">${st.label}</span><small class="muted">更新 ${time(d.updated_at)} UTC+7 · 模拟资金，不涉及真实账户</small></div>` +
+    `<div class="history-metrics">${[['权益 USDT', fmt(d.equity)], ['今日盈亏', day == null ? '—' : `${signed(day)} USDT`, tone(day)], ['可用 USDT', fmt(d.available)], ['持仓', `${d.positions.length}`]]
+      .map(([k, v, c = '']) => `<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('')}</div>${pos}` +
+    `<h3 class="okx-subtitle">最近跟单动作</h3><ol class="fills-list">${acts || '<li class="empty">还没有跟单动作</li>'}</ol>`;
+}
