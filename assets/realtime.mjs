@@ -39,7 +39,10 @@ export class PublicStream {
     if(this.stopped)return;
     for(const timer of this.timers)clearTimeout(timer);this.timers.clear();
     this.failures++;
-    if(this.failures>=this.maxFailures){this.stateChange('轮询','实时连接连续失败，回退 REST');return;}
+    if(this.failures>=this.maxFailures){
+      this.stateChange('轮询','实时连接连续失败，回退 REST；60 秒后重新尝试 WebSocket');
+      this.later(()=>{this.failures=0;this.connect();},60000);return;
+    }
     this.stateChange('离线','连接中断，指数退避重连');this.later(()=>this.connect(),backoffDelay(this.failures));
   }
   stop(){this.stopped=true;for(const timer of this.timers)clearTimeout(timer);this.timers.clear();if(this.socket){if(this.socket.readyState===1)this.socket.send(JSON.stringify({op:'unsubscribe',args:this.args}));this.socket.onclose=null;this.socket.onmessage=null;this.socket.onopen=null;this.socket.close();this.socket=null;}}

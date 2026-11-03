@@ -6,7 +6,7 @@ const BASE = process.env.PANEL_URL || 'http://127.0.0.1:8008/';
 const iso = ms => new Date(ms).toISOString();
 const now = Date.now();
 let feed = {
-  updated_at: iso(now - 600e3), equity: 5012.5, available: 4900, day_start: 5000, start_equity: 5000, paused: false, halted: false, dry_run: false, closed_trades: 1,
+  updated_at: iso(now - 300e3), equity: 5012.5, available: 4900, day_start: 5000, start_equity: 5000, paused: false, halted: false, dry_run: false, closed_trades: 1,
   history: [[now - 7200e3, 5000], [now - 3600e3, 4995], [now - 600e3, 5012.5]],
   positions: [{ inst: 'BTC-USDT-SWAP', side: 'long', contracts: '3', avgPx: '70000', markPx: '70400', upl: '12.5', uplRatio: '0.05', lever: '5', margin: '420', ctVal: 0.01, ours: true }],
   open_mirrors: [{ inst: 'BTC-USDT-SWAP', strategy: 'breakout_long', stop: 69000, status: 'open' }],
@@ -37,7 +37,7 @@ let feed = {
   assert.match(await page.locator('#pinned-label-text').innerText(), /OKX 模拟权益/);
   assert.match(await page.locator('#pinned-equity').innerText(), /^5,012\.50$/);
   assert.match(await page.locator('#okx-total-ret').innerText(), /累计收益 \+0\.25%.*今日 \+12\.50 USDT/);
-  assert.match(await page.locator('#home-okx-status').innerText(), /运行中/);
+  assert.match(await page.locator('#home-okx-status').innerText(), /允许开仓/);
   assert.equal(await page.locator('#home-okx-curve polyline').count(), 1);
   assert.match(await page.locator('#home-okx-positions').innerText(), /趋势突破只做多/);
   assert.match(await page.locator('#home-okx-actions').innerText(), /信号已超过 2 小时/);
@@ -55,7 +55,7 @@ let feed = {
   assert.match(await page.locator('#home-okx-positions').innerText(), /标记价（实时）\s*70,500/);
   await page.waitForFunction(() => document.querySelector('#pinned-equity').textContent.trim() === '5,015.00');   // 5,012.50 − 12.50 + 15.00
   // Exchange REST/WebSockets are blocked here, so the top-bar status comes from the demo price feed alone.
-  await page.waitForFunction(() => document.querySelector('#connection-text').textContent === '实时', null, { timeout: 12000 });
+  await page.waitForFunction(() => document.querySelector('#connection-text').textContent === '行情实时', null, { timeout: 12000 });
   await page.locator('#legacy-toggle').click();
   assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), true);   // original bot still reachable
   await page.locator('#legacy-toggle').click();

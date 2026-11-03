@@ -4,10 +4,10 @@ import { runtimeConfig, refreshRuntimeHealth } from './runtime.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
-import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS } from './okx.mjs';
+import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-connect';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
-import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs';
+import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261104-connect';
 import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
@@ -28,7 +28,7 @@ const notify = (line, announce = line.text) => { toast(announce); mascot.say(lin
 const teamRecords=new NewRecords(),fillRecords=new NewRecords(),eventRecords=new NewRecords(),liveQuotes=new Map();
 let quoteStream=null,candleStream=null,quoteStreamKey='',candleStreamKey='',streamReason='';
 // Connection diagnostics (tap the status in the header): recent script errors and stream state changes.
-const BUILD='2026-11-04 · PR #34',diagLog=[];
+const BUILD='2026-11-04 · 行情与账户状态 v2',diagLog=[];
 const diagNote=text=>{diagLog.push(`${new Date().toISOString().slice(11,19)}Z ${text}`);diagLog.splice(0,diagLog.length-12);};
 addEventListener('error',e=>diagNote(`脚本错误：${e.message || e.type}${e.filename?' @ '+e.filename.split('/').pop()+':'+e.lineno:''}`));
 addEventListener('unhandledrejection',e=>diagNote(`未处理的异常：${e.reason?.message || e.reason}`));
@@ -168,7 +168,8 @@ $('team-meeting').addEventListener('change', () => { teamMeeting = $('team-meeti
 
 function setError(key, message) {
   if (message) errors.set(key, message); else errors.delete(key);
-  const list = [...errors.values()];
+  const demoView=['home','sim'].includes(route)&&simPrimary()&&!showLegacy;
+  const list = [...errors].filter(([k])=>!demoView||!['prices','oi','funding','candles'].includes(k)).map(([,v])=>v);
   // One compact line; details stay one tap away instead of stacking banners.
   $('alerts').innerHTML = !list.length ? '' : list.length === 1
     ? `<div class="alert"><span aria-hidden="true">⚠</span> ${escape(list[0])} · 已有数据保留，自动重试</div>`
@@ -531,7 +532,12 @@ function openDiag(){$('diag-body').textContent=diagText();$('diag').hidden=false
 $('connection').addEventListener('click',openDiag);
 $('diag-close').addEventListener('click',()=>{$('diag').hidden=true;$('connection').focus();});
 $('diag').addEventListener('click',e=>{if(e.target.id==='diag')$('diag').hidden=true;});
-$('diag-copy').addEventListener('click',()=>{try{navigator.clipboard.writeText(diagText()+'\n'+$('diag-test-out').textContent);$('diag-copy').textContent='已复制';}catch{}});
+$('diag-copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(diagText()+'\n'+$('diag-test-out').textContent);$('diag-copy').textContent='已复制';}catch{$('diag-copy').textContent='复制失败，请长按选取';}});
+$('diag-reconnect').addEventListener('click',()=>{
+  quoteStream?.stop();candleStream?.stop();okxMarkStream?.stop();quoteStreamKey='';candleStreamKey='';okxMarkKey='';okxMarkStream=null;okxMarkPollAt=0;
+  diagNote('用户主动重新连接行情');syncStreams();syncOkxMarks();pollOkxMarks();refreshPrices();refreshSim();
+  $('diag-body').textContent=diagText();
+});
 // Direct probes that bypass the app's request queue and streams.
 function probeSocket(url,instId){
   return new Promise(resolve=>{
@@ -546,7 +552,7 @@ function probeSocket(url,instId){
 }
 async function probeRest(url,headers={}){
   const t0=Date.now();
-  try{const r=await fetch(url,{headers,cache:'no-store',credentials:'omit'});const text=await r.text();return `HTTP ${r.status} · ${text.slice(0,80)}（${Date.now()-t0} ms）`;}
+  try{const r=await fetch(url,{headers,cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(8000)});const text=await r.text();return `HTTP ${r.status} · ${text.slice(0,80)}（${Date.now()-t0} ms）`;}
   catch(e){return `失败：${e.name} ${e.message}（${Date.now()-t0} ms）`;}
 }
 $('diag-test').addEventListener('click',async()=>{
@@ -561,8 +567,12 @@ function updateStreamStatus(){
   // Live when any price WebSocket (exchange quotes or the OKX demo mark prices) pushed recently; polling when the
   // 8-second REST refresh is fresh. Recomputed on every refresh, so it cannot stick on a stale value.
   const quotesLive=[quoteStream,okxMarkStream].some(s=>s?.state==='实时' && Date.now()-s.lastData<45000),polling=priceAt && Date.now()-priceAt<24000;
-  $('connection-text').textContent=quotesLive?'实时':polling?'轮询':'离线';
-  $('connection-dot').className='dot '+(quotesLive || polling?'live':'error');
+  const demoView=simData&&(route==='sim'||route==='home'&&simPrimary());
+  const demo=demoQuoteState(simData,okxMarks,okxMarkStream,okxMarkPollAt);
+  const connected=demoView?demo.live||demo.polling:quotesLive||polling;
+  $('connection-text').textContent=demoView?demo.label:quotesLive?'行情实时':polling?'行情轮询':'行情断开';
+  $('connection-dot').className='dot '+(connected?'live':demoView&&!demo.needsQuotes?'':'error');
+  $('connection').title=(demoView?'OKX 模拟行情':'市场行情')+'连接状态；点击查看连接诊断。账户开关和快照更新时间另行展示。';
   document.documentElement.classList.toggle('has-live-state',quotesLive || live || priceAt && Date.now()-priceAt<24000 || Object.keys(ROLES).some(r=>roleState(team,r,teamStateOptions()).state!=='offline'));
 }
 // Ticker and mark-price pushes arrive several times per second; render once per frame.
@@ -651,9 +661,9 @@ async function refreshSim(){
   const response=await fetch(source,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
   if(!response.ok)throw new Error();const data=await response.json();if(!validOkx(data))throw new Error();
   const changes=okxChanges(simData,data);
-  simData=data;$('sim-error').hidden=true;syncOkxMarks();pollOkxMarks();renderSim();updateCompanion();
+  simData=data;$('sim-error').hidden=true;setError('sim-account',null);syncOkxMarks();pollOkxMarks();renderSim();updateCompanion();updateStreamStatus();
   for(const line of changes)notify(line,`OKX 模拟 · ${line.text}`);
- }catch{if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='OKX 模拟账户数据暂时读取失败，保留已有数据，稍后自动重试。';}}
+ }catch{setError('sim-account','账户快照暂时读取失败，保留上次数据');if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='OKX 模拟账户数据暂时读取失败，保留已有数据，稍后自动重试。';}}
  finally{simBusy=false;}
 }
 // The OKX demo account takes over the home page while the original bot is paused, stopped or stale;
@@ -682,12 +692,14 @@ async function pollOkxMarks(){
   okxMarkPolling=true;
   try{
     const response=await fetch('https://www.okx.com/api/v5/public/mark-price?instType=SWAP',{headers:{'x-simulated-trading':'1'},cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(10000)});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
     const body=await response.json();if(body.code!=='0' || !Array.isArray(body.data))throw new Error(`code ${body.code}`);
     const at=Date.now();
     for(const row of body.data)if(symbols.includes(row.instId) && number(row.markPx)>0)okxMarks.set(row.instId,{price:number(row.markPx),at});
+    if(!symbols.every(id=>okxMarks.get(id)?.at===at))throw new Error('响应缺少当前持仓的模拟标记价');
     if(!okxMarkPollAt)diagNote('模拟盘标记价 REST：成功');okxMarkPollAt=at;
     if(['home','sim'].includes(route))renderSim();else renderPinnedBalance();updateStreamStatus();
-  }catch(e){diagNote(`模拟盘标记价 REST：失败 ${e.name} ${e.message}`);okxMarkPollAt=0;}
+  }catch(e){diagNote(`模拟盘标记价 REST：失败 ${e.name} ${e.message}`);okxMarkPollAt=0;updateStreamStatus();}
   finally{okxMarkPolling=false;}
 }
 // Floating PnL moves the equity by a few cents on every 8-second poll; only animate meaningful moves.
@@ -705,6 +717,8 @@ function retLine(t){
 }
 function renderSim(){
  renderTradeControls(simData);
+ const quote=demoQuoteState(simData,okxMarks,okxMarkStream,okxMarkPollAt);
+ document.querySelectorAll('[data-account-note]').forEach(el=>{el.textContent=accountDataNote(simData,quote);});
  const primary=simPrimary();
  document.documentElement.classList.toggle('sim-primary',primary);document.documentElement.classList.toggle('show-legacy',primary && showLegacy);
  $('home-sim').hidden=!primary;

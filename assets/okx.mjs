@@ -5,6 +5,7 @@ import { coinIcon } from './coins.mjs';
 
 export const OKX_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/okx_demo/summary.json';
 export const OKX_STALE = 90 * 60000;       // runs every 5 minutes; GitHub cron can lag
+export const OKX_SNAPSHOT_DELAY = 10 * 60000;
 export const OKX_COLOR = '#06727d';
 const RECENT = 3 * 3600000;
 const DEFAULT_START = 5000;
@@ -63,10 +64,28 @@ export function okxTotals(d, marks = new Map(), now = Date.now()) {
 }
 
 export function okxStatus(d, now = Date.now()) {
-  if (now - Date.parse(d.updated_at) > OKX_STALE) return { label: '数据延迟', cls: 'down' };
   if (d.halted) return { label: '日亏停手', cls: 'down' };
   if (d.paused) return { label: '已暂停', cls: 'muted' };
-  return { label: '运行中', cls: 'up' };
+  if (now - Date.parse(d.updated_at) > OKX_SNAPSHOT_DELAY) return { label: '快照延迟 · 未暂停', cls: 'down' };
+  return { label: '允许开仓', cls: 'up' };
+}
+
+export function demoQuoteState(d,marks=new Map(),stream=null,pollAt=0,now=Date.now()) {
+  const symbols=[...new Set((d?.positions||[]).map(p=>p.inst))];
+  if(!symbols.length)return {label:'账户快照',live:false,polling:false,needsQuotes:false};
+  const fresh=symbols.every(id=>{const m=marks.get(id);return m?.price>0&&now-m.at>=0&&now-m.at<=30000;});
+  const live=fresh&&stream?.state==='实时'&&now-stream.lastData<45000;
+  const polling=fresh&&!live&&pollAt>0&&now-pollAt<24000;
+  return {label:live?'行情实时':polling?'行情轮询':'行情断开',live,polling,freshMarks:fresh,needsQuotes:true};
+}
+
+export function accountDataNote(d,quote,now=Date.now()) {
+  if(!d)return '账户快照尚未读取。';
+  const age=Math.max(0,now-Date.parse(d.updated_at));
+  const elapsed=age<60000?'不足 1 分钟':`${Math.floor(age/60000)} 分钟`;
+  const title=`账户快照 ${time(d.updated_at)} UTC+7 · 距今 ${elapsed}`;
+  const pricing=quote.live||quote.polling?'持仓按模拟行情估值；成交与余额仍以账户快照为准。':quote.freshMarks?'行情连接已断，暂用最近收到的模拟标记价估值。':quote.needsQuotes?'行情未连接，账户权益使用上次快照值；持仓报价以各行标注为准。':'当前无持仓，无需持仓行情订阅。';
+  return `${title}。${pricing}${age>OKX_SNAPSHOT_DELAY?' 后台账户快照更新延迟。':''}`;
 }
 
 export function okxCurveSVG(d) {

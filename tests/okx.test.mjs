@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validOkx, okxLive, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxFeed, okxStart } from '../assets/okx.mjs';
+import { validOkx, okxLive, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxFeed, okxStart, demoQuoteState, accountDataNote } from '../assets/okx.mjs';
 
 const NOW = Date.parse('2026-11-03T12:00:00Z');
 const summary = (over = {}) => ({
@@ -40,13 +40,26 @@ test('totals report return against the starting equity and today against the day
   assert.equal(okxStart(summary({ start_equity: undefined, history: [] })), 5000);
 });
 
-test('status reflects stale, halted, paused and running', () => {
-  assert.equal(okxStatus(summary(), NOW).label, '运行中');
+test('trading switch and delayed account snapshots are distinct', () => {
+  assert.equal(okxStatus(summary({updated_at:new Date(NOW-300e3).toISOString()}), NOW).label, '允许开仓');
+  assert.equal(okxStatus(summary(), NOW).label, '快照延迟 · 未暂停');
   assert.equal(okxStatus(summary({ paused: true }), NOW).label, '已暂停');
   assert.equal(okxStatus(summary({ halted: true, paused: true }), NOW).label, '日亏停手');
-  assert.equal(okxStatus(summary(), NOW + 6 * 3600e3).label, '数据延迟');
-  assert.equal(okxStatus(summary(), Date.parse('2026-11-03T13:00:00Z')).label, '运行中');   // 80 min old: still fresh
-  assert.equal(okxStatus(summary(), Date.parse('2026-11-03T13:15:00Z')).label, '数据延迟'); // 95 min old
+  assert.equal(okxStatus(summary(), NOW + 6 * 3600e3).label, '快照延迟 · 未暂停');
+  assert.equal(okxStatus(summary(), Date.parse('2026-11-03T13:00:00Z')).label, '快照延迟 · 未暂停');
+  assert.equal(okxStatus(summary({paused:true}), NOW + 6 * 3600e3).label, '已暂停');
+});
+
+test('demo quote connectivity requires fresh marks for every held instrument',()=>{
+  const data=summary(),marks=new Map([['BTC-USDT-SWAP',{price:70100,at:NOW}]]);
+  assert.equal(demoQuoteState(data,new Map(),{state:'实时',lastData:NOW},NOW,NOW).label,'行情断开');
+  assert.equal(demoQuoteState(data,marks,{state:'实时',lastData:NOW},0,NOW).label,'行情实时');
+  assert.equal(demoQuoteState(data,marks,{state:'离线',lastData:0},NOW,NOW).label,'行情轮询');
+  assert.equal(demoQuoteState(data,marks,{state:'实时',lastData:NOW},NOW,NOW+31000).label,'行情断开');
+  assert.equal(demoQuoteState({...data,positions:[]},new Map(),null,0,NOW).label,'账户快照');
+  const note=accountDataNote(data,demoQuoteState(data,new Map(),null,0,NOW),NOW);
+  assert.match(note,/距今 20 分钟/);assert.match(note,/使用上次快照/);assert.match(note,/更新延迟/);
+  assert.match(accountDataNote(data,demoQuoteState(data,marks,{state:'实时',lastData:NOW},0,NOW),NOW),/按模拟行情估值/);
 });
 
 test('curve draws the equity history and waits for enough points', () => {

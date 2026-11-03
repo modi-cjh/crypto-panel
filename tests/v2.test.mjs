@@ -98,7 +98,9 @@ test('WS：指数退避、连续失败回退、有效数据才标实时、清理
  socket.onmessage({data:JSON.stringify({data:['invalid']})});assert.equal(stream.state,'离线');
  socket.onmessage({data:JSON.stringify({data:['valid']})});assert.equal(stream.state,'实时');
  stream.stop();assert.equal(stream.timers.size,0);assert.equal(socket.closed,true);assert.match(socket.sent,/unsubscribe/);assert.equal(socket.onmessage,null);
- stream.stopped=false;stream.later=(fn,ms)=>{stream.pending={fn,ms};};stream.failed();assert.equal(stream.pending.ms,1000);stream.failed();assert.equal(stream.state,'轮询');stream.stop();
+ stream.stopped=false;stream.later=(fn,ms)=>{stream.pending={fn,ms};};stream.failed();assert.equal(stream.pending.ms,1000);stream.failed();assert.equal(stream.state,'轮询');assert.equal(stream.pending.ms,60000);
+ stream.pending.fn();assert.notEqual(Socket.last,socket);assert.equal(stream.failures,0);
+ Socket.last.onmessage({data:JSON.stringify({data:['valid']})});assert.equal(stream.state,'实时');stream.stop();
 });
 test('实时 K 线只替换最后一根或追加；成交/持仓标记映射到对应 K 线',()=>{
  const bars=[{time:100,close:1},{time:200,close:2}];assert.equal(mergeCandle(bars,{time:50}),bars);
