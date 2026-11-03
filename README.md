@@ -25,7 +25,20 @@ python3 tools/make_snapshot.py \
 
 其他选项：`--output` 设置兼容快照路径，其他公开文件默认写到相邻目录；`--account-output`、`--team-root`、`--team-output` 可单独指定，`--team-only` 仅生成团队数据。已删除 BT60 / 旧回测表数据生成、参数和相应测试。
 
-## 手机首页
+## 自动发布到看板
+
+模拟盘恢复运行后，在运行模拟盘的机器上（本仓库目录、`master` 分支、已配置可推送的 git 凭证）执行：
+
+```bash
+python3 tools/publish_snapshot.py                    # 每 10 分钟生成并推送一次，Ctrl+C 停止
+python3 tools/publish_snapshot.py --once             # 只发布一次
+python3 tools/publish_snapshot.py --dry-run --once   # 本地生成并提交，不推送
+nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
+```
+
+每轮依次：`git pull --rebase` 同步远程代码 → 运行 `make_snapshot.py`（未识别参数原样转发，如 `--source-root`）→ 只暂存并提交 `paper/*.json`，提交信息 `snapshot <UTC时间>` → 推送，失败按 2/4/8/16 秒重试，仍失败则留在本地下轮再推。生成或校验失败时不提交，看板保留上次数据；快照无变化不提交；不在目标分支时拒绝运行。间隔最小 360 秒，默认 600 秒，以免超出 GitHub Pages 每小时约 10 次构建的软上限；页面超过 `config.js.offlineMinutes`（15 分钟）未更新会显示延迟 / 离线。
+
+
 
 - 常驻余额与持仓金额只取 `paper_main`；现金加逐仓浮盈计算权益，每仓亏损按保证金封顶。旧账户不计入总额。
 - 首页主卡显示账户权益和当日盈亏（USDT / %），轻量 SVG 曲线取 `account.json` 的 `equity_curve`，日 / 周为最近24h / 7d，全部为全部观测点；不插入实时估值。没有曲线时显示100U平线与“暂无记录”，缺当日基准显示“—”。
@@ -67,7 +80,7 @@ manual_status 优先用内部订单ID关联；ID不会公开。最终盈亏仅�
 
 团队数据只发布六角色、经过过滤的结构化报告、任务和评级；不发布任意未知字段或群聊原文。公开文本过滤已有姓名黑名单、密钥关键词、长token、邮箱、手机号、账户标识；会议信息和事件窗口原因同样过滤。原始备注、私有ID、错误栈、服务器文件路径和凭证不得进入快照。
 
-静态发布仅包含 `index.html`、`config.js`、`assets/`、`paper/`、`.nojekyll`。不要发布 tools、tests、截图、视频、源CSV或运行环境文件。禁止将密钥、真名、群聊原文写入浏览器资源。不会 git commit 或自动部署。
+静态发布仅包含 `index.html`、`config.js`、`assets/`、`paper/`、`.nojekyll`。不要发布 tools、tests、截图、视频、源CSV或运行环境文件。禁止将密钥、真名、群聊原文写入浏览器资源。`make_snapshot.py` 本身不会 git commit；自动发布由下面的 `publish_snapshot.py` 显式启动。
 
 行情仅使用 OKX 公共 GET 和公开 WebSocket，credentials=omit。CSP 限制固定CDN / OKX端点。前端保留请求限速、重试、过期回退与后台暂停；不调用私有交易接口。所有时间显示 UTC+7；`config.js.startDate` 控制 DAY 起点。支持 reduced-motion、低性能设备和无图表库时的文本数据回退。历史权益图是本地 SVG，不依赖外部图表库。
 
