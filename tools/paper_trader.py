@@ -17,7 +17,9 @@ open risk <= 5%, one position per coin, daily (UTC+7) 8% loss halt, taker 0.05% 
 side, stop assumed first when stop and target fall inside one bar, loss capped at posted margin.
 
 Each run only processes bars newer than the saved state, so reruns are idempotent and missed hours
-are caught up from the fetched history. Standard library only.
+are caught up from the fetched history. A fresh account can be started N days in the past with
+--backfill-days: the same code replays those days hour by hour, then continues live; `live_since`
+marks where the replay ends. --reset deletes all account data first. Standard library only.
 """
 import argparse
 import csv
@@ -27,7 +29,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-COINS = 'BTC ETH SOL XRP DOGE BNB ADA LINK AVAX LTC DOT TRX BCH UNI NEAR AAVE ETC FIL APT ARB OP SUI PEPE'.split()
+COINS = 'BTC ETH SOL XRP DOGE'.split()  # the five most liquid majors, chosen for the learning run
 INSTRUMENTS = [f'{c}-USDT-SWAP' for c in COINS]
 HOUR = 3_600_000
 BAR_MS = {'1H': HOUR, '1Dutc': 24 * HOUR}
@@ -153,20 +155,23 @@ def mark(acct, prices):
     return eq
 
 
-def replay(acct, cfg, series, ind, until=None):
+def replay(acct, cfg, series, ind, until=None, start_ts=None):
     """Advance one account over closed bars newer than acct['last_ts']. Returns (trades, equity_points, events)."""
     index = {inst: {b['ts']: i for i, b in enumerate(bars)} for inst, bars in series.items()}
     times = sorted({b['ts'] for bars in series.values() for b in bars})
     if until is not None:
         times = [t for t in times if t <= until]
     trades, points, events = [], [], []
-    if acct['last_ts'] is None:  # start fresh from the latest closed bar: no backfilled history
-        if times:
-            acct['last_ts'] = times[-1]
-            acct['day'], acct['day_start'] = local_day(times[-1]), acct['cash']
-            points.append((times[-1], round(acct['cash'], 6)))
-            events.append(dict(ts=iso(times[-1]), type='started', equity=acct['cash']))
-        return trades, points, events
+    if acct['last_ts'] is None:  # fresh account: start at the latest closed bar, or at start_ts to backfill
+        anchor = [t for t in times if start_ts is None or t <= start_ts]
+        if not anchor:
+            return trades, points, events
+        acct['last_ts'] = anchor[-1]
+        acct['day'], acct['day_start'] = local_day(anchor[-1]), acct['cash']
+        points.append((anchor[-1], round(acct['cash'], 6)))
+        events.append(dict(ts=iso(anchor[-1]), type='started', equity=acct['cash'], backfill=start_ts is not None))
+        if start_ts is None:
+            return trades, points, events
     new = [t for t in times if t > acct['last_ts']]
     step = BAR_MS[cfg.get('bar', '1H')]
     if new and new[0] - acct['last_ts'] > step:
@@ -292,6 +297,7 @@ def summarize(key, cfg, acct, data_dir):
                 avg_r=round(sum(t['r'] for t in trades) / len(trades), 3) if trades else None,
                 payoff=round((sum(t['pnl'] for t in wins) / len(wins)) / (-sum(t['pnl'] for t in losses) / len(losses)), 2) if wins and losses and sum(t['pnl'] for t in losses) < 0 else None,
                 halted=acct['halted'], last_bar=iso(acct['last_ts']) if acct['last_ts'] else None,
+                started=acct.get('started'), live_since=acct.get('live_since'),
                 open_positions=[dict(inst=k, side=p['side'], entry=round(p['entry'], 8), stop=round(p['stop'], 8), target=None if p['tp'] is None else round(p['tp'], 8),
                                      opened=iso(p['opened']), leverage=p['leverage'], qty=p['qty'], margin=round(p['margin'], 6)) for k, p in sorted(acct['positions'].items())],
                 pending=sorted(acct['pending']))
@@ -338,11 +344,22 @@ def write_readme(data_dir, summary):
     (data_dir / 'README.md').write_text('\n'.join(lines))
 
 
-def run_once(data_dir, fetch=fetch_okx, until=None, now=None):
+def run_once(data_dir, fetch=fetch_okx, until=None, now=None, backfill_days=0, reset=False):
     data_dir = Path(data_dir); data_dir.mkdir(parents=True, exist_ok=True)
+    now = now or datetime.now(timezone.utc)
+    if reset:  # start over: remove every account's state and outputs (the branch history keeps the old data)
+        import shutil
+        for key in STRATEGIES:
+            shutil.rmtree(data_dir / key, ignore_errors=True)
+        for name in ('summary.json', 'dashboard.json', 'README.md'):
+            (data_dir / name).unlink(missing_ok=True)
+    backfill_days = max(0, min(int(backfill_days or 0), 90))
+    start_ts = int((now - timedelta(days=backfill_days)).timestamp() * 1000) if backfill_days else None
     books = {}
     for bar in sorted({cfg.get('bar', '1H') for cfg in STRATEGIES.values()}):
-        series = {inst: fetch(inst, bar) for inst in INSTRUMENTS}
+        # A backfill needs the replayed days plus 500 bars of indicator warm-up.
+        pages = -(-(backfill_days * 24 + 500) // 100) if backfill_days and bar == '1H' else None
+        series = {inst: fetch(inst, bar, **({'pages': pages} if pages else {})) for inst in INSTRUMENTS}
         series = {k: v for k, v in series.items() if v}
         if until is not None:
             series = {k: [b for b in v if b['ts'] <= until] for k, v in series.items()}
@@ -352,7 +369,11 @@ def run_once(data_dir, fetch=fetch_okx, until=None, now=None):
         d = data_dir / key; d.mkdir(exist_ok=True)
         acct = load_state(d / 'state.json')
         series, ind = books[cfg.get('bar', '1H')]
-        trades, points, events = replay(acct, cfg, series, ind)
+        fresh = acct['last_ts'] is None
+        trades, points, events = replay(acct, cfg, series, ind, start_ts=start_ts if fresh else None)
+        if fresh and acct['last_ts'] is not None:
+            acct['started'] = iso(points[0][0])
+            acct['live_since'] = now.isoformat(timespec='seconds').replace('+00:00', 'Z') if start_ts else acct['started']
         if trades:
             append_csv(d / 'trades.csv', TRADE_FIELDS, trades)
         if points:
@@ -362,7 +383,7 @@ def run_once(data_dir, fetch=fetch_okx, until=None, now=None):
                 f.writelines(json.dumps(e, ensure_ascii=False) + '\n' for e in events)
         (d / 'state.json').write_text(json.dumps(acct, ensure_ascii=False, indent=1, sort_keys=True))
         accounts[key] = summarize(key, cfg, acct, data_dir)
-    summary = dict(updated_at=(now or datetime.now(timezone.utc)).isoformat(timespec='seconds').replace('+00:00', 'Z'), start_equity=START_EQUITY, accounts=accounts)
+    summary = dict(updated_at=now.isoformat(timespec='seconds').replace('+00:00', 'Z'), start_equity=START_EQUITY, accounts=accounts)
     (data_dir / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1))
     write_readme(data_dir, summary)
     write_dashboard(data_dir, summary)
@@ -372,8 +393,10 @@ def run_once(data_dir, fetch=fetch_okx, until=None, now=None):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--data', type=Path, required=True, help='directory holding account state and outputs')
+    ap.add_argument('--reset', action='store_true', help='delete all account state and outputs before running')
+    ap.add_argument('--backfill-days', type=int, default=0, help='start fresh accounts this many days ago (max 90) and replay to now')
     args = ap.parse_args()
-    summary = run_once(args.data)
+    summary = run_once(args.data, backfill_days=args.backfill_days, reset=args.reset)
     for s in summary['accounts'].values():
         print(f"{s['name']}: 权益 {s['equity']:.2f} USDT ({s['return_pct']:+.2f}%) · 已平仓 {s['closed_trades']} · 持仓 {len(s['open_positions'])} · 最新K线 {s['last_bar']}")
 

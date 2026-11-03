@@ -4,6 +4,7 @@ import math
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import paper_trader as pt
@@ -175,6 +176,40 @@ class PaperTraderTests(unittest.TestCase):
         pts = [[i, float(i)] for i in range(5000)]
         small = pt.downsample(pts, 720)
         self.assertEqual(len(small), 720); self.assertEqual(small[0], pts[0]); self.assertEqual(small[-1], pts[-1])
+
+    def test_backfill_replays_past_days_like_hourly_runs_then_marks_live_since(self):
+        rows = breakout_then([(1.0, 1.03, 0.995, 1.02), (1.02, 1.05, 1.01, 1.04), (1.04, 1.04, 0.97, 0.975)])
+        class KwFeed(Feed):
+            def __call__(self, inst, bar='1H', **kw): return super().__call__(inst, bar)
+        last = rows[-1]['ts']; now = datetime.fromtimestamp((last + H // 2) / 1000, timezone.utc)
+        a, b = tempfile.mkdtemp(), tempfile.mkdtemp()
+        s = pt.run_once(a, fetch=KwFeed(rows), now=now, backfill_days=1)  # one run replays the last day
+        acct = s['accounts']['breakout_long']
+        self.assertEqual(acct['live_since'], now.isoformat(timespec='seconds').replace('+00:00', 'Z'))
+        self.assertLess(acct['started'], acct['live_since'])
+        anchor = max(r['ts'] for r in rows if r['ts'] <= last + H // 2 - 24 * H)
+        self.assertEqual(acct['started'], pt.iso(anchor))
+        feed = Feed(rows); run(b, feed, anchor)                     # the same start, advanced hour by hour
+        for r in rows:
+            if r['ts'] > anchor: run(b, feed, r['ts'])
+        self.assertEqual(trades(a, 'breakout_long'), trades(b, 'breakout_long'))
+        self.assertEqual(len(trades(a, 'breakout_long')), 1)
+        events = [json.loads(l) for l in (Path(a) / 'breakout_long' / 'events.jsonl').read_text().splitlines()]
+        self.assertTrue(events[0]['backfill'])
+
+    def test_reset_clears_accounts_and_backfill_only_applies_to_fresh_accounts(self):
+        rows = uptrend(); feed = Feed(rows)
+        run(self.tmp, feed, rows[-3]['ts']); run(self.tmp, feed, rows[-1]['ts'])
+        before = (Path(self.tmp) / 'breakout_long' / 'equity.csv').read_text()
+        class KwFeed(Feed):
+            def __call__(self, inst, bar='1H', **kw): return super().__call__(inst, bar)
+        now = datetime.fromtimestamp((rows[-1]['ts'] + H) / 1000, timezone.utc)
+        pt.run_once(self.tmp, fetch=KwFeed(rows), now=now, backfill_days=5)   # existing state: backfill ignored
+        self.assertEqual((Path(self.tmp) / 'breakout_long' / 'equity.csv').read_text(), before)
+        s = pt.run_once(self.tmp, fetch=KwFeed(rows), now=now, reset=True, backfill_days=2)
+        eq = (Path(self.tmp) / 'breakout_long' / 'equity.csv').read_text().splitlines()
+        self.assertEqual(len(eq) - 1, 2 * 24)                         # header + one point per replayed hour (start included)
+        self.assertEqual(s['accounts']['breakout_long']['equity'], 100.0)
 
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@ import { HomePositions, equitySVG, rangePoints } from './home.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
-import { SIM_URL, SIM_COLORS, SIM_STALE, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simTotals, simMascotState, simChanges, simFeed, simPendingText } from './sim.mjs';
+import { SIM_URL, SIM_COLORS, SIM_STALE, validSim, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simTotals, simMascotState, simChanges, simFeed, simPendingText, simBackfillNote } from './sim.mjs';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs';
@@ -618,6 +618,7 @@ function renderSim(){
   $('sim-total-equity').textContent=num(t.equity);
   $('sim-total-ret').innerHTML=`合计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
   $('sim-total-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;
+  const note=simBackfillNote(simData);$('home-sim-backfill').hidden=!note;$('home-sim-backfill').textContent=note;
   $('home-sim-curve').innerHTML=simCurveSVG(simData);$('home-sim-cards').innerHTML=simCardsMarkup(simData);
   const pending=simPendingText(simData);$('home-sim-pending').hidden=!pending;$('home-sim-pending').textContent=pending;
   $('home-sim-positions').innerHTML=simPositionsMarkup(simData,tickers,prices);$('home-sim-trades').innerHTML=simTradesMarkup(simData,10);
@@ -626,6 +627,7 @@ function renderSim(){
  if(route!=='sim')return;
  if(!simData){$('sim-cards').innerHTML='<p class="empty">正在读取模拟账户…</p>';return;}
  $('sim-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;
+ {const note=simBackfillNote(simData);$('sim-backfill').hidden=!note;$('sim-backfill').textContent=note;}
  $('sim-cards').innerHTML=simCardsMarkup(simData);$('sim-curve').innerHTML=simCurveSVG(simData);
  $('sim-positions').innerHTML=simPositionsMarkup(simData,tickers,errors.has('prices')?0:priceAt);$('sim-trades').innerHTML=simTradesMarkup(simData);
 }

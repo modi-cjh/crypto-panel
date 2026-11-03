@@ -172,3 +172,4 @@ html.sim-primary:not(.show-legacy) #home-page>#timeline-fold{display:none}
 .home-sim{display:flex;flex-direction:column;gap:12px;margin-bottom:12px}.home-sim .sim-cards{margin-bottom:0}.sim-capital .panel-heading{margin-top:14px}
 .sim-pending{margin:0 0 10px;padding:8px 12px;border-radius:10px;background:#fff8e8;color:#744b00;font-size:13px}
 #legacy-toggle{align-self:center}
+.sim-backfill{margin:10px 0 0;padding:8px 12px;border-radius:10px;background:#eef2ff;color:#3730a3;font-size:12px;line-height:1.5}.sim-curve .sim-live{stroke:#6366f1;stroke-dasharray:3 3}.sim-curve .sim-live-label{fill:#4f46e5;font-size:10px}
