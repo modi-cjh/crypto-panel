@@ -42,8 +42,8 @@ def breakout_then(after):
 
 class Feed:
     def __init__(self, rows): self.rows, self.until = rows, None
-    def __call__(self, inst):
-        if inst != 'BTC-USDT-SWAP': return []
+    def __call__(self, inst, bar='1H'):
+        if inst != 'BTC-USDT-SWAP' or bar != '1H': return []
         return [r for r in self.rows if self.until is None or r['ts'] <= self.until][-500:]
 
 
@@ -55,6 +55,30 @@ def run(tmp, feed, until):
 def trades(tmp, key):
     path = Path(tmp) / key / 'trades.csv'
     return list(csv.DictReader(path.read_text().splitlines())) if path.exists() else []
+
+
+DAY = 24 * H
+
+
+class DailyFeed:
+    """Serves the given daily rows for 1Dutc and nothing for 1H."""
+    def __init__(self, rows): self.rows, self.until = rows, None
+    def __call__(self, inst, bar='1H'):
+        if inst != 'BTC-USDT-SWAP' or bar != '1Dutc': return []
+        return [r for r in self.rows if self.until is None or r['ts'] <= self.until][-500:]
+
+
+def volatile_daily_breakout():
+    """Daily uptrend with wide ranges (ATR about 10% of price), then a 20-day breakout, fill, and a crash."""
+    rows, px = [], 100.0
+    for i in range(260):
+        o, c = px, px * (1.002 if i % 2 else 0.999)
+        rows.append(dict(ts=T0 + i * DAY, o=o, h=max(o, c) * 1.05, l=min(o, c) * 0.95, c=c, q=1e9)); px = c
+    n = len(rows); top = max(r['h'] for r in rows[-20:]); c = top * 1.01
+    rows.append(dict(ts=T0 + n * DAY, o=px, h=c * 1.01, l=px * 0.99, c=c, q=1e9))
+    rows.append(dict(ts=T0 + (n + 1) * DAY, o=c, h=c * 1.01, l=c * 0.99, c=c, q=1e9))
+    rows.append(dict(ts=T0 + (n + 2) * DAY, o=c * 0.98, h=c * 0.98, l=c * 0.6, c=c * 0.62, q=1e9))
+    return rows
 
 
 class PaperTraderTests(unittest.TestCase):
@@ -120,6 +144,22 @@ class PaperTraderTests(unittest.TestCase):
         x = pt.indicators(uptrend())
         self.assertTrue(all(pt.signal(x, i, cfg) == 0 for i in range(len(x['c']))))  # calm trend: no reversion entries
         self.assertTrue(math.isclose(x['e50'][0], uptrend()[0]['c']))  # EMA seeds with the first close
+
+    def test_daily_breakout_uses_wide_stop_and_lowers_leverage_to_stay_beyond_liquidation(self):
+        rows = volatile_daily_breakout(); feed = DailyFeed(rows)
+        run(self.tmp, feed, rows[-4]['ts'])
+        for r in rows[-3:]: run(self.tmp, feed, r['ts'])
+        t = trades(self.tmp, 'breakout_daily')
+        self.assertEqual(len(t), 1); t = t[0]
+        self.assertEqual(t['reason'], 'stop')
+        entry = float(t['entry']); stop_dist = 1 - float(t['exit']) / entry  # gap down fills below the stop
+        self.assertGreater(stop_dist, .04)                       # wider than the 1H cap
+        self.assertLess(int(t['leverage']), 10)                  # lowered so liquidation sits beyond the stop
+        self.assertLessEqual(int(t['leverage']) * (stop_dist if stop_dist < .25 else .25), 1.0)
+        self.assertGreater(float(t['pnl']), -float(t['qty']) * entry / int(t['leverage']) - 1e-9)  # never beyond margin
+        self.assertEqual(trades(self.tmp, 'breakout_long'), [])  # hourly accounts ignore daily data
+        s = json.loads((Path(self.tmp) / 'summary.json').read_text())
+        self.assertEqual(list(s['accounts']), ['mean_reversion', 'breakout_long', 'breakout_daily'])
 
 
 if __name__ == '__main__':

@@ -8,6 +8,8 @@ independent 100 USDT paper accounts in a data directory:
                      RSI 25 / trend 2%; stop 1.5xATR14 (0.5%..4%), target 20-bar mid band, 24h time stop.
   breakout_long   -- long-only Donchian: close > prior 48h high with EMA50 > EMA200; stop 2xATR14
                      (0.5%..4%), 3xATR chandelier trailing stop, 168h time stop, at most 6 positions.
+  breakout_daily  -- the same long-only Donchian on daily (UTC) candles: 20-day high, EMA50 > EMA200,
+                     stop 2x daily ATR14 (0.5%..25%), 3xATR trailing stop, 90-day time stop, at most 6 positions.
 
 Shared rules (identical to the research backtests): signals on closed bars, fill at the next bar's
 open, 1% equity risk per trade, isolated 10x/5x by trailing 24h turnover (>= 50M USDT), same-direction
@@ -28,11 +30,14 @@ from pathlib import Path
 COINS = 'BTC ETH SOL XRP DOGE BNB ADA LINK AVAX LTC DOT TRX BCH UNI NEAR AAVE ETC FIL APT ARB OP SUI PEPE'.split()
 INSTRUMENTS = [f'{c}-USDT-SWAP' for c in COINS]
 HOUR = 3_600_000
+BAR_MS = {'1H': HOUR, '1Dutc': 24 * HOUR}
 FEE, SLIP = 0.0005, 0.0002
 START_EQUITY = 100.0
 STRATEGIES = {
-    'mean_reversion': dict(name='均值回归', kind='mr', rsi=25, trend=.02, stop_k=1.5, trail_k=None, hold=24, max_pos=None, long_only=False),
-    'breakout_long': dict(name='趋势突破只做多', kind='donchian', lookback=48, stop_k=2.0, trail_k=3.0, hold=168, max_pos=6, long_only=True),
+    'mean_reversion': dict(name='均值回归', kind='mr', bar='1H', rsi=25, trend=.02, stop_k=1.5, stop_cap=.04, trail_k=None, hold=24, max_pos=None, long_only=False, turn_window=24),
+    'breakout_long': dict(name='趋势突破只做多', kind='donchian', bar='1H', lookback=48, stop_k=2.0, stop_cap=.04, trail_k=3.0, hold=168, max_pos=6, long_only=True, turn_window=24),
+    # Daily stops are wider than 4%, so leverage is lowered when needed to keep liquidation beyond the stop.
+    'breakout_daily': dict(name='日线趋势突破', kind='donchian', bar='1Dutc', lookback=20, stop_k=2.0, stop_cap=.25, trail_k=3.0, hold=90, max_pos=6, long_only=True, turn_window=1),
 }
 RISK, SAME_SIDE_CAP, DAILY_HALT = .01, .05, .08
 UTC7 = timezone(timedelta(hours=7))
@@ -53,11 +58,11 @@ def okx_get(path, retries=5):
     raise RuntimeError(f'OKX request failed: {path}')
 
 
-def fetch_okx(inst, pages=5):
-    """Closed 1H bars, oldest first: dicts with ts/o/h/l/c/q (q = quote turnover)."""
+def fetch_okx(inst, bar='1H', pages=5):
+    """Closed bars (1H or 1Dutc), oldest first: dicts with ts/o/h/l/c/q (q = quote turnover)."""
     rows, after = {}, ''
     for _ in range(pages):
-        data = okx_get(f'market/history-candles?instId={inst}&bar=1H&limit=100' + (f'&after={after}' if after else ''))
+        data = okx_get(f'market/history-candles?instId={inst}&bar={bar}&limit=100' + (f'&after={after}' if after else ''))
         if not data:
             break
         for r in data:
@@ -163,8 +168,9 @@ def replay(acct, cfg, series, ind, until=None):
             events.append(dict(ts=iso(times[-1]), type='started', equity=acct['cash']))
         return trades, points, events
     new = [t for t in times if t > acct['last_ts']]
-    if new and new[0] - acct['last_ts'] > HOUR:
-        events.append(dict(ts=iso(new[0]), type='gap', missing_hours=(new[0] - acct['last_ts']) // HOUR - 1))
+    step = BAR_MS[cfg.get('bar', '1H')]
+    if new and new[0] - acct['last_ts'] > step:
+        events.append(dict(ts=iso(new[0]), type='gap', missing_bars=(new[0] - acct['last_ts']) // step - 1))
     last_close = dict(acct.get('last_marks', {}))
     for t in new:
         bars_now = {inst: series[inst][index[inst][t]] for inst in series if t in index[inst]}
@@ -175,7 +181,7 @@ def replay(acct, cfg, series, ind, until=None):
             del acct['pending'][inst]
             bar, s = bars_now[inst], o['side']
             entry = bar['o'] * (1 + SLIP * s)
-            dist = min(max(cfg['stop_k'] * o['atr'] / entry, .005), .04)
+            dist = min(max(cfg['stop_k'] * o['atr'] / entry, .005), cfg.get('stop_cap', .04))
             tp = o.get('mid')
             if tp is not None and (tp - entry) * s <= 0:
                 events.append(dict(ts=iso(t), type='skip', inst=inst, reason='already_at_mean')); continue
@@ -187,6 +193,8 @@ def replay(acct, cfg, series, ind, until=None):
                 events.append(dict(ts=iso(t), type='skip', inst=inst, reason='max_positions')); continue
             qty = o['risk'] / (entry * dist)
             lev = 10 if o['turn24'] >= 50e6 else 5
+            if dist >= .8 / lev:  # keep liquidation beyond the stop (only wide daily stops hit this)
+                lev = max(1, int(.8 / dist))
             margin = qty * entry / lev
             if margin > equity - sum(p['margin'] for p in acct['positions'].values()):
                 events.append(dict(ts=iso(t), type='skip', inst=inst, reason='margin')); continue
@@ -237,7 +245,7 @@ def replay(acct, cfg, series, ind, until=None):
             i = index[inst][t]; s = signal(ind[inst], i, cfg)
             if s == 0 or (cfg['long_only'] and s == -1):
                 continue
-            turn24 = sum(ind[inst]['q'][max(0, i - 23):i + 1])
+            turn24 = sum(ind[inst]['q'][max(0, i - cfg.get('turn_window', 24) + 1):i + 1])
             acct['pending'][inst] = dict(side=s, atr=ind[inst]['atr'][i], mid=ind[inst]['mid'][i] if cfg['kind'] == 'mr' else None,
                                          turn24=turn24, risk=RISK * equity, signal_ts=t)
             events.append(dict(ts=iso(t), type='signal', inst=inst, side=s))
@@ -290,7 +298,7 @@ def summarize(key, cfg, acct, data_dir):
 
 
 def write_readme(data_dir, summary):
-    lines = ['# 模拟盘数据（学习用途）', '', f"更新：{summary['updated_at']}（UTC）· 两个账户各从 {START_EQUITY:.0f} USDT 起步 · 由 `tools/paper_trader.py` 每小时自动生成", '',
+    lines = ['# 模拟盘数据（学习用途）', '', f"更新：{summary['updated_at']}（UTC）· 每个账户各从 {START_EQUITY:.0f} USDT 起步 · 由 `tools/paper_trader.py` 每小时自动生成", '',
              '| 账户 | 权益 USDT | 收益 | 最大回撤 | 已平仓 | 胜率 | 平均 R | 持仓 |', '|---|---|---|---|---|---|---|---|']
     for s in summary['accounts'].values():
         lines.append(f"| {s['name']} | {s['equity']:.2f} | {s['return_pct']:+.2f}% | {s['max_drawdown_pct']:.2f}% | {s['closed_trades']} | "
@@ -301,15 +309,18 @@ def write_readme(data_dir, summary):
 
 def run_once(data_dir, fetch=fetch_okx, until=None, now=None):
     data_dir = Path(data_dir); data_dir.mkdir(parents=True, exist_ok=True)
-    series = {inst: fetch(inst) for inst in INSTRUMENTS}
-    series = {k: v for k, v in series.items() if v}
-    if until is not None:
-        series = {k: [b for b in v if b['ts'] <= until] for k, v in series.items()}
-    ind = {inst: indicators(bars) for inst, bars in series.items()}
+    books = {}
+    for bar in sorted({cfg.get('bar', '1H') for cfg in STRATEGIES.values()}):
+        series = {inst: fetch(inst, bar) for inst in INSTRUMENTS}
+        series = {k: v for k, v in series.items() if v}
+        if until is not None:
+            series = {k: [b for b in v if b['ts'] <= until] for k, v in series.items()}
+        books[bar] = (series, {inst: indicators(bars) for inst, bars in series.items()})
     accounts = {}
     for key, cfg in STRATEGIES.items():
         d = data_dir / key; d.mkdir(exist_ok=True)
         acct = load_state(d / 'state.json')
+        series, ind = books[cfg.get('bar', '1H')]
         trades, points, events = replay(acct, cfg, series, ind)
         if trades:
             append_csv(d / 'trades.csv', TRADE_FIELDS, trades)
