@@ -64,6 +64,8 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   assert.equal(await page.locator('[data-close]').evaluate(e => getComputedStyle(e).outlineStyle), 'none');
   await page.locator('[data-close]').tap();
   assert.equal(await page.locator('#mascot-touch').evaluate(e => e === document.activeElement && getComputedStyle(e).outlineStyle), 'none');
+  // Without any keypress the ring stays off even if the class logic never ran (stale cached script).
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('companion-keyboard')), false);
   await page.keyboard.press('Shift'); // any key brings the ring back for keyboard users
   assert.notEqual(await page.locator('#mascot-touch').evaluate(e => getComputedStyle(e).outlineStyle), 'none');
   // Keyboard activation opens immediately.
