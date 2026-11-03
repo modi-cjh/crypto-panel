@@ -263,7 +263,6 @@ async function refreshCandles(force = false) {
     const bars = parseCandles(await api.get('market/candles', { instId: id, bar, limit: 300 }, 8));
     if (!bars.length) throw new Error('接口未返回有效 K 线');
     const at = Date.now(); candleCache.set(key, { bars, at });
-    if (id === focusSymbol && bar === '1H') setError('technical', null);
     if (route === 'home') renderHome();
     if (!['home', 'coin'].includes(route) || coin !== id || timeframe !== bar) return;
     // 同一合约被离开又进入时也可使用刚完成的数据。
@@ -394,18 +393,6 @@ function renderDecisions() {
   $('decisions-panel').innerHTML=`<p>${escape(d.meeting || '暂无会议名称')} · 版本 ${escape(d.version || '—')}</p><small>${time(d.updated_at)} UTC+7</small><p>全局仓位系数 ${num(d.global_size_factor)}</p>${Object.entries(d.symbols).map(([symbol,r])=>`<article><strong>${escape(symbol.replace('-USDT-SWAP',''))} · ${bias[r.bias] || '—'}</strong><small>仓位系数 ${num(r.size_factor)}</small><p>${escape(r.note || '暂无')}</p></article>`).join('') || '<p>暂无币种决议</p>'}<h3>事件窗口</h3>${windows.length?windows.map(w=>`<article><span class="${Date.parse(w.start)<=Date.now()?'down':'muted'}">${Date.parse(w.start)<=Date.now()?'生效中':'待生效'} · ${escape(w.symbols.join(' / '))}</span><p>${time(w.start)} → ${time(w.end)} UTC+7</p><small>${escape(w.reason || '暂无原因')}</small></article>`).join(''):'<p class="muted">暂无</p>'}`;
 }
 
-async function refreshTechnical() {
-  const key = focusSymbol + '/1H', cached = candleCache.get(key);
-  if (cached && Date.now() - cached.at < 60000 || candleBusy.has(key)) return;
-  candleBusy.add(key);
-  try {
-    const bars = parseCandles(await api.get('market/candles', { instId: focusSymbol, bar: '1H', limit: 300 }, 8));
-    if (!bars.length) throw new Error('接口未返回有效 K 线');
-    candleCache.set(key, { bars, at: Date.now() }); setError('technical', null);
-    if (route === 'home') { renderHome(); if (coin === focusSymbol && timeframe === '1H') showCandles(bars, candleCache.get(key).at); }
-  } catch (error) { setError('technical', `技术卡：${description(error)}`); }
-  finally { candleBusy.delete(key); }
-}
 function navigate() {
   routeVersion++;
   const hash = location.hash || '#/';
@@ -433,7 +420,7 @@ function navigate() {
     renderDecisions();
     const cached = candleCache.get(coin + '/' + timeframe); if (cached) showCandles(cached.bars, cached.at);
     refreshCandles(); refreshSlow();
-    if (route === 'home') { syncHomeCoin(); refreshTeam(); refreshScan(); renderHome(); refreshTechnical(); if (snapshot) renderEquity(); }
+    if (route === 'home') { syncHomeCoin(); refreshTeam(); refreshScan(); renderHome(); if (snapshot) renderEquity(); }
   } else if (route === 'paper') { historyPage.refresh(); }
   else { renderMarket(); refreshSlow(); }
   if (route === 'home' || route === 'paper') refreshSnapshot();
