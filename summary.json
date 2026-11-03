@@ -1,18 +1,20 @@
 {
- "updated_at": "2026-11-03T15:07:05Z",
+ "updated_at": "2026-11-03T15:21:00Z",
  "start_equity": 100.0,
  "accounts": {
   "mean_reversion": {
    "name": "均值回归",
-   "equity": 100.0,
-   "return_pct": 0.0,
-   "max_drawdown_pct": 0.0,
-   "closed_trades": 0,
-   "win_rate_pct": null,
-   "avg_r": null,
-   "payoff": null,
+   "equity": 105.9936,
+   "return_pct": 5.99,
+   "max_drawdown_pct": 3.2,
+   "closed_trades": 11,
+   "win_rate_pct": 63.6,
+   "avg_r": 0.539,
+   "payoff": 1.49,
    "halted": false,
    "last_bar": "2026-11-03T14:00:00Z",
+   "started": "2026-10-04T15:00:00Z",
+   "live_since": "2026-11-03T15:21:00Z",
    "open_positions": [],
    "pending": [
     "XRP-USDT-SWAP"
@@ -20,15 +22,17 @@
   },
   "breakout_long": {
    "name": "趋势突破只做多",
-   "equity": 100.0,
-   "return_pct": 0.0,
-   "max_drawdown_pct": 0.0,
-   "closed_trades": 0,
-   "win_rate_pct": null,
-   "avg_r": null,
+   "equity": 98.0216,
+   "return_pct": -1.98,
+   "max_drawdown_pct": 3.68,
+   "closed_trades": 3,
+   "win_rate_pct": 0.0,
+   "avg_r": -0.656,
    "payoff": null,
    "halted": false,
    "last_bar": "2026-11-03T14:00:00Z",
+   "started": "2026-10-04T15:00:00Z",
+   "live_since": "2026-11-03T15:21:00Z",
    "open_positions": [],
    "pending": []
   },
@@ -43,6 +47,8 @@
    "payoff": null,
    "halted": false,
    "last_bar": "2026-11-02T00:00:00Z",
+   "started": "2026-10-04T00:00:00Z",
+   "live_since": "2026-11-03T15:21:00Z",
    "open_positions": [],
    "pending": []
   }

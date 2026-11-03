@@ -1,2 +1,35 @@
-{"ts": "2026-11-03T13:00:00Z", "type": "started", "equity": 100.0}
+{"ts": "2026-10-04T15:00:00Z", "type": "started", "equity": 100.0, "backfill": true}
+{"ts": "2026-10-04T22:00:00Z", "type": "signal", "inst": "DOGE-USDT-SWAP", "side": -1}
+{"ts": "2026-10-04T23:00:00Z", "type": "trade_opened", "inst": "DOGE-USDT-SWAP", "side": -1, "price": 0.09631073, "stop": 0.09733794, "target": 0.094067, "leverage": 10}
+{"ts": "2026-10-05T01:00:00Z", "type": "signal", "inst": "XRP-USDT-SWAP", "side": -1}
+{"ts": "2026-10-05T02:00:00Z", "type": "trade_opened", "inst": "XRP-USDT-SWAP", "side": -1, "price": 1.51979598, "stop": 1.53138523, "target": 1.504815, "leverage": 10}
+{"ts": "2026-10-05T04:00:00Z", "type": "trade_closed", "inst": "XRP-USDT-SWAP", "side": -1, "price": 1.504815, "pnl": 1.164328, "reason": "target"}
+{"ts": "2026-10-05T14:00:00Z", "type": "trade_closed", "inst": "DOGE-USDT-SWAP", "side": -1, "price": 0.094067, "pnl": 2.091636, "reason": "target"}
+{"ts": "2026-10-08T18:00:00Z", "type": "signal", "inst": "BTC-USDT-SWAP", "side": 1}
+{"ts": "2026-10-08T19:00:00Z", "type": "trade_opened", "inst": "BTC-USDT-SWAP", "side": 1, "price": 81476.292, "stop": 80544.27925357, "target": 82441.745, "leverage": 10}
+{"ts": "2026-10-09T04:00:00Z", "type": "trade_closed", "inst": "BTC-USDT-SWAP", "side": 1, "price": 82441.745, "pnl": 0.978807, "reason": "target"}
+{"ts": "2026-10-13T01:00:00Z", "type": "signal", "inst": "ETH-USDT-SWAP", "side": 1}
+{"ts": "2026-10-13T02:00:00Z", "type": "trade_opened", "inst": "ETH-USDT-SWAP", "side": 1, "price": 2463.572616, "stop": 2429.98703839, "target": 2516.311, "leverage": 10}
+{"ts": "2026-10-13T04:00:00Z", "type": "trade_closed", "inst": "ETH-USDT-SWAP", "side": 1, "price": 2516.311, "pnl": 1.559489, "reason": "target"}
+{"ts": "2026-10-14T16:00:00Z", "type": "signal", "inst": "ETH-USDT-SWAP", "side": 1}
+{"ts": "2026-10-14T17:00:00Z", "type": "trade_opened", "inst": "ETH-USDT-SWAP", "side": 1, "price": 2448.429588, "stop": 2415.74333434, "target": 2491.6915, "leverage": 10}
+{"ts": "2026-10-14T20:00:00Z", "type": "trade_closed", "inst": "ETH-USDT-SWAP", "side": 1, "price": 2415.74333434, "pnl": -1.136661, "reason": "stop"}
+{"ts": "2026-10-20T15:00:00Z", "type": "signal", "inst": "XRP-USDT-SWAP", "side": -1}
+{"ts": "2026-10-20T16:00:00Z", "type": "trade_opened", "inst": "XRP-USDT-SWAP", "side": -1, "price": 1.32113572, "stop": 1.33977713, "target": 1.3037, "leverage": 10}
+{"ts": "2026-10-20T22:00:00Z", "type": "trade_closed", "inst": "XRP-USDT-SWAP", "side": -1, "price": 1.33977713, "pnl": -1.121271, "reason": "stop"}
+{"ts": "2026-10-21T16:00:00Z", "type": "signal", "inst": "XRP-USDT-SWAP", "side": -1}
+{"ts": "2026-10-21T17:00:00Z", "type": "trade_opened", "inst": "XRP-USDT-SWAP", "side": -1, "price": 1.37962402, "stop": 1.39761853, "target": 1.34817, "leverage": 10}
+{"ts": "2026-10-21T18:00:00Z", "type": "trade_closed", "inst": "XRP-USDT-SWAP", "side": -1, "price": 1.39761853, "pnl": -1.115261, "reason": "stop"}
+{"ts": "2026-10-24T16:00:00Z", "type": "signal", "inst": "SOL-USDT-SWAP", "side": 1}
+{"ts": "2026-10-24T17:00:00Z", "type": "trade_opened", "inst": "SOL-USDT-SWAP", "side": 1, "price": 100.47009, "stop": 99.19856736, "target": 101.8785, "leverage": 10}
+{"ts": "2026-10-24T23:00:00Z", "type": "trade_closed", "inst": "SOL-USDT-SWAP", "side": 1, "price": 101.8785, "pnl": 1.052978, "reason": "target"}
+{"ts": "2026-10-30T02:00:00Z", "type": "signal", "inst": "BTC-USDT-SWAP", "side": 1}
+{"ts": "2026-10-30T02:00:00Z", "type": "signal", "inst": "XRP-USDT-SWAP", "side": 1}
+{"ts": "2026-10-30T03:00:00Z", "type": "trade_opened", "inst": "BTC-USDT-SWAP", "side": 1, "price": 77409.77886, "stop": 76251.08602663, "target": 79678.855, "leverage": 10}
+{"ts": "2026-10-30T03:00:00Z", "type": "trade_opened", "inst": "XRP-USDT-SWAP", "side": 1, "price": 1.22034402, "stop": 1.19306929, "target": 1.271695, "leverage": 10}
+{"ts": "2026-10-30T06:00:00Z", "type": "trade_closed", "inst": "XRP-USDT-SWAP", "side": 1, "price": 1.271695, "pnl": 1.900867, "reason": "target"}
+{"ts": "2026-10-31T03:00:00Z", "type": "trade_closed", "inst": "BTC-USDT-SWAP", "side": 1, "price": 77107.0, "pnl": -0.339382, "reason": "timeout"}
+{"ts": "2026-11-02T04:00:00Z", "type": "signal", "inst": "ETH-USDT-SWAP", "side": -1}
+{"ts": "2026-11-02T05:00:00Z", "type": "trade_opened", "inst": "ETH-USDT-SWAP", "side": -1, "price": 2291.621584, "stop": 2310.77874725, "target": 2271.8665, "leverage": 10}
+{"ts": "2026-11-02T15:00:00Z", "type": "trade_closed", "inst": "ETH-USDT-SWAP", "side": -1, "price": 2271.8665, "pnl": 0.958034, "reason": "target"}
 {"ts": "2026-11-03T14:00:00Z", "type": "signal", "inst": "XRP-USDT-SWAP", "side": -1}
