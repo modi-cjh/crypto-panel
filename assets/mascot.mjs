@@ -99,6 +99,12 @@ export class Mascot {
     media.addEventListener('change',motion);motion();
     addEventListener('resize',()=>this.place());
     document.documentElement.classList.add('has-companion');
+    // Focus is returned to the robot for keyboard and screen-reader users, but touch input
+    // (native gestures are blocked on the robot) makes browsers draw the keyboard ring.
+    // Hide companion focus rings after pointer input until a key is pressed.
+    const root=document.documentElement;
+    addEventListener('pointerdown',()=>root.classList.add('companion-pointer'),{capture:true,passive:true});
+    addEventListener('keydown',()=>root.classList.remove('companion-pointer'),{capture:true});
     this.applyFace();
   }
   // ---- position -----------------------------------------------------------

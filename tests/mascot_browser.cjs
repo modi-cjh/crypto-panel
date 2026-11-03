@@ -59,6 +59,13 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   await page.keyboard.press('Escape');
   assert.equal(await visible(page, '#mascot-drawer'), false);
   assert.ok(await page.locator('#mascot-touch').evaluate(e => e === document.activeElement));
+  // Pointer use never leaves a keyboard focus ring on the robot or in the panel.
+  await page.locator('#mascot-touch').tap(); await page.waitForSelector('#mascot-drawer[open]');
+  assert.equal(await page.locator('[data-close]').evaluate(e => getComputedStyle(e).outlineStyle), 'none');
+  await page.locator('[data-close]').tap();
+  assert.equal(await page.locator('#mascot-touch').evaluate(e => e === document.activeElement && getComputedStyle(e).outlineStyle), 'none');
+  await page.keyboard.press('Shift'); // any key brings the ring back for keyboard users
+  assert.notEqual(await page.locator('#mascot-touch').evaluate(e => getComputedStyle(e).outlineStyle), 'none');
   // Keyboard activation opens immediately.
   await page.keyboard.press('Enter'); await page.waitForSelector('#mascot-drawer[open]');
   await page.locator('[data-close]').click();
