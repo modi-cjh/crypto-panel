@@ -108,7 +108,7 @@ main{max-width:1500px;margin:auto;padding:0 24px 40px;min-width:0}.page{min-widt
 .m-host[data-reaction=squash] .m-body{animation:m-squash .45s ease-out}.m-host[data-reaction=wave] .m-arm-r{animation:m-wave .5s ease-in-out 3}
 .m-host[data-reaction=dizzy] .m-head{animation:m-dizzy .5s ease-in-out 3}.m-host[data-reaction=love] .acc-heart,.m-host[data-reaction=report] .acc-paper{animation:m-rise 1.4s ease-out}
 .m-host[data-reaction=excited] .m-float,.m-host[data-reaction=happy] .m-float{animation:m-hop .6s ease-in-out 2}.m-host[data-reaction=sad] .m-head{animation:m-shiver .12s linear 6}
-.m-host.dragging .m-arm-l{transform:rotate(35deg)}.m-host.dragging .m-arm-r{transform:rotate(-35deg)}.m-host.dragging .m-feet{animation:m-wiggle .3s linear infinite}.m-host.dragging .m-float{animation:none}
+.m-host.dragging .m-arm-l{transform:rotate(35deg)}.m-host.dragging .m-arm-r{transform:rotate(-35deg)}.m-host.dragging .m-float{animation:none}
 @keyframes m-float{50%{transform:translateY(-3px)}}@keyframes m-breathe{50%{transform:scale(1.015,.985)}}@keyframes m-blink{0%,44%,48%,100%{transform:scaleY(1)}46%{transform:scaleY(.1)}}
 @keyframes m-pulse{50%{opacity:.45}}@keyframes m-blinkoff{50%{opacity:.25}}@keyframes m-nap{50%{transform:translateY(2px) rotate(-3deg)}}@keyframes m-drift{50%{transform:translate(3px,-4px);opacity:.6}}
 @keyframes m-hop{50%{transform:translateY(-7px)}}@keyframes m-wave{0%,100%{transform:rotate(0)}30%{transform:rotate(-40deg)}60%{transform:rotate(-15deg)}}@keyframes m-bob{to{transform:translateY(-3px)}}
@@ -116,7 +116,7 @@ main{max-width:1500px;margin:auto;padding:0 24px 40px;min-width:0}.page{min-widt
 @keyframes m-squash{30%{transform:scale(1.14,.86)}60%{transform:scale(.94,1.08)}100%{transform:scale(1)}}@keyframes m-dizzy{25%{transform:rotate(-12deg)}75%{transform:rotate(12deg)}}
 @keyframes m-rise{0%{transform:translateY(6px) scale(.6);opacity:0}30%{opacity:1}100%{transform:translateY(-10px) scale(1.1);opacity:0}}@keyframes m-shiver{50%{transform:translateX(1px)}}@keyframes m-wiggle{50%{transform:translateY(-1.5px)}}
 .m-host.still *,html.page-hidden .m-host *{animation:none!important;transition:none!important}@media(prefers-reduced-motion:reduce){.m-host *{animation:none!important;transition:none!important}}
-#mascot{position:fixed;z-index:60;width:72px;height:72px;touch-action:none}#mascot.snapping{transition:left .3s cubic-bezier(.3,1.35,.5,1),top .3s cubic-bezier(.3,1.35,.5,1)}
+#mascot{position:fixed;left:0;top:0;z-index:60;width:72px;height:72px;touch-action:none;will-change:transform;contain:layout style}#mascot.snapping{transition:transform .32s cubic-bezier(.3,1.35,.5,1)}
 .companion-bot{position:relative;display:block;width:72px;height:72px;padding:0;border:0;border-radius:24px;background:transparent;cursor:grab;touch-action:none;transition:transform .3s ease}
 .companion-bot:focus-visible{outline:3px solid var(--accent);outline-offset:2px}#mascot.dragging .companion-bot{cursor:grabbing}
 .companion-bot svg{width:100%;height:100%;overflow:visible;filter:drop-shadow(0 4px 6px #12263a30)}
@@ -151,3 +151,5 @@ progress::-webkit-progress-bar{background:#e8ebef}progress{background:#e8ebef}
 .companion-head [data-close]{white-space:nowrap}.companion-foot button{width:auto;white-space:nowrap}.companion-bar progress{margin:0}
 #mascot .companion-bot,#mascot .companion-bot:hover,#mascot .companion-bot:active{background:transparent;box-shadow:none;border:0;-webkit-tap-highlight-color:transparent}#mascot.dragging .companion-bubble{display:none}
 #mascot,#mascot *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
+#mascot.dragging .companion-bot{transform:scale(1.08);transition:transform .15s ease-out}#mascot.dragging .companion-bot svg{filter:drop-shadow(0 10px 12px #12263a40)}
+/* SVG animations repaint the robot every frame; freeze them while it follows the finger. */#mascot.dragging *{animation-play-state:paused!important}

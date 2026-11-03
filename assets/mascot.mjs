@@ -111,10 +111,12 @@ export class Mascot {
   place(){
     const w=innerWidth,h=innerHeight,s=this.size,m=12;
     const bottom=Math.min(Math.max(m,this.pos.bottom),Math.max(m,h-72-s));
-    this.host.style.left=(this.pos.side==='left'?m:w-s-m)+'px';this.host.style.top=(h-bottom-s)+'px';
+    this.moveTo(this.pos.side==='left'?m:w-s-m,h-bottom-s);
     this.host.dataset.side=this.pos.side;this.host.classList.toggle('docked',this.docked);
     this.host.classList.toggle('bubble-below',h-bottom-s<150);
   }
+  // Position with a compositor-only transform: no layout work while dragging or snapping.
+  moveTo(x,y){this.xy={x,y};this.host.style.transform=`translate3d(${x}px,${y}px,0)`;}
   dock(value){this.docked=value;this.place();this.save();}
   // ---- pointer: tap / double tap / triple tap / long press / drag ---------
   bindPointer(){
@@ -133,11 +135,14 @@ export class Mascot {
       if(!d.moved)return;
       clearTimeout(this.pressTimer);
       if(!this.host.classList.contains('dragging')){this.host.classList.add('dragging');this.host.classList.remove('snapping','docked');this.docked=false;}
-      const s=this.size,x=Math.min(innerWidth-s,Math.max(0,e.clientX-d.offset.x)),y=Math.min(innerHeight-s,Math.max(0,e.clientY-d.offset.y));
-      this.host.style.left=x+'px';this.host.style.top=y+'px';d.last={x,y};
+      const s=this.size;
+      d.last={x:Math.min(innerWidth-s,Math.max(0,e.clientX-d.offset.x)),y:Math.min(innerHeight-s,Math.max(0,e.clientY-d.offset.y))};
+      // Several pointermove events can arrive per frame; paint only the latest once per frame.
+      if(!d.frame)d.frame=requestAnimationFrame(()=>{d.frame=0;if(this.drag===d)this.moveTo(d.last.x,d.last.y);});
     });
     const end=cancel=>{
       const d=this.drag;this.drag=null;clearTimeout(this.pressTimer);if(!d)return;
+      if(d.frame)cancelAnimationFrame(d.frame);
       this.host.classList.remove('dragging');
       // A cancelled drag (e.g. the OS took the gesture) still snaps instead of leaving the robot mid-screen.
       if(d.moved && d.last){
@@ -172,9 +177,9 @@ export class Mascot {
     let frame=0,last=0;
     const look=(dx,dy)=>{this.eyes.style.transform=`translate(${dx}px,${dy}px)`;};
     document.addEventListener('pointermove',e=>{
-      last=Date.now();if(this.still || frame)return;
+      last=Date.now();if(this.still || frame || this.drag?.moved)return; // no layout reads mid-drag
       frame=requestAnimationFrame(()=>{
-        frame=0;const r=this.button.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height*.4;
+        frame=0;const p=this.xy || {x:0,y:0},cx=p.x+this.size/2,cy=p.y+this.size*.4;
         const dx=e.clientX-cx,dy=e.clientY-cy,len=Math.hypot(dx,dy)||1,k=Math.min(1,len/160);
         look(+(dx/len*3.2*k).toFixed(2),+(dy/len*2.4*k).toFixed(2));
       });
