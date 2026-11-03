@@ -29,6 +29,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from pathlib import Path
+from volume_test import profile as volume_profile, describe as describe_volume
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -40,6 +41,13 @@ MIN_STOP_DIST = .002              # skip entries whose stop is already too close
 AMEND_TOLERANCE = .001            # amend the exchange stop when the paper stop moved more than 0.1%
 UTC7 = timezone(timedelta(hours=7))
 TAG = {'mean_reversion': 'mr', 'breakout_long': 'bl', 'breakout_daily': 'bd'}
+
+
+def configure_volume_test(now=None):
+    global INSTRUMENTS, RISK
+    p = volume_profile(now)
+    INSTRUMENTS, RISK = p['instruments'], p['risk']
+    return p
 
 
 class OKXError(RuntimeError):
@@ -130,12 +138,13 @@ class Mirror:
         self.available = float(usdt.get('availBal') or 0)
         pos = self.c.request('GET', '/api/v5/account/positions?instType=SWAP')
         self.positions = {}
+        managed = set(INSTRUMENTS) | {m['inst'] for m in self.s['mirrored'].values() if m.get('status') == 'open'}
         for p in (pos.get('data') or []) if ok(pos) else []:
-            if p.get('instId') in INSTRUMENTS and float(p.get('pos') or 0) != 0:
+            if p.get('instId') in managed and float(p.get('pos') or 0) != 0:
                 self.positions[(p['instId'], p.get('posSide', 'net'))] = p
         algos = self.c.request('GET', '/api/v5/trade/orders-algo-pending?instType=SWAP&ordType=conditional')
         oco = self.c.request('GET', '/api/v5/trade/orders-algo-pending?instType=SWAP&ordType=oco')
-        self.algos = [a for r in (algos, oco) if ok(r) for a in r.get('data') or [] if a.get('instId') in INSTRUMENTS]
+        self.algos = [a for r in (algos, oco) if ok(r) for a in r.get('data') or [] if a.get('instId') in managed]
         self.specs = {}
 
     def spec(self, inst):
@@ -310,6 +319,7 @@ def main():
     ap.add_argument('--data', type=Path, required=True)
     ap.add_argument('--action', default='run', choices=['run', 'dry-run', 'pause', 'resume', 'flatten', 'follow-current'])
     args = ap.parse_args()
+    print(describe_volume(configure_volume_test()))
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
     if not all(creds):
         print('未配置 OKX 模拟交易密钥，跳过跟单。'); return
