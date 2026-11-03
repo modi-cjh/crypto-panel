@@ -20,7 +20,7 @@ test('validSim accepts the published shape and rejects malformed rows', () => {
 
 test('live PnL uses only fresh prices and is capped at the posted margin', () => {
   const p = account().open_positions[0];
-  assert.deepEqual(livePnl(p, [{ id: 'BTC-USDT-SWAP', last: 103 }], now - 1000, now), { mark: 103, pnl: 3, pct: 60 });
+  assert.deepEqual(livePnl(p, [{ id: 'BTC-USDT-SWAP', last: 103 }], now - 1000, now), { mark: 103, pnl: 3, pct: 60, live: true });
   assert.equal(livePnl(p, [{ id: 'BTC-USDT-SWAP', last: 50 }], now - 1000, now).pnl, -5);
   assert.equal(livePnl({ ...p, side: -1 }, [{ id: 'BTC-USDT-SWAP', last: 98 }], now - 1000, now).pnl, 2);
   assert.equal(livePnl(p, [{ id: 'BTC-USDT-SWAP', last: 103 }], now - 30000, now).pnl, null); // stale poll
@@ -87,4 +87,13 @@ test('backfilled accounts are labelled and the chart marks where live running st
   assert.match(simCurveSVG(d), /class="sim-live"/);
   const plain = data({ mean_reversion: account({ started: live, live_since: live }) });
   assert.equal(simLiveSince(plain), null); assert.equal(simBackfillNote(plain), ''); assert.doesNotMatch(simCurveSVG(plain), /sim-live/);
+});
+
+test('without a fresh browser price, positions fall back to the price recorded by the paper trader', () => {
+  const p = { ...account().open_positions[0], mark: 98, unrealized: -2 };
+  assert.deepEqual(livePnl(p, [], 0, now), { mark: 98, pnl: -2, pct: -40, live: false });
+  assert.deepEqual(livePnl(p, [{ id: 'BTC-USDT-SWAP', last: 103 }], now - 1000, now).live, true);   // live price wins
+  const html = simPositionsMarkup(data({ x: account({ open_positions: [p] }) }), [], 0, now);
+  assert.match(html, /最新价（/); assert.match(html, /-2\.00 USDT \/ -40\.00%/);
+  assert.match(simPositionsMarkup(data({ x: account() }), [], 0, now), /等待行情/);   // nothing recorded yet
 });
