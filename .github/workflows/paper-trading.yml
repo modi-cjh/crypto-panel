@@ -1,0 +1,54 @@
+# Learning-only paper trading: every hour, replay newly closed OKX 1H candles through two rule sets
+# (tools/paper_trader.py) and commit the results to the separate `paper-data` branch.
+# Public market data only; no API keys and no orders. master and the dashboard are untouched.
+name: Paper trading
+
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: paper-trading
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: code
+
+      - name: Check out the paper-data branch (create it on first run)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$remote" paper-data >/dev/null; then
+            git clone --quiet --depth 1 --branch paper-data "$remote" data
+          else
+            mkdir data
+            git -C data init --quiet -b paper-data
+            git -C data remote add origin "$remote"
+          fi
+
+      - name: Run the paper trader
+        run: python3 code/tools/paper_trader.py --data data
+
+      - name: Commit results
+        working-directory: data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit --quiet -m "paper: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push --quiet origin paper-data
