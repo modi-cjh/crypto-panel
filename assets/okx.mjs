@@ -132,10 +132,12 @@ export function okxMascotState(d, now = Date.now()) {
   if (d.halted) return { state: 'paused', label: '停手', message: '今日触发日亏停手，不再开新仓' };
   if (d.paused) return { state: 'paused', label: '暂停', message: '跟单已暂停，恢复后我会播报开平仓' };
   const recent = (d.recent_actions || []).filter(a => finite(Date.parse(a.ts)) && now - Date.parse(a.ts) >= 0 && now - Date.parse(a.ts) <= RECENT);
-  const stop = recent.find(a => a.action === 'closed_on_exchange');
-  if (stop) return { state: 'sad', label: '刚止损', message: `${coin(stop.inst)} 交易所止损 / 止盈触发` };
-  const open = recent.find(a => a.action === 'open');
-  if (open) return { state: 'excited', label: '刚开仓', message: `刚开仓 ${coin(open.inst)} ${open.side === 1 ? '多' : '空'}` };
+  const latest = recent.find(a => ['open', 'close', 'closed_on_exchange'].includes(a.action));
+  if (latest?.action === 'closed_on_exchange') return { state: 'sad', label: '刚止损 / 止盈', message: `${coin(latest.inst)} 交易所止损 / 止盈触发` };
+  if (latest?.action === 'close') return latest.execution_test
+    ? { state: 'idle', label: '测试完成', message: `${coin(latest.inst)} 模拟成交测试已平仓` }
+    : { state: 'idle', label: '刚平仓', message: `${coin(latest.inst)} 已平仓 · ${CLOSES[latest.reason] || '查看交易回执'}` };
+  if (latest?.action === 'open') return { state: 'excited', label: '刚开仓', message: `刚开仓 ${coin(latest.inst)} ${latest.side === 1 ? '多' : '空'}` };
   const t = okxTotals(d);
   if (t.ret > 0) return { state: 'happy', label: '盈利中', message: `OKX 模拟账户累计 ${signed(t.ret)}%` };
   return { state: 'idle', label: '待命', message: t.positions ? `持仓 ${t.positions} 个，止损挂在交易所` : '空仓中，等待新信号' };

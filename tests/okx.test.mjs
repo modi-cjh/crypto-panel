@@ -87,3 +87,15 @@ test('companion follows the account and new actions are announced once', () => {
   assert.deepEqual(okxChanges(null, next), []);
   assert.equal(okxFeed(next).length, 2);                                     // skips are not narrated
 });
+
+test('companion uses the latest trade instead of announcing a position already closed', () => {
+  const opened = {ts:'2026-11-03T11:50:00Z',action:'open',inst:'BTC-USDT-SWAP',side:1};
+  const closed = {ts:'2026-11-03T11:51:00Z',action:'close',inst:'BTC-USDT-SWAP',execution_test:true,reason:'execution_test'};
+  let state = okxMascotState(summary({recent_actions:[closed,opened]}), NOW);
+  assert.equal(state.label, '测试完成');
+  assert.match(state.message, /BTC.*已平仓/);
+  state = okxMascotState(summary({recent_actions:[{...closed,execution_test:false,reason:'paper_closed'},opened]}), NOW);
+  assert.equal(state.label, '刚平仓');
+  state = okxMascotState(summary({recent_actions:[{...opened,ts:'2026-11-03T11:55:00Z'},{...closed,action:'closed_on_exchange'}]}), NOW);
+  assert.equal(state.label, '刚开仓');
+});
