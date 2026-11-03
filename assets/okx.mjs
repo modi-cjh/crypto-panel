@@ -38,12 +38,15 @@ export function validOkx(d) {
 const sideOf = p => p.side === 'long' ? 1 : p.side === 'short' ? -1 : num(p.contracts) >= 0 ? 1 : -1;
 export const okxStart = d => finite(num(d?.start_equity)) && d.start_equity > 0 ? Number(d.start_equity) : d?.history?.[0]?.[1] > 0 ? d.history[0][1] : DEFAULT_START;
 
-// Floating PnL follows live OKX prices when the contract value is known; otherwise the values recorded on the last run.
-export function okxLive(d, tickers = [], priceAt = 0, now = Date.now()) {
-  const fresh = priceAt > 0 && now - priceAt <= 24000;
+// OKX demo trading has its own markets: its prices differ from the live exchange (XRP was 1.2686 on demo vs 1.2811 live).
+// Floating PnL therefore uses demo mark prices (marks: Map inst -> {price, at}, from the demo public WebSocket), which is
+// also what OKX itself uses for unrealised PnL; without a fresh demo mark it shows the values recorded on the last run.
+export const OKX_DEMO_PUBLIC_WS = 'wss://wspap.okx.com:8443/ws/v5/public';
+const MARK_FRESH = 30000;
+export function okxLive(d, marks = new Map(), now = Date.now()) {
   const positions = d.positions.map(p => {
-    const last = tickers.find(t => t.id === p.inst)?.last, ct = num(p.ctVal), qty = Math.abs(num(p.contracts)), entry = num(p.avgPx);
-    if (fresh && last > 0 && ct > 0 && qty > 0 && entry > 0) return { ...p, side: sideOf(p), mark: last, upl: sideOf(p) * qty * ct * (last - entry), live: true };
+    const m = marks.get(p.inst), mark = m && now - m.at <= MARK_FRESH ? m.price : 0, ct = num(p.ctVal), qty = Math.abs(num(p.contracts)), entry = num(p.avgPx);
+    if (mark > 0 && ct > 0 && qty > 0 && entry > 0) return { ...p, side: sideOf(p), mark, upl: sideOf(p) * qty * ct * (mark - entry), live: true };
     return { ...p, side: sideOf(p), mark: num(p.markPx), upl: num(p.upl), live: false };
   });
   const recorded = d.positions.reduce((s, p) => s + (finite(num(p.upl)) ? num(p.upl) : 0), 0);
@@ -51,9 +54,9 @@ export function okxLive(d, tickers = [], priceAt = 0, now = Date.now()) {
   return { equity: live ? d.equity - recorded + positions.reduce((s, p) => s + p.upl, 0) : d.equity, positions, live };
 }
 
-export function okxTotals(d, tickers = [], priceAt = 0, now = Date.now()) {
+export function okxTotals(d, marks = new Map(), now = Date.now()) {
   if (!d) return null;
-  const l = okxLive(d, tickers, priceAt, now), start = okxStart(d);
+  const l = okxLive(d, marks, now), start = okxStart(d);
   const dayStart = num(d.day_start), day = dayStart > 0 ? l.equity - dayStart : null;
   return { equity: l.equity, start, ret: (l.equity / start - 1) * 100, day, dayPct: day == null ? null : day / dayStart * 100,
     positions: d.positions.length, trades: finite(num(d.closed_trades)) ? Number(d.closed_trades) : 0, live: l.live };
@@ -77,15 +80,15 @@ export function okxCurveSVG(d) {
     `<text x="${L}" y="${H - 10}">${time(t0)}</text><text x="${W - R}" y="${H - 10}" text-anchor="end">${time(t1)} UTC+7</text></svg>`;
 }
 
-export function okxPositionsMarkup(d, tickers = [], priceAt = 0, now = Date.now()) {
-  const { positions } = okxLive(d, tickers, priceAt, now);
+export function okxPositionsMarkup(d, marks = new Map(), now = Date.now()) {
+  const { positions } = okxLive(d, marks, now);
   if (!positions.length) return '<p class="empty">当前没有持仓，等待策略信号</p>';
   const open = Object.fromEntries((d.open_mirrors || []).map(m => [m.inst, m]));
   return positions.map(p => {
     const m = open[p.inst], margin = num(p.margin), pct = margin > 0 && finite(p.upl) ? p.upl / margin * 100 : null;
     return `<article class="history-card sim-position" style="--sim-color:${OKX_COLOR}"><div class="history-card-head"><h3 class="coin-label">${coinIcon(p.inst)}${esc(coin(p.inst))} <span class="${p.side === 1 ? 'up' : 'down'}">${p.side === 1 ? '多' : '空'} · ${esc(p.lever)}×</span></h3><span class="pill">${p.ours ? esc(STRATEGIES[m?.strategy] || '跟单') : '非本程序仓位'}</span></div><div class="history-metrics">` +
       [['张数', esc(Math.abs(num(p.contracts)))], ['开仓均价', px(num(p.avgPx))], ['止损', m && finite(num(m.stop)) ? px(num(m.stop)) : '—'], ['保证金 USDT', fmt(margin)],
-       [p.live ? '现价（实时）' : `标记价（${time(d.updated_at)}）`, px(p.mark)], ['浮动盈亏', finite(p.upl) ? `${signed(p.upl)} USDT${pct == null ? '' : ` / ${signed(pct)}%`}` : '—', tone(p.upl)]]
+       [p.live ? '标记价（实时）' : `标记价（${time(d.updated_at)}）`, px(p.mark)], ['浮动盈亏', finite(p.upl) ? `${signed(p.upl)} USDT${pct == null ? '' : ` / ${signed(pct)}%`}` : '—', tone(p.upl)]]
         .map(([k, v, c = '']) => `<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('') + '</div></article>';
   }).join('');
 }

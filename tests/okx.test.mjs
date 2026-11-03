@@ -22,18 +22,19 @@ test('summary is validated before it is shown', () => {
   assert.equal(validOkx(null), false);
 });
 
-test('floating PnL follows live prices with the contract value, else the recorded values', () => {
-  const live = okxLive(summary(), [{ id: 'BTC-USDT-SWAP', last: 70500 }], NOW - 1000, NOW);
+test('floating PnL follows demo-market mark prices with the contract value, else the recorded values', () => {
+  const marks = (inst, price, at) => new Map([[inst, { price, at }]]);
+  const live = okxLive(summary(), marks('BTC-USDT-SWAP', 70500, NOW - 1000), NOW);
   assert.ok(live.live); assert.equal(live.positions[0].upl, 15);            // 3 contracts × 0.01 BTC × 500
   assert.equal(live.equity, 5030 - 3 + 15);
-  const stale = okxLive(summary(), [{ id: 'BTC-USDT-SWAP', last: 70500 }], NOW - 60000, NOW);
+  const stale = okxLive(summary(), marks('BTC-USDT-SWAP', 70500, NOW - 60000), NOW);
   assert.equal(stale.live, false); assert.equal(stale.equity, 5030); assert.equal(stale.positions[0].upl, 3);
-  const short = okxLive(summary({ positions: [{ inst: 'ETH-USDT-SWAP', side: 'net', contracts: '-2', avgPx: '3000', upl: '0', ctVal: 0.1, lever: '5' }] }), [{ id: 'ETH-USDT-SWAP', last: 2900 }], NOW, NOW);
+  const short = okxLive(summary({ positions: [{ inst: 'ETH-USDT-SWAP', side: 'net', contracts: '-2', avgPx: '3000', upl: '0', ctVal: 0.1, lever: '5' }] }), marks('ETH-USDT-SWAP', 2900, NOW), NOW);
   assert.equal(short.positions[0].side, -1); assert.equal(short.positions[0].upl, 20);
 });
 
 test('totals report return against the starting equity and today against the day start', () => {
-  const t = okxTotals(summary(), [], 0, NOW);
+  const t = okxTotals(summary(), new Map(), NOW);
   assert.equal(t.ret.toFixed(2), '0.60'); assert.equal(t.day, 30); assert.equal(t.positions, 1); assert.equal(t.trades, 2);
   assert.equal(okxStart(summary({ start_equity: undefined })), 5000);
   assert.equal(okxStart(summary({ start_equity: undefined, history: [] })), 5000);
@@ -54,9 +55,9 @@ test('curve draws the equity history and waits for enough points', () => {
 });
 
 test('positions and actions are labelled in Chinese and exchange text is escaped', () => {
-  const pos = okxPositionsMarkup(summary(), [], 0, NOW);
+  const pos = okxPositionsMarkup(summary(), new Map(), NOW);
   assert.match(pos, /趋势突破只做多/); assert.match(pos, /69,000</); assert.match(pos, /\+3\.00 USDT/);
-  assert.match(okxPositionsMarkup(summary({ positions: [{ ...summary().positions[0], ours: false }] }), [], 0, NOW), /非本程序仓位/);
+  assert.match(okxPositionsMarkup(summary({ positions: [{ ...summary().positions[0], ours: false }] }), new Map(), NOW), /非本程序仓位/);
   assert.match(okxPositionsMarkup(summary({ positions: [] })), /当前没有持仓/);
   const acts = okxActionsMarkup(summary({ recent_actions: [...summary().recent_actions, { ts: '2026-11-03T07:00:00Z', action: 'error', inst: '-', detail: '<b>bad</b>' }] }));
   assert.match(acts, /信号已超过 2 小时/); assert.match(acts, /多 3 张 @ 70000/); assert.match(acts, /&lt;b&gt;bad/); assert.doesNotMatch(acts, /<b>bad/);
