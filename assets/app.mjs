@@ -2,7 +2,7 @@ import { HomePositions, equitySVG, rangePoints } from './home.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
-import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxFeed, okxStart } from './okx.mjs';
+import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS } from './okx.mjs';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs';
@@ -486,7 +486,7 @@ function renderPinnedBalance(){
   updateCompanion(current);
 }
 function renderPinnedSim(){
-  const t=okxTotals(simData,tickers,simPriceAt()),stale=Date.now()-Date.parse(simData.updated_at)>OKX_STALE;
+  const t=okxTotals(simData,okxMarks),stale=Date.now()-Date.parse(simData.updated_at)>OKX_STALE;
   $('pinned-label-text').textContent='OKX 模拟权益';$('pinned-mode').textContent='交易所模拟';
   rollNumber($('pinned-equity'),t.equity,EQUITY_ROLL_STEP);
   $('pinned-daily').textContent=`收益 ${signed(t.ret)}% · 持仓 ${t.positions}`;$('pinned-daily').className=tone(t.ret);
@@ -505,7 +505,7 @@ function updateCompanion(current=liveBalance(publicAccount,effectiveQuotes())){
 // Once the OKX demo account has loaded, the companion follows it instead of the paused bot snapshot.
 function simContext(){
   if(!simData)return {};
-  const t=okxTotals(simData,tickers,simPriceAt());
+  const t=okxTotals(simData,okxMarks);
   return {simState:okxMascotState(simData),simFeed:okxFeed(simData),sim:{totals:t,
     accounts:[{name:'OKX 模拟账户',color:OKX_COLOR,equity:t.equity,return_pct:t.ret,positions:t.positions,halted:Boolean(simData.halted)}],strategies:[]}};
 }
@@ -601,14 +601,28 @@ async function refreshSim(){
   const response=await fetch(`${OKX_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
   if(!response.ok)throw new Error();const data=await response.json();if(!validOkx(data))throw new Error();
   const changes=okxChanges(simData,data);
-  simData=data;$('sim-error').hidden=true;renderSim();updateCompanion();
+  simData=data;$('sim-error').hidden=true;syncOkxMarks();renderSim();updateCompanion();
   for(const line of changes)notify(line,`OKX 模拟 · ${line.text}`);
  }catch{if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='OKX 模拟账户数据暂时读取失败，保留已有数据，稍后自动重试。';}}
  finally{simBusy=false;}
 }
 // The OKX demo account takes over the home page while the original bot is paused, stopped or stale;
 // once the bot publishes fresh snapshots again, the original home page comes back on its own.
-const simPriceAt=()=>errors.has('prices')?0:priceAt;
+// Demo-market mark prices for the OKX demo positions (demo prices differ from the live exchange).
+const okxMarks=new Map();let okxMarkStream=null,okxMarkKey='',okxMarkFrame=0;
+function syncOkxMarks(){
+  const symbols=document.hidden?[]:[...new Set((simData?.positions || []).map(p=>p.inst))].sort(),key=symbols.join(',');
+  if(key===okxMarkKey)return;
+  okxMarkStream?.stop();okxMarkStream=null;okxMarkKey=key;
+  if(!symbols.length)return;
+  okxMarkStream=new PublicStream({url:OKX_DEMO_PUBLIC_WS,args:symbols.map(instId=>({channel:'mark-price',instId})),maxFailures:config.wsMaxFailures,onData:body=>{
+    const id=body.arg?.instId,row=body.data[0],value=number(row?.markPx);
+    if(!symbols.includes(id) || !(value>0))return false;
+    okxMarks.set(id,{price:value,at:Date.now()});
+    if(!okxMarkFrame)okxMarkFrame=requestAnimationFrame(()=>{okxMarkFrame=0;if(['home','sim'].includes(route))renderSim();else renderPinnedBalance();});
+  }});
+  okxMarkStream.start();
+}
 // Floating PnL moves the equity by a few cents on every 8-second poll; only animate meaningful moves.
 const EQUITY_ROLL_STEP=.1;
 function simPrimary(){
@@ -627,28 +641,27 @@ function renderSim(){
  document.documentElement.classList.toggle('sim-primary',primary);document.documentElement.classList.toggle('show-legacy',primary && showLegacy);
  $('home-sim').hidden=!primary;
  $('legacy-toggle').textContent=showLegacy?'收起原主力盘':'显示原主力盘（crypto-bot · 已暂停）';$('legacy-toggle').setAttribute('aria-expanded',String(showLegacy));
- const prices=simPriceAt();
  if(primary && route==='home'){
-  const t=okxTotals(simData,tickers,prices);
+  const t=okxTotals(simData,okxMarks);
   rollNumber($('okx-total-equity'),t.equity,EQUITY_ROLL_STEP);
   $('okx-total-ret').innerHTML=retLine(t);
   $('okx-total-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;statusPill($('home-okx-status'),simData);
   $('home-okx-curve').innerHTML=okxCurveSVG(simData);
-  $('home-okx-positions').innerHTML=okxPositionsMarkup(simData,tickers,prices);$('home-okx-actions').innerHTML=okxActionsMarkup(simData,10);
+  $('home-okx-positions').innerHTML=okxPositionsMarkup(simData,okxMarks);$('home-okx-actions').innerHTML=okxActionsMarkup(simData,10);
  }
  renderPinnedBalance();
  if(route!=='sim')return;
  if(!simData){$('okx-metrics').innerHTML='<p class="empty">正在读取 OKX 模拟账户…</p>';return;}
- const t=okxTotals(simData,tickers,prices);
+ const t=okxTotals(simData,okxMarks);
  $('sim-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;statusPill($('okx-status'),simData);
  $('okx-metrics').innerHTML=`<div class="history-metrics">${[['权益 USDT',num(t.equity)],['累计收益',`${signed(t.ret)}%`,tone(t.ret)],['今日盈亏',Number.isFinite(t.day)?`${signed(t.day)} USDT`:'—',tone(t.day)],
    ['可用 USDT',num(Number(simData.available))],['持仓',`${t.positions}`],['已平仓',`${t.trades} 笔`]].map(([k,v,c=''])=>`<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('')}</div>`;
  $('okx-start').textContent=`起始 ${num(okxStart(simData))} USDT`;
  $('okx-curve').innerHTML=okxCurveSVG(simData);
- $('okx-positions').innerHTML=okxPositionsMarkup(simData,tickers,prices);$('okx-actions').innerHTML=okxActionsMarkup(simData,30);
+ $('okx-positions').innerHTML=okxPositionsMarkup(simData,okxMarks);$('okx-actions').innerHTML=okxActionsMarkup(simData,30);
 }
 document.addEventListener('visibilitychange',()=>{
- if(document.hidden){quoteStream?.stop();candleStream?.stop();quoteStreamKey='';candleStreamKey='';}
+ if(document.hidden){quoteStream?.stop();candleStream?.stop();quoteStreamKey='';candleStreamKey='';syncOkxMarks();}
  else {syncStreams();refreshPrices();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSim();if(['home','coin'].includes(route))refreshCandles(true);}
 });
 navigate();refreshPrices();refreshEvents();

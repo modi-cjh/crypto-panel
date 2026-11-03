@@ -19,6 +19,11 @@ let feed = {
   const context = await browser.newContext({ ...devices['iPhone 13'] });
   let mode = 'ok', paperRequests = 0;
   await context.route(/okx\.com/, r => r.abort());
+  // OKX demo public WebSocket: demo-market mark prices for the demo positions (pushed once the test asks for them).
+  const demoSockets = [], demoSubs = [];
+  await context.routeWebSocket(/wspap\.okx\.com/, ws => { demoSockets.push(ws); ws.onMessage(m => { if (m === 'ping') return ws.send('pong'); const b = JSON.parse(m); if (b.op === 'subscribe') demoSubs.push(...b.args); }); });
+  await context.routeWebSocket(/ws\.okx\.com/, ws => ws.close());
+  const pushMark = (instId, markPx) => demoSockets.at(-1).send(JSON.stringify({ arg: { channel: 'mark-price', instId }, data: [{ instId, markPx: String(markPx), ts: String(Date.now()) }] }));
   await context.route('**/paper-data/dashboard.json*', r => { paperRequests++; r.abort(); });
   await context.route('**/paper-data/okx_demo/summary.json*', r => mode === 'ok' ? r.fulfill({ body: JSON.stringify(feed), contentType: 'application/json' }) : r.fulfill({ status: 404, body: 'missing' }));
   const page = await context.newPage(), errors = [];
@@ -42,6 +47,13 @@ let feed = {
     new MutationObserver(m => { window.__rolls += m.filter(r => [...r.addedNodes].some(n => n.classList?.contains('number-in'))).length; }).observe(document.getElementById(id), { childList: true }); });
   await page.waitForTimeout(20000);
   assert.equal(await page.evaluate(() => window.__rolls), 0, 'equity animated without a change');
+  // Floating PnL follows the demo market's own mark price (not the live exchange): 3 contracts × 0.01 BTC × (70,500 − 70,000).
+  // (the 20 s quiet period above lets the stream's no-data watchdog reconnect, so there can be more than one subscribe)
+  assert.ok(demoSubs.length >= 1 && demoSubs.every(x => x.channel === 'mark-price' && x.instId === 'BTC-USDT-SWAP'));
+  pushMark('BTC-USDT-SWAP', 70500);
+  await page.waitForFunction(() => document.querySelector('#home-okx-positions').textContent.includes('+15.00 USDT'));
+  assert.match(await page.locator('#home-okx-positions').innerText(), /标记价（实时）\s*70,500/);
+  await page.waitForFunction(() => document.querySelector('#pinned-equity').textContent.trim() === '5,015.00');   // 5,012.50 − 12.50 + 15.00
   await page.locator('#legacy-toggle').click();
   assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), true);   // original bot still reachable
   await page.locator('#legacy-toggle').click();
@@ -49,7 +61,8 @@ let feed = {
   await page.waitForSelector('#sim-page:not([hidden]) #okx-metrics .history-metrics');
   assert.equal(await page.locator('[data-nav="sim"]').getAttribute('aria-current'), 'page');
   const metrics = await page.locator('#okx-metrics').innerText();
-  assert.match(metrics, /5,012\.50/); assert.match(metrics, /已平仓\s*1 笔/);
+  assert.match(metrics, /5,01(5\.00|2\.50)/);   // live demo mark while fresh, else the recorded equity
+  assert.match(metrics, /已平仓\s*1 笔/);
   assert.equal(await page.locator('#okx-curve polyline').count(), 1);
   assert.match(await page.locator('#okx-start').innerText(), /起始 5,000\.00/);
   assert.equal(await page.locator('#okx-positions .sim-position').count(), 1);
