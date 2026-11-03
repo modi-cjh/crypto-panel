@@ -56,8 +56,9 @@ class OKXError(RuntimeError):
 
 class OKX:
     """Minimal signed client for OKX demo trading."""
-    def __init__(self, key, secret, passphrase, curl='curl'):
+    def __init__(self, key, secret, passphrase, curl='curl', attempts=3):
         self.key, self.secret, self.passphrase, self.curl = key, secret, passphrase, curl
+        self.attempts = attempts
 
     def request(self, method, path, body=None):
         payload = json.dumps(body, separators=(',', ':')) if body is not None else ''
@@ -68,14 +69,15 @@ class OKX:
         config = ''.join(f'header = "{k}: {v}"\n' for k, v in headers.items()) + f'url = "{BASE}{path}"\nrequest = "{method}"\n'
         if payload:
             config += 'data = "' + payload.replace('\\', '\\\\').replace('"', '\\"') + '"\n'
-        for attempt in range(3):
+        for attempt in range(self.attempts):
             out = subprocess.run([self.curl, '-sS', '-m', '20', '-K', '-'], input=config, capture_output=True, text=True)
             if out.returncode == 0:
                 try:
                     return json.loads(out.stdout)
                 except ValueError:
                     pass
-            time.sleep(1 + attempt)
+            if attempt + 1 < self.attempts:
+                time.sleep(1 + attempt)
         raise OKXError(f'{method} {path.split("?")[0]} failed')
 
 
