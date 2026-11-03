@@ -55,7 +55,7 @@ test('curve draws the equity history and waits for enough points', () => {
 
 test('positions and actions are labelled in Chinese and exchange text is escaped', () => {
   const pos = okxPositionsMarkup(summary(), [], 0, NOW);
-  assert.match(pos, /趋势突破只做多/); assert.match(pos, /69,000\.0/); assert.match(pos, /\+3\.00 USDT/);
+  assert.match(pos, /趋势突破只做多/); assert.match(pos, /69,000</); assert.match(pos, /\+3\.00 USDT/);
   assert.match(okxPositionsMarkup(summary({ positions: [{ ...summary().positions[0], ours: false }] }), [], 0, NOW), /非本程序仓位/);
   assert.match(okxPositionsMarkup(summary({ positions: [] })), /当前没有持仓/);
   const acts = okxActionsMarkup(summary({ recent_actions: [...summary().recent_actions, { ts: '2026-11-03T07:00:00Z', action: 'error', inst: '-', detail: '<b>bad</b>' }] }));
