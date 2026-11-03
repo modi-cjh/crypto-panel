@@ -25,7 +25,6 @@
     <div id="alerts" role="status" aria-live="polite"></div>
 
     <section id="home-page" class="page" aria-label="交易室首页">
-      <section id="mascot" aria-label="团队吉祥物"></section>
       <section class="panel capital-panel" aria-label="账户权益">
         <div class="capital-total"><div><h1>账户权益 <span id="mode-tag" class="mode-tag">模拟盘</span></h1><div class="equity-number"><strong id="total-equity">—</strong><small>USDT</small></div><p id="total-pnl" aria-live="polite">当日盈亏 — USDT / —%</p></div><small id="home-snapshot-status">暂无快照时间</small></div>
         <div id="equity-panel"><div class="panel-heading"><h2>权益曲线</h2><div id="home-equity-range" class="segmented" role="group" aria-label="首页权益区间"><button data-range="day" aria-pressed="false">日</button><button data-range="week" aria-pressed="false">周</button><button data-range="all" class="active" aria-pressed="true">全部</button></div></div><div id="equity-chart" class="home-equity-chart"></div><p id="equity-error" class="chart-error" hidden></p></div>
@@ -69,7 +68,8 @@
     </section>
     <noscript><p class="note">请启用 JavaScript 以加载行情与模拟盘数据。</p></noscript>
   </main>
-  <dialog id="mascot-drawer" aria-labelledby="mascot-drawer-title"><header><h2 id="mascot-drawer-title">团队最新报告</h2><button data-close aria-label="关闭团队报告">关闭</button></header><p id="team-updated">等待团队数据</p><div id="mascot-report-list"></div></dialog>
+  <div id="mascot" role="group" aria-label="MODI 团队伙伴"></div>
+  <dialog id="mascot-drawer" aria-labelledby="mascot-drawer-title"></dialog>
   <footer><span class="footer-brand">MODI · AI 交易团队 <span>· 真实数据 / 只读观察</span></span><div><p>数据来源：<a href="https://www.okx.com/docs-v5/zh/" target="_blank" rel="noopener noreferrer">OKX 公共接口</a> + 本地模拟盘快照</p><p>仅供参考，不构成投资建议，只读不下单</p><small>图表由 <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts™</a> 提供</small></div></footer>
 </body>
 </html>

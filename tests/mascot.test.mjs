@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mascotState,isDrag,motionEnabled} from '../assets/mascot.mjs';
+import {mascotState,isDrag,motionEnabled,faceFor,FACES,snapPosition,fillLine,eventLine,reportLine,contextTip,pushMessage} from '../assets/mascot.mjs';
 import {validEvents} from '../assets/state.mjs';
 import {validAccount,strategyState} from '../assets/account.mjs';
 import {validSnapshot} from '../assets/dashboard.mjs';
@@ -36,4 +36,37 @@ test('published reset contracts remain valid, paused strategy and alert wake sur
  assert.equal(strategyState(read('account').accounts[0],{}),'暂停');
  const e={ts,type:'异动',coin:null,strategy:null,direction:null,price:null,reason:'放量',wake:true};
  assert.equal(validEvents({schema_version:1,events:[e]}),true);assert.equal(validEvents({schema_version:1,events:[{...e,wake:'true'}]}),false);
+});
+test('every state and reaction has a complete face; reactions override the state face',()=>{
+ for(const state of ['idle','happy','excited','alert','sad','paused','offline'])assert.ok(FACES[state]);
+ for(const f of Object.values(FACES)){assert.equal(typeof f.eyes,'string');assert.equal(typeof f.mouth,'string');assert.ok(Array.isArray(f.acc));}
+ assert.deepEqual(faceFor('paused'),{eyes:'closed',mouth:'flat',acc:['zzz']});
+ assert.equal(faceFor('offline').eyes,'dash');assert.notEqual(faceFor('offline').eyes,faceFor('idle').eyes);
+ assert.equal(faceFor('paused','dizzy').eyes,'dizzy');assert.equal(faceFor('unknown').eyes,'normal');
+});
+test('drag release snaps to the nearest side and clamps the bottom offset',()=>{
+ const v={width:390,height:844};
+ assert.deepEqual(snapPosition({x:40,y:400},v),{side:'left',bottom:372});
+ assert.deepEqual(snapPosition({x:300,y:400},v),{side:'right',bottom:372});
+ assert.equal(snapPosition({x:300,y:840},v).bottom,12);
+ assert.equal(snapPosition({x:300,y:-50},v).bottom,844-72-72);
+});
+test('narration lines: fills, wake alerts, halts, reports and route tips',()=>{
+ assert.deepEqual(fillLine({symbol:'ETH-USDT-SWAP',side:1,kind:'open',price:2450.5}),{text:'开仓 ETH 多 @ 2450.5',mood:'excited'});
+ assert.deepEqual(fillLine({symbol:'ETH-USDT-SWAP',side:-1,kind:'close',price:1,pnl:-2.1}),{text:'平仓 ETH 空 -2.10 USDT',mood:'sad'});
+ assert.equal(fillLine({symbol:'ETH-USDT-SWAP',side:1,kind:'close',price:1,pnl:null}).mood,'happy');
+ assert.equal(eventLine({type:'异动',wake:true,coin:'BTC-USDT-SWAP',reason:'放量'}).mood,'alert');
+ assert.equal(eventLine({type:'异动',wake:false}),null);assert.equal(eventLine({type:'trade_opened'}),null);
+ assert.equal(eventLine({type:'daily_halt'}).mood,'sad');
+ assert.match(reportLine({role:'risk',title:'复盘',grade:'B+'}).text,/风控交了报告：复盘 · B\+/);
+ assert.match(contextTip({route:'coin',coin:'BTC-USDT-SWAP',decision:'偏多'}),/BTC.*偏多/);
+ assert.match(contextTip({route:'coin',coin:'BTC-USDT-SWAP'}),/暂无会议结论/);
+ assert.match(contextTip({route:'home',paused:true}),/暂停/);assert.match(contextTip({route:'home',positions:2}),/2 个持仓/);
+ assert.match(contextTip({route:'paper'}),/回撤/);assert.match(contextTip({route:'market'}),/币种/);
+});
+test('speech queue is bounded and drops repeats inside the dedupe window',()=>{
+ let q=[];for(let i=0;i<8;i++)q=pushMessage(q,{text:'m'+i},{now:i});
+ assert.deepEqual(q.map(m=>m.text),['m3','m4','m5','m6','m7']);
+ q=pushMessage(q,{text:'m7'},{now:5000});assert.equal(q.length,5);
+ q=pushMessage(q,{text:'m7'},{now:20000});assert.equal(q.at(-1).at,20000);
 });

@@ -130,8 +130,8 @@ def artifacts(browser):
         for period in ('day','week','all'):
             page.locator(f'#home-equity-range [data-range="{period}"]').tap();page.wait_for_timeout(350)
         first.tap();page.wait_for_timeout(600)
-        page.evaluate('window.scrollTo(0,0)');page.locator('#mascot-touch').tap();page.wait_for_timeout(500)
-        page.locator('#mascot-reports').tap();page.wait_for_selector('#mascot-drawer[open]');page.wait_for_timeout(1000)
+        page.evaluate('window.scrollTo(0,0)');page.locator('#mascot-touch').tap();page.wait_for_selector('#mascot-drawer[open]')
+        page.locator('#companion-tab-team').tap();page.wait_for_timeout(1000)
         elapsed=time.monotonic()-start
         assert elapsed<9,elapsed
         source=page.video.path();context.close()
