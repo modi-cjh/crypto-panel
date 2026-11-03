@@ -76,3 +76,50 @@ export function simTradesMarkup(data, limit = 20) {
   if (!rows.length) return '<li class="empty">还没有平仓记录</li>';
   return rows.map(t => `<li><div><span class="coin-label">${coinIcon(t.inst)}${esc(t.inst.split('-')[0])}</span><span class="${t.side === 1 ? 'up' : 'down'}">${t.side === 1 ? '多' : '空'}</span><span class="pill" style="--sim-color:${SIM_COLORS[t.key] || '#06727d'}">${esc(t.account)}</span><time>${time(t.exit_time)}</time></div><div><span>${esc(REASONS[t.reason] || t.reason)} · ${signed(t.r)}R</span><span class="${tone(t.pnl)}">${signed(t.pnl)} USDT</span></div></li>`).join('');
 }
+
+// ---- Companion (mascot) driven by the paper accounts ----------------------------
+const RECENT = 3 * 3600000;      // hourly data lands up to ~1h after the bar, plus GitHub cron delays
+export const SIM_STALE = 3 * 3600000;
+const sideText = s => s === 1 ? '多' : s === -1 ? '空' : '';
+const coin = inst => String(inst).split('-')[0];
+
+export function simMascotState(data, now = Date.now()) {
+  if (!data || !finite(Date.parse(data.updated_at)) || now - Date.parse(data.updated_at) > SIM_STALE)
+    return { state: 'offline', label: '离线', message: '模拟盘数据超过 3 小时未更新，我在等下一次运行' };
+  const accounts = Object.values(data.accounts);
+  const halted = accounts.filter(a => a.halted);
+  if (halted.length) return { state: 'paused', label: '停手', message: `${halted.map(a => a.name).join('、')} 今日触发日亏停手` };
+  const recent = t => finite(Date.parse(t)) && now - Date.parse(t) >= 0 && now - Date.parse(t) <= RECENT;
+  const stopped = accounts.flatMap(a => a.trades.filter(t => recent(t.exit_time) && t.pnl < 0).map(t => ({ a, t })));
+  if (stopped.length) { const { a, t } = stopped[0]; return { state: 'sad', label: '刚止损', message: `${a.name} ${coin(t.inst)} 止损 ${signed(t.pnl)} USDT，按计划休息` }; }
+  const opened = accounts.flatMap(a => a.open_positions.filter(p => recent(p.opened)).map(p => ({ a, p })));
+  if (opened.length) { const { a, p } = opened[0]; return { state: 'excited', label: '刚开仓', message: `${a.name} 刚开仓 ${coin(p.inst)} ${sideText(p.side)}` }; }
+  const t = simTotals(data);
+  if (t.ret > 0) return { state: 'happy', label: '盈利中', message: `三个模拟账户合计 ${signed(t.ret)}%` };
+  return { state: 'idle', label: '待命', message: t.positions ? `持仓 ${t.positions} 个，盯着止损和跟随止损` : '三个账户空仓，等待新信号' };
+}
+
+// Lines to narrate when a newer dashboard arrives: opens, closes (with PnL) and new halts.
+export function simChanges(prev, next) {
+  if (!prev || !next) return [];
+  const lines = [];
+  for (const [key, a] of Object.entries(next.accounts)) {
+    const before = prev.accounts?.[key];
+    if (!before) continue;
+    const had = new Set(before.open_positions.map(p => p.inst + '|' + p.opened));
+    for (const p of a.open_positions) if (!had.has(p.inst + '|' + p.opened))
+      lines.push({ text: `${a.name} 开仓 ${coin(p.inst)} ${sideText(p.side)} @ ${+p.entry.toPrecision(6)}`, mood: 'excited' });
+    const done = new Set(before.trades.map(t => t.inst + '|' + t.exit_time));
+    for (const t of [...a.trades].reverse()) if (!done.has(t.inst + '|' + t.exit_time))
+      lines.push({ text: `${a.name} 平仓 ${coin(t.inst)} ${sideText(t.side)} ${signed(t.pnl)} USDT`, mood: t.pnl < 0 ? 'sad' : 'happy' });
+    if (a.halted && !before.halted) lines.push({ text: `${a.name} 触发日亏停手，今天不再开新仓`, mood: 'sad' });
+  }
+  return lines;
+}
+
+export function simFeed(data, limit = 20) {
+  return Object.values(data?.accounts || {}).flatMap(a => [
+    ...a.trades.map(t => ({ ts: Date.parse(t.exit_time), text: `${a.name} 平仓 ${coin(t.inst)} ${sideText(t.side)} ${signed(t.pnl)} USDT`, mood: t.pnl < 0 ? 'sad' : 'happy' })),
+    ...a.open_positions.map(p => ({ ts: Date.parse(p.opened), text: `${a.name} 开仓 ${coin(p.inst)} ${sideText(p.side)} @ ${+p.entry.toPrecision(6)}`, mood: 'excited' })),
+  ]).filter(r => finite(r.ts)).sort((x, y) => y.ts - x.ts).slice(0, limit);
+}

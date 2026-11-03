@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validSim, livePnl, simTotals, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup } from '../assets/sim.mjs';
+import { validSim, livePnl, simTotals, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simMascotState, simChanges, simFeed } from '../assets/sim.mjs';
 
 const now = Date.parse('2026-11-03T15:00:00Z');
 const account = (over = {}) => ({ name: '日线趋势突破', rules: '20 日新高', equity: 101.5, return_pct: 1.5, max_drawdown_pct: .8, closed_trades: 1, win_rate_pct: 100, avg_r: 1.5,
@@ -39,4 +39,31 @@ test('totals, cards, positions, trades and curve render escaped content', () => 
   assert.match(simTradesMarkup(two), /ETH/); assert.match(simTradesMarkup(data({ x: account({ trades: [] }) })), /还没有平仓记录/);
   assert.match(simCurveSVG(two), /<polyline/);
   assert.match(simCurveSVG(data({ x: account({ curve: [[now, 100]] }) })), /第一根新 K 线后出现/);
+});
+
+test('companion state follows the paper accounts: stale > halt > recent stop > recent open > profit > idle', () => {
+  const fresh = { ...data(), updated_at: new Date(now - 600e3).toISOString() };
+  const state = d => simMascotState(d, now).state;
+  assert.equal(state(null), 'offline');
+  assert.equal(state({ ...fresh, updated_at: new Date(now - 4 * 3600e3).toISOString() }), 'offline');
+  assert.equal(state(fresh), 'happy');  // +1.5%, nothing recent
+  assert.equal(state({ ...fresh, accounts: { a: account({ equity: 99, return_pct: -1, trades: [] }) } }), 'idle');
+  const recentOpen = { ...fresh, accounts: { a: account({ open_positions: [{ ...account().open_positions[0], opened: new Date(now - 3600e3).toISOString() }] }) } };
+  assert.equal(state(recentOpen), 'excited');
+  const recentStop = { ...fresh, accounts: { a: account({ trades: [{ ...account().trades[0], pnl: -1, exit_time: new Date(now - 3600e3).toISOString() }] }) } };
+  assert.equal(state(recentStop), 'sad'); assert.match(simMascotState(recentStop, now).message, /止损 -1\.00 USDT/);
+  assert.equal(state({ ...recentStop, accounts: { a: account({ halted: true }) } }), 'paused');
+});
+
+test('simChanges narrates new opens, closes and halts once; simFeed lists them newest first', () => {
+  const before = data(), after = structuredClone(before), a = after.accounts.breakout_daily;
+  a.open_positions.push({ inst: 'SOL-USDT-SWAP', side: 1, entry: 150.123456789, stop: 140, target: null, qty: .1, margin: 3, leverage: 5, opened: '2026-11-03T14:00:00Z' });
+  a.trades.unshift({ inst: 'XRP-USDT-SWAP', side: 1, entry_time: '2026-11-03T01:00:00Z', exit_time: '2026-11-03T14:00:00Z', entry: 1, exit: .9, pnl: -1.2, r: -1.2, reason: 'stop' });
+  a.halted = true;
+  const lines = simChanges(before, after);
+  assert.deepEqual(lines.map(l => l.mood), ['excited', 'sad', 'sad']);
+  assert.match(lines[0].text, /日线趋势突破 开仓 SOL 多 @ 150\.123/); assert.match(lines[1].text, /平仓 XRP 多 -1\.20 USDT/); assert.match(lines[2].text, /停手/);
+  assert.deepEqual(simChanges(after, after), []); assert.deepEqual(simChanges(null, after), []);
+  const feed = simFeed(after);
+  assert.equal(feed.length, 4); assert.ok(feed.every((r, i) => i === 0 || feed[i - 1].ts >= r.ts));
 });
