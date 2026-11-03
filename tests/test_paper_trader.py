@@ -232,6 +232,21 @@ class PaperTraderTests(unittest.TestCase):
         opened = [json.loads(l) for l in (Path(a) / 'breakout_long' / 'events.jsonl').read_text().splitlines() if '"trade_opened"' in l]
         self.assertEqual(len(opened), 1)
 
+    def test_run_records_the_latest_price_and_floating_pnl_of_open_positions(self):
+        rows = breakout_then([(1.0, 1.01, 0.995, 1.005)]); feed = Feed(rows)
+        run(self.tmp, feed, rows[-4]['ts'])
+        for r in rows[-3:]: run(self.tmp, feed, r['ts'])
+        pos = json.loads((Path(self.tmp) / 'summary.json').read_text())['accounts']['breakout_long']['open_positions'][0]
+        self.assertNotIn('mark', pos)                                    # no price source in this feed
+        s = pt.run_once(self.tmp, fetch=feed, fetch_prices=lambda inst: pos['entry'] * 1.01)
+        p = s['accounts']['breakout_long']['open_positions'][0]
+        self.assertAlmostEqual(p['mark'], pos['entry'] * 1.01)
+        self.assertAlmostEqual(p['unrealized'], pos['qty'] * pos['entry'] * .01, places=5)
+        low = pt.run_once(self.tmp, fetch=feed, fetch_prices=lambda inst: pos['entry'] * .5)['accounts']['breakout_long']['open_positions'][0]
+        self.assertAlmostEqual(low['unrealized'], -pos['margin'], places=5)  # capped at the posted margin
+        dash = json.loads((Path(self.tmp) / 'dashboard.json').read_text())['accounts']['breakout_long']['open_positions'][0]
+        self.assertIn('unrealized', dash)
+
 
 if __name__ == '__main__':
     unittest.main()

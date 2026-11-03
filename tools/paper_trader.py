@@ -67,6 +67,16 @@ def fetch_open(inst, bar='1H'):
     return dict(ts=int(r[0]), o=float(r[1])) if r and len(r) >= 9 and r[8] == '0' else None
 
 
+def fetch_price(inst):
+    """Latest traded price, recorded with each run so the dashboard can show floating PnL without reaching OKX itself."""
+    data = okx_get(f'market/ticker?instId={inst}')
+    try:
+        px = float(data[0]['last']) if data else None
+    except (KeyError, TypeError, ValueError):
+        px = None
+    return px if px and px > 0 else None
+
+
 def fetch_okx(inst, bar='1H', pages=5):
     """Closed bars (1H or 1Dutc), oldest first: dicts with ts/o/h/l/c/q (q = quote turnover)."""
     rows, after = {}, ''
@@ -299,7 +309,15 @@ def read_trades(path):
         return [dict(r, pnl=float(r['pnl']), r=float(r['r'])) for r in csv.DictReader(f)]
 
 
-def summarize(key, cfg, acct, data_dir):
+def position_mark(p, price):
+    """Floating PnL at the price fetched during this run (loss capped at the posted margin)."""
+    if not price:
+        return {}
+    pnl = max(p['side'] * p['qty'] * (price - p['entry']), -p['margin'])
+    return dict(mark=price, unrealized=round(pnl, 6))
+
+
+def summarize(key, cfg, acct, data_dir, prices=None):
     trades = read_trades(data_dir / key / 'trades.csv')
     equity = mark(acct, acct.get('last_marks', {}))
     wins = [t for t in trades if t['pnl'] > 0]; losses = [t for t in trades if t['pnl'] <= 0]
@@ -316,7 +334,8 @@ def summarize(key, cfg, acct, data_dir):
                 halted=acct['halted'], last_bar=iso(acct['last_ts']) if acct['last_ts'] else None,
                 started=acct.get('started'), live_since=acct.get('live_since'),
                 open_positions=[dict(inst=k, side=p['side'], entry=round(p['entry'], 8), stop=round(p['stop'], 8), target=None if p['tp'] is None else round(p['tp'], 8),
-                                     opened=iso(p['opened']), leverage=p['leverage'], qty=p['qty'], margin=round(p['margin'], 6)) for k, p in sorted(acct['positions'].items())],
+                                     opened=iso(p['opened']), leverage=p['leverage'], qty=p['qty'], margin=round(p['margin'], 6),
+                                     **position_mark(p, (prices or {}).get(k))) for k, p in sorted(acct['positions'].items())],
                 pending=sorted(acct['pending']))
 
 
@@ -361,7 +380,7 @@ def write_readme(data_dir, summary):
     (data_dir / 'README.md').write_text('\n'.join(lines))
 
 
-def run_once(data_dir, fetch=fetch_okx, until=None, now=None, backfill_days=0, reset=False, fetch_opens=None):
+def run_once(data_dir, fetch=fetch_okx, until=None, now=None, backfill_days=0, reset=False, fetch_opens=None, fetch_prices=None):
     data_dir = Path(data_dir); data_dir.mkdir(parents=True, exist_ok=True)
     now = now or datetime.now(timezone.utc)
     if reset:  # start over: remove every account's state and outputs (the branch history keeps the old data)
@@ -384,7 +403,8 @@ def run_once(data_dir, fetch=fetch_okx, until=None, now=None, backfill_days=0, r
             fetch_opens = fetch_open
         opens = {inst: fetch_opens(inst, bar) for inst in series} if fetch_opens and until is None else {}
         books[bar] = (series, {inst: indicators(bars) for inst, bars in series.items()}, opens)
-    accounts = {}
+    accounts, prices = {}, {}
+    price_of = fetch_prices or (fetch_price if fetch is fetch_okx else None)
     for key, cfg in STRATEGIES.items():
         d = data_dir / key; d.mkdir(exist_ok=True)
         acct = load_state(d / 'state.json')
@@ -402,7 +422,10 @@ def run_once(data_dir, fetch=fetch_okx, until=None, now=None, backfill_days=0, r
             with (d / 'events.jsonl').open('a') as f:
                 f.writelines(json.dumps(e, ensure_ascii=False) + '\n' for e in events)
         (d / 'state.json').write_text(json.dumps(acct, ensure_ascii=False, indent=1, sort_keys=True))
-        accounts[key] = summarize(key, cfg, acct, data_dir)
+        held = [k for k in acct['positions'] if k not in prices]
+        if held and price_of and until is None:
+            prices.update({k: price_of(k) for k in held})
+        accounts[key] = summarize(key, cfg, acct, data_dir, prices)
     summary = dict(updated_at=now.isoformat(timespec='seconds').replace('+00:00', 'Z'), start_equity=START_EQUITY, accounts=accounts)
     (data_dir / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1))
     write_readme(data_dir, summary)

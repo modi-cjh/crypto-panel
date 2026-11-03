@@ -22,12 +22,17 @@ export function validSim(data) {
     Array.isArray(a.trades) && a.trades.every(t => symbol(t.inst) && [1, -1].includes(t.side) && finite(t.pnl) && finite(t.r) && stamp(t.exit_time)));
 }
 
-// Floating PnL at the live price when it is fresh; otherwise null (the hourly equity already includes the last close).
+// Floating PnL at the live OKX price when the browser has a fresh one; otherwise the price the paper
+// trader recorded on its last run (browsers that cannot reach OKX still see PnL, a little older).
 export function livePnl(position, tickers = [], priceAt = 0, now = Date.now()) {
   const last = tickers.find(t => t.id === position.inst)?.last;
-  if (!(last > 0) || !(priceAt > 0) || now - priceAt > 24000) return { mark: null, pnl: null, pct: null };
-  const pnl = Math.max(-position.margin, position.side * position.qty * (last - position.entry));
-  return { mark: last, pnl, pct: pnl / position.margin * 100 };
+  if (last > 0 && priceAt > 0 && now - priceAt <= 24000) {
+    const pnl = Math.max(-position.margin, position.side * position.qty * (last - position.entry));
+    return { mark: last, pnl, pct: pnl / position.margin * 100, live: true };
+  }
+  if (finite(position.mark) && position.mark > 0 && finite(position.unrealized))
+    return { mark: position.mark, pnl: position.unrealized, pct: position.unrealized / position.margin * 100, live: false };
+  return { mark: null, pnl: null, pct: null, live: false };
 }
 
 export function simTotals(data) {
@@ -70,10 +75,11 @@ export function simCurveSVG(data) {
 
 export function simPositionsMarkup(data, tickers, priceAt, now = Date.now()) {
   const rows = Object.entries(data.accounts).flatMap(([key, a]) => a.open_positions.map(p => ({ key, account: a.name, ...p, ...livePnl(p, tickers, priceAt, now) })));
+  const priceLabel = p => p.live ? '现价（实时）' : p.mark == null ? '现价' : `最新价（${time(data.updated_at)}）`;
   if (!rows.length) return '<p class="empty">当前没有持仓</p>';
   return rows.map(p => `<article class="history-card sim-position" style="--sim-color:${SIM_COLORS[p.key] || '#06727d'}"><div class="history-card-head"><h3 class="coin-label">${coinIcon(p.inst)}${esc(p.inst.split('-')[0])} <span class="${p.side === 1 ? 'up' : 'down'}">${p.side === 1 ? '多' : '空'} · ${p.leverage}×</span></h3><span class="pill">${esc(p.account)}</span></div><div class="history-metrics">` +
     [['开仓价', fmt(p.entry, 6)], ['止损', fmt(p.stop, 6)], ['止盈', p.target == null ? '跟随止损' : fmt(p.target, 6)], ['保证金 USDT', fmt(p.margin)],
-     ['现价', p.mark == null ? '等待行情' : fmt(p.mark, 6)], ['浮动盈亏', p.pnl == null ? '—' : `${signed(p.pnl)} USDT / ${signed(p.pct)}%`, tone(p.pnl)]]
+     [priceLabel(p), p.mark == null ? '等待行情' : fmt(p.mark, 6)], ['浮动盈亏', p.pnl == null ? '—' : `${signed(p.pnl)} USDT / ${signed(p.pct)}%`, tone(p.pnl)]]
       .map(([k, v, c = '']) => `<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('') + `</div><small class="muted">开仓 ${time(p.opened)} UTC+7</small></article>`).join('');
 }
 
