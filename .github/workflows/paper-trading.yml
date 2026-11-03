@@ -4,8 +4,9 @@
 name: Paper trading
 
 on:
+  # Twice an hour: GitHub delays or skips scheduled runs, and reruns are idempotent (only new closed bars count).
   schedule:
-    - cron: '7 * * * *'
+    - cron: '7,37 * * * *'
   workflow_dispatch:
     inputs:
       reset:

@@ -52,7 +52,7 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 
 ## 学习用模拟交易（GitHub Actions）
 
-`tools/paper_trader.py` 由 `.github/workflows/paper-trading.yml` 每小时（UTC 第 7 分钟）运行一次，只读 OKX 公共 K 线，不需要密钥、不下单。三个独立的 100 USDT 模拟账户跑同一批 5 个主流 USDT 永续（BTC、ETH、SOL、XRP、DOGE）：
+`tools/paper_trader.py` 由 `.github/workflows/paper-trading.yml` 每 30 分钟（UTC 第 7、37 分钟）检查一次（只处理新的已收盘 K 线，重复运行无副作用），只读 OKX 公共 K 线，不需要密钥、不下单。三个独立的 100 USDT 模拟账户跑同一批 5 个主流 USDT 永续（BTC、ETH、SOL、XRP、DOGE）：
 
 - **均值回归**：看板 `assets/indicators.mjs` 的入场规则（RSI 25 / 趋势 2%），止损 1.5×ATR（0.5%–4%），止盈 20 根中轨，最长 24 小时。
 - **趋势突破只做多**：收盘突破前 48 小时高点且 EMA50 > EMA200，止损 2×ATR，3×ATR 跟随止损，最长 168 小时，最多 6 仓。
