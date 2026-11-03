@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-03T16:14:29Z",
+ "updated_at": "2026-11-03T16:21:22Z",
  "start_equity": 100.0,
  "accounts": {
   "mean_reversion": {
@@ -25,7 +25,9 @@
      "opened": "2026-11-03T15:00:00Z",
      "leverage": 10,
      "qty": 74.6695976119303,
-     "margin": 9.540119
+     "margin": 9.540119,
+     "mark": 1.2752,
+     "unrealized": 0.182524
     }
    ],
    "pending": []
