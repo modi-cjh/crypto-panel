@@ -22,7 +22,7 @@ const px = v => fmt(v, Math.abs(v) >= 100 ? 1 : Math.abs(v) >= 1 ? 3 : 5);
 const coin = inst => String(inst).split('-')[0];
 const STRATEGIES = { mean_reversion: '均值回归', breakout_long: '趋势突破只做多', breakout_daily: '日线趋势突破' };
 const ACTIONS = { open: '开仓', close: '平仓', amend_stop: '上移止损', closed_on_exchange: '交易所止损 / 止盈触发', skip: '跳过', daily_halt: '日亏停手',
-  pause: '暂停跟单', resume: '恢复跟单', flatten: '全部平仓并暂停', error: '出错' };
+  pause: '暂停跟单', resume: '恢复跟单', follow_current: '手动跟进当前持仓', flatten: '全部平仓并暂停', error: '出错' };
 const SKIPS = { paper_entry_too_old: '信号已超过 2 小时', stop_too_close_or_crossed: '价格已接近或越过止损', target_already_reached: '价格已到止盈',
   size_below_minimum: '仓位小于最小下单量', insufficient_margin: '保证金不足', exchange_position_exists_not_ours: '交易所已有非本程序的仓位',
   no_price: '取不到价格', no_instrument_spec: '取不到合约信息' };

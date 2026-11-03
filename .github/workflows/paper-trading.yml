@@ -19,9 +19,9 @@ on:
         type: string
         default: '0'
       okx_demo:
-        description: 'OKX demo mirror: run (default) / dry-run (log only) / pause / resume / flatten (close all and pause)'
+        description: 'OKX demo mirror: run (default) / dry-run (log only) / pause / resume / flatten (close all and pause) / follow-current (also open paper positions older than 2h at the current price)'
         type: choice
-        options: [run, dry-run, pause, resume, flatten]
+        options: [run, dry-run, pause, resume, flatten, follow-current]
         default: run
 
 permissions:

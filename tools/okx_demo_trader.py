@@ -233,6 +233,13 @@ class Mirror:
             self.s['paused'] = True; self.log('pause', '-')
         elif action == 'resume':
             self.s['paused'] = False; self.log('resume', '-')
+        elif action == 'follow-current':
+            # Manual catch-up: entries skipped only for being older than OPEN_WINDOW are retried at the current price;
+            # the stop / target / size / margin checks in open() still apply.
+            for key, m in list(self.s['mirrored'].items()):
+                if m['status'] == 'skipped' and m.get('reason') == 'too_old':
+                    del self.s['mirrored'][key]
+            self.log('follow_current', '-')
         elif action == 'flatten':
             self.s['paused'] = True; self.flatten('manual_flatten'); self.log('flatten', '-')
             return
@@ -265,7 +272,7 @@ class Mirror:
             if self.held(inst, p['side']) or any(k[0] == inst for k in self.positions):
                 self.log('skip', inst, reason='exchange_position_exists_not_ours'); self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net')
                 continue
-            if self.now_ms - int(p['opened']) > OPEN_WINDOW:
+            if self.now_ms - int(p['opened']) > OPEN_WINDOW and action != 'follow-current':
                 self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net', reason='too_old')
                 self.log('skip', inst, reason='paper_entry_too_old')
                 continue
@@ -301,7 +308,7 @@ class Mirror:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--data', type=Path, required=True)
-    ap.add_argument('--action', default='run', choices=['run', 'dry-run', 'pause', 'resume', 'flatten'])
+    ap.add_argument('--action', default='run', choices=['run', 'dry-run', 'pause', 'resume', 'flatten', 'follow-current'])
     args = ap.parse_args()
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
     if not all(creds):
