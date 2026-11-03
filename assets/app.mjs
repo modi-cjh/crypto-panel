@@ -24,6 +24,11 @@ const mascot = new Mascot($('mascot'), $('mascot-drawer'));
 const notify = (line, announce = line.text) => { toast(announce); mascot.say(line.text, line.mood); };
 const teamRecords=new NewRecords(),fillRecords=new NewRecords(),eventRecords=new NewRecords(),liveQuotes=new Map();
 let quoteStream=null,candleStream=null,quoteStreamKey='',candleStreamKey='',streamReason='';
+// Connection diagnostics (tap the status in the header): recent script errors and stream state changes.
+const BUILD='2026-11-04 · PR #34',diagLog=[];
+const diagNote=text=>{diagLog.push(`${new Date().toISOString().slice(11,19)}Z ${text}`);diagLog.splice(0,diagLog.length-12);};
+addEventListener('error',e=>diagNote(`脚本错误：${e.message || e.type}${e.filename?' @ '+e.filename.split('/').pop()+':'+e.lineno:''}`));
+addEventListener('unhandledrejection',e=>diagNote(`未处理的异常：${e.reason?.message || e.reason}`));
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const num = (value, digits = 2) => Number.isFinite(value) ? value.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '—';
 const price = value => num(value, value >= 100 ? 2 : value >= 1 ? 4 : value >= .01 ? 6 : 8);
@@ -510,6 +515,43 @@ function simContext(){
   return {simState:okxMascotState(simData),simFeed:okxFeed(simData),sim:{totals:t,
     accounts:[{name:'OKX 模拟账户',color:OKX_COLOR,equity:t.equity,return_pct:t.ret,positions:t.positions,halted:Boolean(simData.halted)}],strategies:[]}};
 }
+const ago=ms=>ms?`${Math.round((Date.now()-ms)/1000)} 秒前`:'从未';
+function diagText(){
+  const ws=s=>s?`${s.state} · 最近数据 ${ago(s.lastData)} · 连续失败 ${s.failures}`:'未启动';
+  const marks=[...okxMarks].map(([k,v])=>`${k.split('-')[0]} ${v.price}（${ago(v.at)}）`).join('，') || '无';
+  return [`版本：${BUILD}`,`时间：${new Date().toISOString()}`,`页面可见：${!document.hidden} · 路由：${route}`,`浏览器：${navigator.userAgent}`,
+    `行情 REST：最近成功 ${ago(priceAt)} · 正在请求 ${priceBusy} · 合约数 ${tickers.length}`,`当前报错：${[...errors.values()].join(' / ') || '无'}`,
+    `真实盘行情 WS（${quoteStreamKey || '无订阅'}）：${ws(quoteStream)}`,`模拟盘标记价 WS（${okxMarkKey || '无订阅'}）：${ws(okxMarkStream)}`,`模拟盘标记价：${marks} · REST 备用最近成功 ${ago(okxMarkPollAt)}`,
+    `OKX 模拟账户数据：${simData?simData.updated_at+' · 权益 '+simData.equity:'未读取'}`,'最近事件：',...(diagLog.length?diagLog:['（无）'])].join('\n');
+}
+function openDiag(){$('diag-body').textContent=diagText();$('diag').hidden=false;$('diag-close').focus();}
+$('connection').addEventListener('click',openDiag);
+$('diag-close').addEventListener('click',()=>{$('diag').hidden=true;$('connection').focus();});
+$('diag').addEventListener('click',e=>{if(e.target.id==='diag')$('diag').hidden=true;});
+$('diag-copy').addEventListener('click',()=>{try{navigator.clipboard.writeText(diagText()+'\n'+$('diag-test-out').textContent);$('diag-copy').textContent='已复制';}catch{}});
+// Direct probes that bypass the app's request queue and streams.
+function probeSocket(url,instId){
+  return new Promise(resolve=>{
+    const t0=Date.now();let ws,done=false;const end=msg=>{if(done)return;done=true;try{ws.close();}catch{}resolve(`${msg}（${Date.now()-t0} ms）`);};
+    try{ws=new WebSocket(url);}catch(e){return resolve(`无法创建：${e.message}`);}
+    const timer=setTimeout(()=>end('8 秒内没有数据'),8000);
+    ws.onopen=()=>ws.send(JSON.stringify({op:'subscribe',args:[{channel:'mark-price',instId}]}));
+    ws.onmessage=e=>{const b=(()=>{try{return JSON.parse(e.data);}catch{return {};}})();if(b.event==='error'){clearTimeout(timer);end(`返回错误 ${b.code} ${b.msg}`);}else if(b.data?.[0]?.markPx){clearTimeout(timer);end(`成功，标记价 ${b.data[0].markPx}`);}};
+    ws.onerror=()=>{clearTimeout(timer);end('连接出错（onerror）');};
+    ws.onclose=e=>{clearTimeout(timer);end(`连接关闭 code ${e.code}${e.reason?' '+e.reason:''}`);};
+  });
+}
+async function probeRest(url,headers={}){
+  const t0=Date.now();
+  try{const r=await fetch(url,{headers,cache:'no-store',credentials:'omit'});const text=await r.text();return `HTTP ${r.status} · ${text.slice(0,80)}（${Date.now()-t0} ms）`;}
+  catch(e){return `失败：${e.name} ${e.message}（${Date.now()-t0} ms）`;}
+}
+$('diag-test').addEventListener('click',async()=>{
+  const out=$('diag-test-out');out.textContent='测试中…（最多约 10 秒）';
+  const [rest,demoRest,live,demo]=await Promise.all([probeRest('https://www.okx.com/api/v5/public/time'),probeRest('https://www.okx.com/api/v5/public/mark-price?instType=SWAP&instId=XRP-USDT-SWAP',{'x-simulated-trading':'1'}),probeSocket('wss://ws.okx.com:8443/ws/v5/public','XRP-USDT-SWAP'),probeSocket(OKX_DEMO_PUBLIC_WS,'XRP-USDT-SWAP')]);
+  out.textContent=`REST www.okx.com：${rest}\n模拟盘 REST：${demoRest}\n真实盘 WS ws.okx.com：${live}\n模拟盘 WS wspap.okx.com：${demo}`;
+  $('diag-body').textContent=diagText();
+});
 function updateStreamStatus(){
   const live=candleStream?.state==='实时' && Date.now()-candleStream.lastData<45000;
 
@@ -536,7 +578,7 @@ function syncStreams(){
   if(key!==quoteStreamKey){
     quoteStream?.stop();quoteStreamKey=key;
     quoteStream=new PublicStream({url:'wss://ws.okx.com:8443/ws/v5/public',args:symbols.flatMap(instId=>[{channel:'tickers',instId},{channel:'mark-price',instId}]),maxFailures:config.wsMaxFailures,
-      onState:state=>{if(state!=='实时')liveQuotes.clear();renderPinnedBalance();if(route==='home')renderPublicHome();updateStreamStatus();},onData:body=>{
+      onState:(state,reason)=>{diagNote(`真实盘行情 WS：${state}${reason?' · '+reason:''}`);if(state!=='实时')liveQuotes.clear();renderPinnedBalance();if(route==='home')renderPublicHome();updateStreamStatus();},onData:body=>{
         const id=body.arg?.instId;if(!symbols.includes(id))return false;
         const row=body.data[0],value=number(row.markPx ?? row.last),at=number(row.ts);
         if(!(value>0) || !at || Date.now()-at>45000 || at>Date.now()+60000)return false;
@@ -604,7 +646,7 @@ async function refreshSim(){
   const response=await fetch(`${OKX_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
   if(!response.ok)throw new Error();const data=await response.json();if(!validOkx(data))throw new Error();
   const changes=okxChanges(simData,data);
-  simData=data;$('sim-error').hidden=true;syncOkxMarks();renderSim();updateCompanion();
+  simData=data;$('sim-error').hidden=true;syncOkxMarks();pollOkxMarks();renderSim();updateCompanion();
   for(const line of changes)notify(line,`OKX 模拟 · ${line.text}`);
  }catch{if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='OKX 模拟账户数据暂时读取失败，保留已有数据，稍后自动重试。';}}
  finally{simBusy=false;}
@@ -617,13 +659,31 @@ function syncOkxMarks(){
   if(key===okxMarkKey)return;
   okxMarkStream?.stop();okxMarkStream=null;okxMarkKey=key;
   if(!symbols.length)return;
-  okxMarkStream=new PublicStream({url:OKX_DEMO_PUBLIC_WS,args:symbols.map(instId=>({channel:'mark-price',instId})),maxFailures:config.wsMaxFailures,onData:body=>{
+  okxMarkStream=new PublicStream({url:OKX_DEMO_PUBLIC_WS,args:symbols.map(instId=>({channel:'mark-price',instId})),maxFailures:config.wsMaxFailures,onState:(state,reason)=>{diagNote(`模拟盘标记价 WS：${state}${reason?' · '+reason:''}`);updateStreamStatus();},onData:body=>{
     const id=body.arg?.instId,row=body.data[0],value=number(row?.markPx);
     if(!symbols.includes(id) || !(value>0))return false;
     okxMarks.set(id,{price:value,at:Date.now()});
     if(!okxMarkFrame)okxMarkFrame=requestAnimationFrame(()=>{okxMarkFrame=0;if(['home','sim'].includes(route))renderSim();else renderPinnedBalance();});
   }});
   okxMarkStream.start();
+}
+// REST fallback for demo mark prices when the demo WebSocket is not delivering (some Safari setups block it):
+// one request returns every demo swap's mark price; OKX allows the demo header from this origin (CORS).
+let okxMarkPolling=false,okxMarkPollAt=0;
+async function pollOkxMarks(){
+  const symbols=[...new Set((simData?.positions || []).map(p=>p.inst))];
+  const wsLive=okxMarkStream?.state==='实时' && Date.now()-okxMarkStream.lastData<20000;
+  if(!symbols.length || wsLive || okxMarkPolling || document.hidden)return;
+  okxMarkPolling=true;
+  try{
+    const response=await fetch('https://www.okx.com/api/v5/public/mark-price?instType=SWAP',{headers:{'x-simulated-trading':'1'},cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(10000)});
+    const body=await response.json();if(body.code!=='0' || !Array.isArray(body.data))throw new Error(`code ${body.code}`);
+    const at=Date.now();
+    for(const row of body.data)if(symbols.includes(row.instId) && number(row.markPx)>0)okxMarks.set(row.instId,{price:number(row.markPx),at});
+    if(!okxMarkPollAt)diagNote('模拟盘标记价 REST：成功');okxMarkPollAt=at;
+    if(['home','sim'].includes(route))renderSim();else renderPinnedBalance();updateStreamStatus();
+  }catch(e){diagNote(`模拟盘标记价 REST：失败 ${e.name} ${e.message}`);okxMarkPollAt=0;}
+  finally{okxMarkPolling=false;}
 }
 // Floating PnL moves the equity by a few cents on every 8-second poll; only animate meaningful moves.
 const EQUITY_ROLL_STEP=.1;
@@ -667,7 +727,7 @@ document.addEventListener('visibilitychange',()=>{
  else {syncStreams();refreshPrices();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSim();if(['home','coin'].includes(route))refreshCandles(true);}
 });
 navigate();refreshPrices();refreshEvents();
-setInterval(()=>{if(!document.hidden){refreshPrices();renderPinnedBalance();updateStreamStatus();if(route==='home')renderHome();}},8000);
+setInterval(()=>{if(!document.hidden){refreshPrices();pollOkxMarks();renderPinnedBalance();updateStreamStatus();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
  if(['home','coin'].includes(route))refreshCandles();
  refreshSnapshot();if(route==='paper')historyPage.refresh();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();refreshSim();
