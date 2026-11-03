@@ -485,7 +485,7 @@ function renderPinnedBalance(){
 function renderPinnedSim(){
   const t=simTotals(simData,tickers,simPriceAt()),stale=Date.now()-Date.parse(simData.updated_at)>SIM_STALE;
   $('pinned-label-text').textContent=t.count===1?'模拟盘权益':'模拟盘合计';$('pinned-mode').textContent=t.count===1?'合并账户':`${t.count} 账户`;
-  rollNumber($('pinned-equity'),t.equity);
+  rollNumber($('pinned-equity'),t.equity,EQUITY_ROLL_STEP);
   $('pinned-daily').textContent=`收益 ${signed(t.ret)}% · 持仓 ${t.positions}`;$('pinned-daily').className=tone(t.ret);
   $('pinned-source').textContent='学习用模拟 · 每 30 分钟更新';
   $('pinned-time').textContent=`${stale?'延迟 · ':''}${time(simData.updated_at)} UTC+7`;$('pinned-time').className=stale?'stale':'';
@@ -606,6 +606,8 @@ async function refreshSim(){
 // The paper accounts take over the home page while the original bot is paused, stopped or stale;
 // once the bot publishes fresh snapshots again, the original home page comes back on its own.
 const simPriceAt=()=>errors.has('prices')?0:priceAt;
+// Floating PnL moves the paper equity by a few cents on every 8-second poll; only animate meaningful moves.
+const EQUITY_ROLL_STEP=.1;
 function simPrimary(){
   if(!simData)return false;
   const main=mainAccounts(publicAccount)[0];
@@ -621,7 +623,7 @@ function renderSim(){
  $('legacy-toggle').textContent=showLegacy?'收起原主力盘':'显示原主力盘（crypto-bot · 已暂停）';$('legacy-toggle').setAttribute('aria-expanded',String(showLegacy));
  if(primary && route==='home'){
   const prices=simPriceAt(),t=simTotals(simData,tickers,prices);
-  rollNumber($('sim-total-equity'),t.equity);
+  rollNumber($('sim-total-equity'),t.equity,EQUITY_ROLL_STEP);
   $('sim-total-ret').innerHTML=`累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
   $('sim-total-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;
   const note=simBackfillNote(simData);$('home-sim-backfill').hidden=!note;$('home-sim-backfill').textContent=note;
