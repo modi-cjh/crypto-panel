@@ -53,7 +53,7 @@ const teamStateOptions = () => ({offlineMinutes:config.offlineMinutes,snapshotAt
 let scanExpanded=false,signalsExpanded=false;
 let scan = null, scanBusy = false, scanSort = 'quote_24h', scanDirection = -1;
 function syncHomeCoin() {
-  focusSymbol = meetingSymbol(team?.status.meeting, configuredSymbol);
+  focusSymbol = meetingSymbol(team?.status.meeting, configuredSymbol, new Set([...tickers.map(t=>t.id),...(scan?.instruments || []).map(r=>r.instId)]));
   const universe = chartUniverse(publicAccount, scan, focusSymbol);
   const active = new Set(universe.choices.filter(c=>c.held || c.pending).map(c=>c.id));
   if (!universe.choices.some(c => c.id === manualHomeCoin) || previousActive.has(manualHomeCoin) && !active.has(manualHomeCoin)) manualHomeCoin = null;
@@ -189,10 +189,11 @@ async function refreshPrices() {
   try {
     const data = normalizeTickers(await api.get('market/tickers', { instType: 'SWAP' }, 10));
     if (!data.length) throw new Error('接口未返回有效 USDT 永续行情');
-    tickers = data;
+    const firstLoad = !tickers.length; tickers = data;
     top = data.filter(r => r.turnover !== null).sort((a, b) => b.turnover - a.turnover).slice(0, 30).map((r, i) => ({ ...r, rank: i + 1 }));
     priceAt = Date.now(); setError('prices', null);
     $('price-updated').textContent = `${time(priceAt)} UTC+7 更新`;
+    if (firstLoad) syncHomeCoin();
     renderMarket(); if (route === 'coin') renderQuote(); if (route === 'home') renderHome(); if (route === 'paper') historyPage.setPrices(tickers);
     if (['home', 'market', 'coin'].includes(route)) refreshSlow();
   } catch (error) { setError('prices', `行情：${description(error)}`); if (!tickers.length) renderMarket();if(route==='paper')historyPage.setPrices([]);if(route==='home')renderPublicHome(); }
@@ -352,7 +353,7 @@ function renderPublicHome() {
   $('home-snapshot-status').textContent=publicAccount?`${stale || sourceStale?'数据可能延迟 · ':''}${time(publicAccount.updated_at)} UTC+7`:'暂无快照时间';
   $('home-snapshot-status').className=stale || sourceStale?'stale':'muted';
   const positions=mainAccounts(publicAccount).filter(a=>a.status!=='未启动').flatMap(a=>a.positions.map(p=>{
-    const quote=quoteFor(p,liveQuotes,a.status==='已停止'?[]:tickers,a.status==='已停止' || errors.has('prices')?0:priceAt);
+    const quote=a.status==='已停止'?{mark:p.mark_price,source:'快照标记价 · 已停止'}:quoteFor(p,liveQuotes,tickers,errors.has('prices')?0:priceAt);
     return {...p,...positionAmounts(p,quote.mark),source:quote.source};
   }));
   $('live-position-count').textContent=summary?positions.length+' 仓':'—';
@@ -487,6 +488,15 @@ function updateStreamStatus(){
   $('connection-dot').className='dot '+(quotesLive || priceAt && Date.now()-priceAt<24000?'live':'error');
   document.documentElement.classList.toggle('has-live-state',quotesLive || live || priceAt && Date.now()-priceAt<24000 || Object.keys(ROLES).some(r=>roleState(team,r,teamStateOptions()).state!=='offline'));
 }
+// Ticker and mark-price pushes arrive several times per second; render once per frame.
+let liveRenderPending=false;
+function scheduleLiveRender(){
+  if(liveRenderPending)return;liveRenderPending=true;
+  requestAnimationFrame(()=>{
+    liveRenderPending=false;
+    renderPinnedBalance();if(route==='paper')historyPage.setPrices([...liveQuotes].filter(([,q])=>Date.now()-q.at<45000).map(([id,q])=>({id,last:q.price})));if(route==='home')renderPublicHome();if(route==='coin')renderQuote();
+  });
+}
 function syncStreams(){
   if(document.hidden)return;
   const symbols=[...new Set([...(route==='paper'?[]:[coin]),...pendingOrders(publicAccount,scan).map(p=>p.symbol),...mainAccounts(publicAccount).filter(a=>!['未启动','已停止','暂停'].includes(a.status)).flatMap(a=>a.positions.map(p=>p.symbol))])].filter(Boolean).sort();
@@ -500,8 +510,8 @@ function syncStreams(){
         if(!(value>0) || !at || Date.now()-at>45000 || at>Date.now()+60000)return false;
         const previous=liveQuotes.get(id);if(previous && previous.at>at)return false;
         liveQuotes.set(id,{price:value,at});
-        const ticker=tickers.find(t=>t.id===id);if(ticker)ticker.last=value;
-        renderPinnedBalance();if(route==='paper')historyPage.setPrices([...liveQuotes].filter(([,q])=>Date.now()-q.at<45000).map(([id,q])=>({id,last:q.price})));if(route==='home')renderPublicHome();if(route==='coin')renderQuote();
+        if(body.arg?.channel==='tickers'){const ticker=tickers.find(t=>t.id===id);if(ticker)ticker.last=value;}
+        scheduleLiveRender();
         return true;
       }});quoteStream.start();
   }
