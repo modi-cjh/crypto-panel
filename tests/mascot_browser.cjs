@@ -84,7 +84,7 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   assert.equal(saved.side, 'left');
   await page.reload(); await page.waitForSelector('#mascot[data-state="paused"]');
   assert.equal(await host.getAttribute('data-side'), 'left');
-  assert.equal(await host.evaluate(e => e.style.left), '12px');
+  assert.equal(Math.round((await host.boundingBox()).x), 12);
 
   // Touch drag, including holding still first (iOS long-press) and an OS-cancelled gesture.
   const cdp = await context.newCDPSession(page), touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
