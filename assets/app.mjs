@@ -465,17 +465,21 @@ function effectiveQuotes(){
 }
 function renderPinnedBalance(){
   const current=liveBalance(publicAccount,effectiveQuotes());
-  rollNumber($('pinned-equity'),current?.equity);
-  $('pinned-mode').textContent=publicAccount?(publicAccount.mode==='live'?'实盘':'模拟盘'):'—';
-  $('pinned-daily').textContent=current?.daily!=null?`当日 ${signed(current.daily)} / ${signed(current.percent)}%`:'当日盈亏 · 暂无当日起始权益';
-  $('pinned-daily').className=tone(current?.daily);
-  $('pinned-source').textContent=current?.source || '暂无账户数据';
-  const stale=publicAccount && (isStale(publicAccount.updated_at,Date.now(),config.offlineMinutes) || mainAccounts(publicAccount).filter(a=>!['未启动','已停止','暂停'].includes(a.status)).some(a=>isStale(a.updated_at,Date.now(),config.offlineMinutes)));
-  $('pinned-time').textContent=publicAccount?`${stale?'延迟 · ':''}${time(publicAccount.updated_at)} UTC+7`:'— UTC+7';
-  $('pinned-time').className=stale?'stale':'';
   if(route==='home')rollNumber($('total-equity'),current?.equity);
+  // One writer per frame: writing the paused bot's 100.00 and then the paper equity made the
+  // number change twice on every refresh, so it animated even when nothing had moved.
   if(simPrimary())renderPinnedSim();
-  else $('pinned-label-text').textContent='主力盘余额';
+  else {
+    $('pinned-label-text').textContent='主力盘余额';
+    rollNumber($('pinned-equity'),current?.equity);
+    $('pinned-mode').textContent=publicAccount?(publicAccount.mode==='live'?'实盘':'模拟盘'):'—';
+    $('pinned-daily').textContent=current?.daily!=null?`当日 ${signed(current.daily)} / ${signed(current.percent)}%`:'当日盈亏 · 暂无当日起始权益';
+    $('pinned-daily').className=tone(current?.daily);
+    $('pinned-source').textContent=current?.source || '暂无账户数据';
+    const stale=publicAccount && (isStale(publicAccount.updated_at,Date.now(),config.offlineMinutes) || mainAccounts(publicAccount).filter(a=>!['未启动','已停止','暂停'].includes(a.status)).some(a=>isStale(a.updated_at,Date.now(),config.offlineMinutes)));
+    $('pinned-time').textContent=publicAccount?`${stale?'延迟 · ':''}${time(publicAccount.updated_at)} UTC+7`:'— UTC+7';
+    $('pinned-time').className=stale?'stale':'';
+  }
   updateCompanion(current);
 }
 function renderPinnedSim(){
