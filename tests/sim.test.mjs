@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validSim, livePnl, simTotals, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simMascotState, simChanges, simFeed } from '../assets/sim.mjs';
+import { validSim, livePnl, simTotals, simSummaryMarkup, simCardsMarkup, simCurveSVG, simPositionsMarkup, simTradesMarkup, simMascotState, simChanges, simFeed, simLiveSince, simBackfillNote } from '../assets/sim.mjs';
 
 const now = Date.parse('2026-11-03T15:00:00Z');
 const account = (over = {}) => ({ name: '日线趋势突破', rules: '20 日新高', equity: 101.5, return_pct: 1.5, max_drawdown_pct: .8, closed_trades: 1, win_rate_pct: 100, avg_r: 1.5,
@@ -76,4 +76,15 @@ test('combined curve starts where every account has data and carries earlier val
   assert.equal(lines.length, 2);
   assert.equal(lines[0][0].split(',')[0], lines[1][0].split(',')[0]);   // both start at the left edge
   assert.match(simCurveSVG(data({ a: account({ curve: [[now, 100]] }), b: account({ curve: [[now, 100]] }) })), /第一根新 K 线后出现/);
+});
+
+test('backfilled accounts are labelled and the chart marks where live running starts', () => {
+  const started = new Date(now - 30 * 86400e3).toISOString(), live = new Date(now - 1800e3).toISOString();
+  const acct = account({ started, live_since: live, curve: [[now - 30 * 86400e3, 100], [now - 3600e3, 103], [now, 104]] });
+  const d = data({ mean_reversion: acct });
+  assert.deepEqual(simLiveSince(d), { started: Date.parse(started), live: Date.parse(live) });
+  assert.match(simBackfillNote(d), /之前为历史补跑/);
+  assert.match(simCurveSVG(d), /class="sim-live"/);
+  const plain = data({ mean_reversion: account({ started: live, live_since: live }) });
+  assert.equal(simLiveSince(plain), null); assert.equal(simBackfillNote(plain), ''); assert.doesNotMatch(simCurveSVG(plain), /sim-live/);
 });

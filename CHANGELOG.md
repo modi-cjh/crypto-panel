@@ -1,7 +1,7 @@
 # 更新日志
 
 基线版本：`cc25dc5`（v3：浅色主题、权益首页、持仓列表与图标、吉祥物、暂停重置）。
-以下改动全部通过 PR #1 – #14 合并到 `master`（2026-11-03，时间为 UTC+7）。
+以下改动全部通过 PR #1 – #15 合并到 `master`（2026-11-03，时间为 UTC+7）。
 
 ---
 
@@ -107,6 +107,13 @@
 - `index.html` 顶栏标签改为 `#pinned-label-text`；新增 `#home-sim` 区块。
 - `assets/sim.mjs`：新增 `simPendingText`；`simCurveSVG` 从所有账户都有数据的时刻开始画（日线账户首个点比小时账户早一天），之前的值顺延。
 
+### PR #15 模拟盘改为 5 个币，支持重置与历史补跑
+- 交易范围改为 BTC、ETH、SOL、XRP、DOGE。
+- `tools/paper_trader.py` 新增 `--reset`（清空全部账户）与 `--backfill-days N`（新账户从 N 天前开始、逐小时重放到现在后转实时，最多 90 天；只对全新账户生效）；状态与汇总新增 `started`、`live_since`。
+- 工作流 `workflow_dispatch` 新增 `reset`、`backfill_days` 输入（通过环境变量传参）。
+- 看板：`simLiveSince`、`simBackfillNote` 标注补跑区间，资金曲线在实时开始处画竖线。
+- 测试：补跑结果与逐小时运行一致、`live_since` 标注、重置清空、已有账户不重复补跑；前端补跑标注用例。
+
 ---
 
 ## 当前三个模拟账户
@@ -117,7 +124,7 @@
 | `breakout_long` | 趋势突破只做多 | 1H | 48 小时新高 + EMA50 > EMA200；止损 2×ATR，3×ATR 跟随，最长 168 小时，最多 6 仓 |
 | `breakout_daily` | 日线趋势突破 | 1D (UTC) | 20 日新高 + EMA50 > EMA200；止损 2×ATR，3×ATR 跟随，最长 90 天，最多 6 仓 |
 
-交易范围：BTC ETH SOL XRP DOGE BNB ADA LINK AVAX LTC DOT TRX BCH UNI NEAR AAVE ETC FIL APT ARB OP SUI PEPE（USDT 永续）。各从 100 USDT 起步（2026-11-03 开始记录）。
+交易范围（自 PR #15 起）：BTC ETH SOL XRP DOGE（USDT 永续）。各从 100 USDT 起步，从 2026-10-04 起按小时补跑 30 天后转为实时（看板标注补跑区间）。PR #15 之前曾以 23 个币从 2026-11-03 13:00 UTC 开始记录，该段数据保留在 `paper-data` 分支历史中。
 
 回测参考（仅供学习，不构成投资建议）：两套 1H 规则在 2025-11 → 2026-11 均亏损；日线突破 2024-02 → 2026-11 回测 +31.6%、最大回撤约 20%，但只有 92 笔，样本有限。日收益 1% 的目标在约 1100 组参数（含不限杠杆 / 风险）的前后段验证中均未找到可持续方案。
 

@@ -27,7 +27,7 @@
     <section id="home-page" class="page" aria-label="交易室首页">
       <a id="sim-summary" class="panel sim-summary" href="#/sim" hidden></a>
       <section id="home-sim" class="home-sim" hidden aria-label="学习用模拟交易">
-        <section class="panel sim-capital"><div class="capital-total"><div><h1>模拟盘合计权益 <span class="mode-tag">3 个账户</span></h1><div class="equity-number"><strong id="sim-total-equity">—</strong><small>USDT</small></div><p id="sim-total-ret">—</p></div><small id="sim-total-updated"></small></div><div class="panel-heading"><h2>资金曲线</h2><a href="#/sim" class="pill">完整页面 →</a></div><div id="home-sim-curve" class="sim-curve"></div></section>
+        <section class="panel sim-capital"><div class="capital-total"><div><h1>模拟盘合计权益 <span class="mode-tag">3 个账户</span></h1><div class="equity-number"><strong id="sim-total-equity">—</strong><small>USDT</small></div><p id="sim-total-ret">—</p></div><small id="sim-total-updated"></small></div><p id="home-sim-backfill" class="sim-backfill" hidden></p><div class="panel-heading"><h2>资金曲线</h2><a href="#/sim" class="pill">完整页面 →</a></div><div id="home-sim-curve" class="sim-curve"></div></section>
         <div id="home-sim-cards" class="sim-cards"></div>
         <section class="panel"><div class="panel-heading"><h2>当前持仓</h2><small class="muted">浮动盈亏按 OKX 实时价</small></div><p id="home-sim-pending" class="sim-pending" hidden></p><div id="home-sim-positions" class="sim-positions"></div></section>
         <section class="panel"><div class="panel-heading"><h2>最近平仓</h2><small class="muted">UTC+7</small></div><ol id="home-sim-trades" class="fills-list"></ol></section>
@@ -67,6 +67,7 @@
     <section id="sim-page" class="page history-page" hidden aria-labelledby="sim-title">
       <div class="page-heading"><div><div class="eyebrow">PAPER / 学习用模拟交易</div><h1 id="sim-title">模拟交易</h1><p>三个各 100 USDT 的模拟账户 · OKX 公开行情 · 每小时自动运行 · 不下单</p></div><span id="sim-updated" class="pill">等待数据</span></div>
       <p id="sim-error" class="alert" hidden></p>
+      <p id="sim-backfill" class="sim-backfill" hidden></p>
       <div id="sim-cards" class="sim-cards"></div>
       <section class="panel"><div class="panel-heading"><h2>资金曲线</h2><span class="pill">起始 100 USDT</span></div><div id="sim-curve" class="sim-curve"></div></section>
       <section class="panel"><div class="panel-heading"><h2>当前持仓</h2><small class="muted">浮动盈亏按 OKX 实时价计算</small></div><div id="sim-positions" class="sim-positions"></div></section>

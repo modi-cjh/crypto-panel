@@ -7,6 +7,15 @@ on:
   schedule:
     - cron: '7 * * * *'
   workflow_dispatch:
+    inputs:
+      reset:
+        description: 'Delete all paper-account data and start over'
+        type: boolean
+        default: false
+      backfill_days:
+        description: 'Start fresh accounts this many days ago and replay to now (0-90)'
+        type: string
+        default: '0'
 
 permissions:
   contents: write
@@ -38,7 +47,14 @@ jobs:
           fi
 
       - name: Run the paper trader
-        run: python3 code/tools/paper_trader.py --data data
+        env:
+          RESET: ${{ inputs.reset }}
+          BACKFILL: ${{ inputs.backfill_days }}
+        run: |
+          args=(--data data)
+          if [ "$RESET" = "true" ]; then args+=(--reset); fi
+          if [[ "$BACKFILL" =~ ^[0-9]+$ ]] && [ "$BACKFILL" -gt 0 ]; then args+=(--backfill-days "$BACKFILL"); fi
+          python3 code/tools/paper_trader.py "${args[@]}"
 
       - name: Commit results
         working-directory: data

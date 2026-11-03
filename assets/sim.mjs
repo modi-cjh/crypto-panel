@@ -63,7 +63,8 @@ export function simCurveSVG(data) {
   const W = 680, H = 230, L = 52, R = 12, T = 14, B = 34, x = t => L + (t - t0) / ((t1 - t0) || 1) * (W - L - R), y = v => T + (hi + pad - v) / (hi - lo + pad * 2) * (H - T - B);
   const grid = [hi + pad, 100, lo - pad].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="${v === 100 ? 'sim-base' : 'equity-grid'}"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt(v)}</text>`).join('');
   const lines = series.map(s => `<polyline points="${s.pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ')}" fill="none" stroke="${SIM_COLORS[s.key] || '#06727d'}" stroke-width="2" vector-effect="non-scaling-stroke"/>`).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="三个模拟账户资金曲线">${grid}${lines}<text x="${L}" y="${H - 10}">${time(new Date(t0).toISOString())}</text><text x="${W - R}" y="${H - 10}" text-anchor="end">${time(new Date(t1).toISOString())} UTC+7</text></svg>` +
+  const b = simLiveSince(data), live = b && b.live > t0 && b.live <= t1 ? `<line x1="${x(b.live).toFixed(1)}" x2="${x(b.live).toFixed(1)}" y1="${T}" y2="${H - B}" class="sim-live"/><text x="${(x(b.live) - 4).toFixed(1)}" y="${T + 10}" text-anchor="end" class="sim-live-label">← 历史补跑</text><text x="${(x(b.live) + 4).toFixed(1)}" y="${T + 10}" class="sim-live-label">实时 →</text>` : '';
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="三个模拟账户资金曲线">${grid}${live}${lines}<text x="${L}" y="${H - 10}">${time(new Date(t0).toISOString())}</text><text x="${W - R}" y="${H - 10}" text-anchor="end">${time(new Date(t1).toISOString())} UTC+7</text></svg>` +
     `<div class="sim-legend">${series.map(s => `<span><i style="background:${SIM_COLORS[s.key]}"></i>${esc(s.name)}</span>`).join('')}</div>`;
 }
 
@@ -133,4 +134,14 @@ export function simFeed(data, limit = 20) {
 export function simPendingText(data) {
   const rows = Object.values(data?.accounts || {}).flatMap(a => (a.pending || []).map(inst => `${a.name} ${coin(inst)}`));
   return rows.length ? `待成交（下一根 K 线开盘模拟成交）：${rows.join('、')}` : '';
+}
+
+// Accounts can start in the past (--backfill-days): everything before live_since is a replay.
+export function simLiveSince(data) {
+  const rows = Object.values(data?.accounts || {}).filter(a => stamp(a.live_since) && stamp(a.started) && Date.parse(a.started) < Date.parse(a.live_since));
+  return rows.length ? { started: Math.min(...rows.map(a => Date.parse(a.started))), live: Math.max(...rows.map(a => Date.parse(a.live_since))) } : null;
+}
+export function simBackfillNote(data) {
+  const b = simLiveSince(data);
+  return b ? `${clock.format(b.started)} 起 · ${clock.format(b.live)} 之前为历史补跑（同一套规则按小时重放），之后为实时运行` : '';
 }
