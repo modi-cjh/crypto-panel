@@ -21,13 +21,13 @@ const time = t => finite(typeof t === 'number' ? t : Date.parse(t)) ? clock.form
 // Prices at exchange precision: about five significant digits (BTC 70,000.1 · XRP 1.2595 · DOGE 0.18123), no padding zeros.
 const px = v => finite(v) ? v.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: Math.min(8, Math.max(2, 4 - Math.floor(Math.log10(Math.abs(v) || 1)))) }) : '—';
 const coin = inst => String(inst).split('-')[0];
-const STRATEGIES = { mean_reversion: '均值回归', breakout_long: '趋势突破只做多', breakout_daily: '日线趋势突破' };
+const STRATEGIES = { mean_reversion: '均值回归', breakout_long: '趋势突破只做多', breakout_daily: '日线趋势突破', execution_test: '模拟成交测试' };
 const ACTIONS = { open: '开仓', close: '平仓', amend_stop: '上移止损', closed_on_exchange: '交易所止损 / 止盈触发', skip: '跳过', daily_halt: '日亏停手',
   pause: '暂停跟单', resume: '恢复跟单', follow_current: '手动跟进当前持仓', flatten: '全部平仓并暂停', error: '出错' };
 const SKIPS = { paper_entry_too_old: '信号已超过 2 小时', stop_too_close_or_crossed: '价格已接近或越过止损', target_already_reached: '价格已到止盈',
   size_below_minimum: '仓位小于最小下单量', insufficient_margin: '保证金不足', exchange_position_exists_not_ours: '交易所已有非本程序的仓位',
   no_price: '取不到价格', no_instrument_spec: '取不到合约信息' };
-const CLOSES = { paper_closed: '策略信号平仓', daily_halt: '日亏停手平仓', manual_flatten: '手动全部平仓' };
+const CLOSES = { paper_closed: '策略信号平仓', daily_halt: '日亏停手平仓', manual_flatten: '手动全部平仓', execution_test: '模拟成交测试 · 成交后立即平仓' };
 
 export function validOkx(d) {
   return d !== null && typeof d === 'object' && stamp(d.updated_at) && finite(d.equity) && Array.isArray(d.positions) &&
@@ -97,7 +97,7 @@ function actionDetail(a) {
   if (a.action === 'skip') return SKIPS[a.reason] || a.reason || '';
   if (a.action === 'open') return `${STRATEGIES[a.strategy] ? STRATEGIES[a.strategy] + ' · ' : ''}${a.side === 1 ? '多' : '空'} ${a.contracts} 张 @ ${a.price} · 止损 ${a.stop}${a.target ? ' · 止盈 ' + a.target : ''} · ${a.leverage}×`;
   if (a.action === 'amend_stop') return `止损 ${a.old} → ${a.new}`;
-  if (a.action === 'close') return CLOSES[a.reason] || a.reason || '';
+  if (a.action === 'close') return a.execution_test ? `${CLOSES.execution_test} · ${a.contracts} 张 @ ${a.price} · 净损益 ${signed(num(a.net_pnl), 4)} USDT（含手续费）` : CLOSES[a.reason] || a.reason || '';
   if (a.action === 'daily_halt') return '当日亏损达到 8%，全部平仓，次日恢复';
   if (a.action === 'error') return a.detail || a.step || '';
   return '';

@@ -109,6 +109,38 @@ def new_state():
     return dict(mirrored={}, paused=True, halted=False, day=None, day_start=None)
 
 
+def dashboard_actions(out, actions):
+    """Join confirmed execution-test fills with strategy actions without replaying orders."""
+    rows, closed = list(actions), set()
+    for path in sorted(out.glob('smoke-test-*.json')):
+        report = json.loads(path.read_text())
+        if report.get('demo') is not True:
+            continue
+        entry, exit_order = report.get('entry') or {}, report.get('exit') or {}
+        if entry.get('state') != 'filled' or not entry.get('ordId'):
+            continue
+        for kind, fill in [('open', entry), ('close', exit_order)]:
+            if fill.get('state') != 'filled' or not fill.get('ordId'):
+                continue
+            ts = datetime.fromtimestamp(int(fill['fillTime']) / 1000, timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+            action = dict(ts=ts, action=kind, inst=report['instrument'], strategy='execution_test', execution_test=True,
+                          dry_run=False, side=1, contracts=fill['accFillSz'], price=float(fill['avgPx']),
+                          leverage=int(fill['lever']), order_id=fill['ordId'])
+            if kind == 'open':
+                action['stop'] = report.get('stop')
+            else:
+                closed.add(entry['ordId'])
+                action.update(reason='execution_test', pnl=float(fill.get('pnl') or 0),
+                              fee=abs(float(entry.get('fee') or 0)) + abs(float(fill.get('fee') or 0)))
+                action['net_pnl'] = action['pnl'] - action['fee']
+            rows.append(action)
+    unique = {}
+    for a in rows:
+        key = a.get('order_id') or (a.get('ts'), a.get('action'), a.get('inst'))
+        unique[key] = a
+    return sorted(unique.values(), key=lambda a: a['ts'], reverse=True)[:30], len(closed)
+
+
 class Mirror:
     def __init__(self, client, state, paper, now, dry_run=False):
         self.c, self.s, self.paper, self.now, self.dry = client, state, paper, now, dry_run
@@ -319,7 +351,7 @@ class Mirror:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--data', type=Path, required=True)
-    ap.add_argument('--action', default='run', choices=['run', 'dry-run', 'pause', 'resume', 'flatten', 'follow-current'])
+    ap.add_argument('--action', default='run', choices=['run', 'dry-run', 'pause', 'resume', 'flatten', 'follow-current', 'snapshot'])
     args = ap.parse_args()
     print(describe_volume(configure_volume_test()))
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
@@ -335,7 +367,10 @@ def main():
     mirror = Mirror(OKX(*creds), json.loads(json.dumps(state)) if dry else state, json.loads(paper_path.read_text()), datetime.now(timezone.utc), dry)
     error = None
     try:
-        mirror.run('run' if dry else args.action)
+        if args.action == 'snapshot':
+            mirror.load()  # Read-only exchange refresh: no order, leverage or stop mutations.
+        else:
+            mirror.run('run' if dry else args.action)
     except OKXError as exc:
         error = str(exc); mirror.log('error', '-', step='run', detail=error)
     for a in mirror.actions:
@@ -349,7 +384,9 @@ def main():
         if hasattr(mirror, 'equity'):
             summary = mirror.summary()
             lines = (out / 'actions.jsonl').read_text().splitlines()[-30:]
-            summary['recent_actions'] = [json.loads(l) for l in reversed(lines)]
+            summary['recent_actions'], tests_closed = dashboard_actions(out, [json.loads(l) for l in lines])
+            summary['execution_test_trades'] = tests_closed
+            summary['closed_trades'] += tests_closed
             (out / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=1))
     if error:
         sys.exit(1)

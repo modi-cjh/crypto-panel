@@ -63,6 +63,19 @@ test('positions and actions are labelled in Chinese and exchange text is escaped
   assert.match(acts, /信号已超过 2 小时/); assert.match(acts, /多 3 张 @ 70000/); assert.match(acts, /&lt;b&gt;bad/); assert.doesNotMatch(acts, /<b>bad/);
 });
 
+test('confirmed execution-test fills show their source, entry, exit and net costs', () => {
+  const shared = { ts: '2026-11-03T21:51:06Z', inst: 'BTC-USDT-SWAP', execution_test: true, strategy: 'execution_test', side: 1, contracts: '0.01', leverage: 1 };
+  const html = okxActionsMarkup(summary({ recent_actions: [
+    { ...shared, action: 'close', reason: 'execution_test', price: 77876.31, net_pnl: -.0077966355 },
+    { ...shared, action: 'open', price: 77876.4, stop: '77097.64' },
+  ] }));
+  assert.match(html, /开仓 · BTC/);
+  assert.match(html, /平仓 · BTC/);
+  assert.match(html, /模拟成交测试/);
+  assert.match(html, /0.01 张 @ 77876.31/);
+  assert.match(html, /-0.0078 USDT（含手续费）/);
+});
+
 test('companion follows the account and new actions are announced once', () => {
   assert.equal(okxMascotState(summary(), NOW).state, 'excited');
   assert.equal(okxMascotState(summary({ recent_actions: [] }), NOW).state, 'happy');
