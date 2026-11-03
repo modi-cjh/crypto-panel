@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-03T14:57:34Z",
+ "updated_at": "2026-11-03T15:07:05Z",
  "start_equity": 100.0,
  "accounts": {
   "mean_reversion": {
@@ -12,9 +12,11 @@
    "avg_r": null,
    "payoff": null,
    "halted": false,
-   "last_bar": "2026-11-03T13:00:00Z",
+   "last_bar": "2026-11-03T14:00:00Z",
    "open_positions": [],
-   "pending": []
+   "pending": [
+    "XRP-USDT-SWAP"
+   ]
   },
   "breakout_long": {
    "name": "趋势突破只做多",
@@ -26,7 +28,7 @@
    "avg_r": null,
    "payoff": null,
    "halted": false,
-   "last_bar": "2026-11-03T13:00:00Z",
+   "last_bar": "2026-11-03T14:00:00Z",
    "open_positions": [],
    "pending": []
   },

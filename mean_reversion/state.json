@@ -4,7 +4,16 @@
  "day_start": 100.0,
  "halted": false,
  "last_marks": {},
- "last_ts": 1793710800000,
- "pending": {},
+ "last_ts": 1793714400000,
+ "pending": {
+  "XRP-USDT-SWAP": {
+   "atr": 0.00946333940170362,
+   "mid": 1.2557450000000001,
+   "risk": 1.0,
+   "side": -1,
+   "signal_ts": 1793714400000,
+   "turn24": 250436864.7665
+  }
+ },
  "positions": {}
 }
