@@ -211,6 +211,27 @@ class PaperTraderTests(unittest.TestCase):
         self.assertEqual(len(eq) - 1, 2 * 24)                         # header + one point per replayed hour (start included)
         self.assertEqual(s['accounts']['breakout_long']['equity'], 100.0)
 
+    def test_pending_order_fills_as_soon_as_the_next_bar_opens_with_identical_results(self):
+        rows = breakout_then([(1.0, 1.03, 0.995, 1.02), (1.02, 1.05, 1.01, 1.04), (1.04, 1.04, 0.97, 0.975)])
+        sig, fill_bar = rows[-5], rows[-4]                       # signal bar, then the bar that fills at its open
+        a, b = tempfile.mkdtemp(), tempfile.mkdtemp()
+        fa, fb = Feed(rows), Feed(rows)
+        run(a, fa, rows[-6]['ts']); run(b, fb, rows[-6]['ts'])
+        run(a, fa, sig['ts']); run(b, fb, sig['ts'])           # signal recorded, order pending
+        fa.until = sig['ts']                                    # a: the fill bar has opened but not closed yet
+        s = pt.run_once(a, fetch=fa, fetch_opens=lambda inst, bar: dict(ts=fill_bar['ts'], o=fill_bar['o']) if inst == 'BTC-USDT-SWAP' and bar == '1H' else None)
+        pos = s['accounts']['breakout_long']['open_positions']
+        self.assertEqual(len(pos), 1); self.assertEqual(pos[0]['opened'], pt.iso(fill_bar['ts']))
+        self.assertEqual(s['accounts']['breakout_long']['pending'], [])
+        self.assertEqual(s['accounts']['breakout_long']['last_bar'], pt.iso(sig['ts']))  # no unfinished bar is marked
+        pt.run_once(a, fetch=fa, fetch_opens=lambda inst, bar: dict(ts=fill_bar['ts'], o=fill_bar['o']))  # rerun: no double fill
+        for r in rows[-4:]: run(a, fa, r['ts']); run(b, fb, r['ts'])
+        self.assertEqual(trades(a, 'breakout_long'), trades(b, 'breakout_long'))
+        for key in pt.STRATEGIES:
+            self.assertEqual(json.loads((Path(a) / key / 'state.json').read_text()), json.loads((Path(b) / key / 'state.json').read_text()))
+        opened = [json.loads(l) for l in (Path(a) / 'breakout_long' / 'events.jsonl').read_text().splitlines() if '"trade_opened"' in l]
+        self.assertEqual(len(opened), 1)
+
 
 if __name__ == '__main__':
     unittest.main()
