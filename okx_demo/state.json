@@ -110,6 +110,10 @@
   [
    1793820649280,
    5783.88
+  ],
+  [
+   1793823587026,
+   5748.82
   ]
  ],
  "mirrored": {
@@ -175,8 +179,9 @@
    "entry": 4095.7,
    "clOrdId": "blxau1793811600",
    "opened_at": 1793813506184,
-   "status": "open",
-   "ordId": "4070525327713488896"
+   "status": "done",
+   "ordId": "4070525327713488896",
+   "closed_reason": "paper_closed"
   }
  },
  "paused": false,
@@ -189,6 +194,13 @@
    "close_price": 1.2558999367088608,
    "fee": -1.98716595,
    "outcome": "target"
+  },
+  "2026-11-04T20:19:47Z|XAU-USDT-SWAP": {
+   "pnl": -57.8895257,
+   "price_pnl": -45.6558,
+   "funding": 0.0,
+   "close_price": 4082.546907388833,
+   "fee": -12.2337257
   }
  }
 }
