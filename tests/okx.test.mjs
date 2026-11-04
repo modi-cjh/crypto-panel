@@ -125,3 +125,10 @@ test('exchange-side closes show the realised amount, price and which order fille
   assert.match(html, /data-tone="close"[\s\S]*XRP/);
   assert.match(feed(d)[0].text, /XRP 交易所止盈触发 · \+5\.90 USDT/);
 });
+
+test('a target fill that lost money explains the price, fee and funding parts', async () => {
+  const { okxActionsMarkup: acts } = await import('../assets/okx.mjs');
+  const html = acts({ recent_actions: [{ ts: '2026-11-04T01:33:13Z', action: 'closed_on_exchange', inst: 'XRP-USDT-SWAP', pnl: -11.28, price_pnl: 5.69, fee: -1.99, funding: -14.98, close_price: 1.2559, outcome: 'target' }] }, 10, { kind: 'trades' });
+  assert.match(html, /交易所止盈触发 · XRP/);
+  assert.match(html, /已实现 -11\.28 USDT（价差 \+5\.69，手续费 -1\.99，资金费 -14\.98）/);
+});

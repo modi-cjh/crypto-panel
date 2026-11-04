@@ -148,10 +148,11 @@ class MirrorTests(unittest.TestCase):
 
     def test_exchange_stop_or_target_fill_records_realised_pnl_and_which_order_hit(self):
         fake = FakeOKX(); _, state = run(fake, paper(**{'BTC-USDT-SWAP': {**long_btc(), 'tp': 72000.0}}))
-        fake.history = [dict(instId='BTC-USDT-SWAP', posSide='long', realizedPnl='-50.8', closeAvgPx='68610', openAvgPx='70000', fee='-1.2', type='2', uTime=str(NOW_MS + 60_000))]
+        fake.history = [dict(instId='BTC-USDT-SWAP', posSide='long', realizedPnl='-50.8', pnl='-49.0', fundingFee='-0.6', closeAvgPx='68610', openAvgPx='70000', fee='-1.2', type='2', uTime=str(NOW_MS + 60_000))]
         m, _ = run(fake, paper(**{'BTC-USDT-SWAP': {**long_btc(), 'tp': 72000.0}}), state)   # position vanished: the stop filled
         a = next(a for a in m.actions if a['action'] == 'closed_on_exchange')
         self.assertEqual((a['pnl'], a['close_price'], a['outcome']), (-50.8, 68610.0, 'stop'))
+        self.assertEqual((a['price_pnl'], a['fee'], a['funding']), (-49.0, -1.2, -0.6))
         fake2 = FakeOKX(); _, s2 = run(fake2, paper(**{'BTC-USDT-SWAP': {**long_btc(), 'tp': 72000.0}}))
         fake2.history = [dict(instId='BTC-USDT-SWAP', posSide='long', realizedPnl='88.1', closeAvgPx='71990', type='2', uTime=str(NOW_MS + 60_000))]
         m2, _ = run(fake2, paper(**{'BTC-USDT-SWAP': {**long_btc(), 'tp': 72000.0}}), s2)

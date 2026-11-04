@@ -123,7 +123,12 @@ export function okxPositionsMarkup(d, marks = new Map(), now = Date.now(), { ope
 // Exchange-side closes carry the realised result from OKX position history (pnl incl. fees, close price, outcome).
 const OUTCOME = { stop: '止损', target: '止盈', liquidation: '强平' };
 const closeTitle = a => a.action === 'closed_on_exchange' ? (OUTCOME[a.outcome] ? `交易所${OUTCOME[a.outcome]}触发` : '交易所止损 / 止盈触发') : (ACTIONS[a.action] || a.action);
-const realised = a => finite(num(a.pnl)) ? `已实现 ${signed(num(a.pnl))} USDT（含手续费）` : '';
+// Realised = price PnL + fees + funding (OKX position history); the parts explain e.g. a target fill that still lost money.
+const realised = a => {
+  if (!finite(num(a.pnl))) return '';
+  const parts = [['价差', num(a.price_pnl)], ['手续费', num(a.fee)], ['资金费', num(a.funding)]].filter(([, v]) => finite(v) && Math.abs(v) >= .005);
+  return `已实现 ${signed(num(a.pnl))} USDT${parts.length ? `（${parts.map(([k, v]) => `${k} ${signed(v)}`).join('，')}）` : '（含手续费）'}`;
+};
 function actionDetail(a) {
   if (a.action === 'skip') return SKIPS[a.reason] || a.reason || '';
   if (a.action === 'open') return `${STRATEGIES[a.strategy] ? STRATEGIES[a.strategy] + ' · ' : ''}${a.side === 1 ? '多' : '空'} ${a.contracts} 张 @ ${a.price} · 止损 ${a.stop}${a.target ? ' · 止盈 ' + a.target : ''} · ${a.leverage}×`;

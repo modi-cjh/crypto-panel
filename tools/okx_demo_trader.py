@@ -121,7 +121,8 @@ def new_state():
 def enrich_closes(mirror, state, actions):
     """Fill in realised PnL for closes logged without it (e.g. before this existed), from OKX position history.
     Results are cached in state so each close is looked up once."""
-    cache = state.setdefault('close_results', {})
+    state.pop('close_results', None)            # v1 cache had no price / fee / funding breakdown
+    cache = state.setdefault('close_results_v2', {})
     for a in actions:
         if a.get('action') not in ('closed_on_exchange', 'close') or a.get('execution_test') or a.get('pnl') is not None:
             continue
@@ -136,7 +137,7 @@ def enrich_closes(mirror, state, actions):
                 continue
             if not res:
                 continue
-            cache[key] = mirror.outcome(m, res) if a['action'] == 'closed_on_exchange' else {k: res[k] for k in ('pnl', 'close_price', 'fee')}
+            cache[key] = mirror.outcome(m, res) if a['action'] == 'closed_on_exchange' else {k: res[k] for k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee')}
         a.update(cache[key])
 
 
@@ -336,7 +337,7 @@ class Mirror:
             return None
         x = max(rows, key=lambda x: int(x.get('uTime') or 0))
         num = lambda k: float(x[k]) if x.get(k) not in (None, '') else None
-        return dict(pnl=num('realizedPnl'), close_price=num('closeAvgPx'), open_price=num('openAvgPx'), fee=num('fee'),
+        return dict(pnl=num('realizedPnl'), price_pnl=num('pnl'), funding=num('fundingFee'), close_price=num('closeAvgPx'), open_price=num('openAvgPx'), fee=num('fee'),
                     closed_at=int(x.get('uTime') or 0), liquidated=str(x.get('type')) in ('3', '4'))
 
     def outcome(self, m, res):
@@ -349,7 +350,7 @@ class Mirror:
             kind = 'stop' if abs(px - float(stop)) <= abs(px - float(target)) else 'target'
         elif not kind and res.get('pnl') is not None:
             kind = 'target' if res['pnl'] >= 0 else 'stop'
-        return dict({k: v for k, v in res.items() if k in ('pnl', 'close_price', 'fee')}, outcome=kind)
+        return dict({k: v for k, v in res.items() if k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee')}, outcome=kind)
 
     def close(self, key, m, reason):
         body = dict(instId=m['inst'], mgnMode='isolated', autoCxl=True, **({'posSide': m['posSide']} if m['posSide'] != 'net' else {}))
@@ -363,7 +364,7 @@ class Mirror:
             res = self.fill_result(m['inst'], m['posSide'], int(m.get('opened_at') or 0))
         except OKXError:
             res = None
-        extra = {k: res[k] for k in ('pnl', 'close_price', 'fee')} if res else {}
+        extra = {k: res[k] for k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee')} if res else {}
         self.log('close', m['inst'], strategy=m.get('strategy'), reason=reason, **extra)
 
     def amend_stop(self, key, m, new_stop):
