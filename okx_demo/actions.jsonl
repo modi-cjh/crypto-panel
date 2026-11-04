@@ -5,3 +5,4 @@
 {"ts": "2026-11-03T22:35:37Z", "action": "resume", "inst": "-", "dry_run": false}
 {"ts": "2026-11-04T01:33:13Z", "action": "closed_on_exchange", "inst": "XRP-USDT-SWAP", "dry_run": false, "strategy": "mean_reversion"}
 {"ts": "2026-11-04T02:08:44Z", "action": "skip", "inst": "SOXS-USDT-SWAP", "dry_run": false, "reason": "no_price"}
+{"ts": "2026-11-04T02:25:28Z", "action": "skip", "inst": "SOXS-USDT-SWAP", "dry_run": false, "reason": "no_price"}
