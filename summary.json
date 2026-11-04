@@ -1,19 +1,19 @@
 {
- "updated_at": "2026-11-04T18:25:18Z",
+ "updated_at": "2026-11-04T19:29:04Z",
  "start_equity": 100.0,
  "accounts": {
   "combined": {
    "name": "合并账户",
-   "equity": 102.4132,
+   "equity": 101.614,
    "cash": 96.344685,
-   "return_pct": 2.41,
+   "return_pct": 1.61,
    "max_drawdown_pct": 6.31,
    "closed_trades": 21,
    "win_rate_pct": 47.6,
    "avg_r": 0.118,
    "payoff": 0.88,
    "halted": false,
-   "last_bar": "2026-11-04T17:00:00Z",
+   "last_bar": "2026-11-04T18:00:00Z",
    "started": "2026-10-04T18:00:00Z",
    "live_since": "2026-11-03T18:27:45Z",
    "by_strategy": [
@@ -61,8 +61,8 @@
      "leverage": 5,
      "qty": 0.6597587752340989,
      "margin": 34.442337,
-     "mark": 269.84,
-     "unrealized": 5.817625
+     "mark": 268.45,
+     "unrealized": 4.90056
     },
     {
      "inst": "UNITREE-USDT-SWAP",
@@ -76,8 +76,8 @@
      "leverage": 5,
      "qty": 1.491783070285122,
      "margin": 28.764774,
-     "mark": 95.99,
-     "unrealized": 0.627614
+     "mark": 95.89,
+     "unrealized": 0.776792
     },
     {
      "inst": "XAU-USDT-SWAP",
@@ -91,8 +91,8 @@
      "leverage": 10,
      "qty": 0.08204499210423116,
      "margin": 33.420326,
-     "mark": 4071.2,
-     "unrealized": -0.18169
+     "mark": 4066.5,
+     "unrealized": -0.567302
     }
    ],
    "pending": [],
