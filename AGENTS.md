@@ -22,14 +22,22 @@
 ## 3. 目录与数据流
 
 ```
-tools/paper_trader.py      策略引擎（三套策略、已收盘 K 线出信号）→ paper-data/combined/state.json
-tools/okx_demo_trader.py   OKX 模拟盘跟单：按策略开平仓、交易所止损/止盈、日亏 8% 停手
+tools/evolve/              自我进化策略引擎（当前唯一信号来源）
+  data.py                  数据层：OKX 1H K 线缓存（paper-data/evolve/candles/）、共享时间轴、70/30 切分、波动观察
+  genome.py                基因：物种（动量/均值回归/波动突破/均线趋势）与参数、交叉、突变
+  execution.py             同源执行：回测与纸面交易共用的唯一撮合引擎 simulate()
+  evolution.py             每代：观察 → 繁殖 → 训练集适应度 → 样本外闸门 → 选择；冠军选择、谱系修剪
+  paper.py                 冠军纸面交易（按段重放 simulate），导出 OKX 跟单信号
+  run.py                   一次运行 = 更新数据 + 进化 5 代 + 换冠军 + 纸面交易
+                           → paper-data/evolve/{state.json, dashboard.json, signals.json}
+tools/okx_demo_trader.py   OKX 模拟盘跟单：跟随 evolve/signals.json（冠军持仓），交易所止损/止盈、日亏 8% 停手
                            → paper-data/okx_demo/{state.json, actions.jsonl, summary.json}
-tools/volume_test.py       限时档位（增量测试 / 激进档）的风险、币种、阈值
+tools/paper_trader.py, tools/volume_test.py   已退役的旧三策略引擎与限时档位（仅在没有 evolve/signals.json 时作为后备）
 tools/stop_demo.py         全部平仓并暂停（stop-demo.yml）
 .github/workflows/paper-trading.yml   定时运行上面两个程序（cron 每 5 分钟，GitHub 实际约 40–50 分钟一次）
 runtime/ + deploy/         可选常驻服务（FastAPI）；部署后替代 GitHub 定时任务
 index.html, assets/*.mjs   看板（无构建步骤，原生 ES 模块）
+  assets/evolve.mjs        策略进化页：进化循环、适应度曲线、基因池谱系图、节点详情、纸面交易
   assets/okx.mjs           OKX 模拟账户：摘要校验、实时浮盈、持仓/成交渲染、机器人状态
   assets/robot-work.mjs    机器人“在做什么”（盯盘/扫描/等信号）、成交票据、持仓播报
   assets/mascot.mjs        机器人伙伴（表情、动画、面板、桌面悬浮窗）
@@ -62,11 +70,14 @@ PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs    # 机器人交
 PANEL_URL=http://127.0.0.1:8008/ node tests/market_browser.cjs    # 市场行情前 100
 PANEL_URL=http://127.0.0.1:8008/ node tests/float_browser.cjs     # 电脑桌面悬浮窗
 PANEL_URL=http://127.0.0.1:8008/ node tests/app_browser.cjs       # 手机主屏幕 App（manifest / 图标）
+PANEL_URL=http://127.0.0.1:8008/ node tests/evolve_browser.cjs    # 策略进化页（夹具 tests/fixtures/evolve-dashboard.json）
 ```
 
 已知：`tests/team_browser.cjs`、`tests/browser_smoke.cjs` 在基线 `cc25dc5` 上就已失败（仍查找 v3 删除的角色卡），不是新改动造成的。浏览器测试全部失败、报 `ERR_CONNECTION_REFUSED` 时，是本地服务没启动。
 
 ## 6. 常见坑（都真实发生过）
+
+- **进化系统的硬规则不要破坏**：回测与纸面交易必须都走 `execution.simulate()`（同源执行）；信号只用已收盘数据、下一根开盘成交；样本外 30% 不参与适应度；冠军只能从样本外合格者中选。改执行规则时同时更新 `tests/test_evolve.py` 并重新生成夹具。训练集适应度会随代数上升，样本外合格数下降是过拟合的正常信号，不是 bug。
 
 - **OKX 模拟盘是独立市场，价格与真实盘不同**（例：XRP 模拟盘 1.2686 vs 真实盘 1.2811）。模拟仓位的浮盈必须用模拟盘标记价，不能用真实盘行情。
 - **部分 4G 网络屏蔽 OKX**（请求一直挂起直到超时），Wi‑Fi / VPN 正常。看板必须在连不上 OKX 时退回账户快照，不能空白或报错。

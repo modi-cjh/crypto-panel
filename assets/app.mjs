@@ -10,6 +10,7 @@ import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } fro
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261104-quotes443';
 import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
 import { workState, pnlMood, tradeBurst, positionReport, pnlComment } from './robot-work.mjs';
+import { EVOLVE_URL, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption } from './evolve.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
 import config from '../config.js';
@@ -419,10 +420,10 @@ function navigate() {
   routeVersion++;
   const hash = location.hash || '#/';
   const match = /^#\/coin\/([A-Z0-9]+-USDT-SWAP)$/.exec(hash);
-  route = match ? 'coin' : hash === '#/paper' ? 'paper' : hash === '#/market' ? 'market' : hash === '#/sim' ? 'sim' : 'home';
+  route = match ? 'coin' : hash === '#/paper' ? 'paper' : hash === '#/market' ? 'market' : hash === '#/sim' ? 'sim' : hash === '#/evolve' ? 'evolve' : 'home';
   coin = match?.[1] || homeCoin;
   candleCharts?.destroy(); candleCharts = null;
-  for (const page of ['home', 'market', 'coin', 'paper', 'sim']) $(`${page}-page`).hidden = route !== page;
+  for (const page of ['home', 'market', 'coin', 'paper', 'sim', 'evolve']) $(`${page}-page`).hidden = route !== page;
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === (route === 'coin' ? 'market' : route); a.classList.toggle('active', active); if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $('home-price-slot').append($('price-panel'));
   $('home-analysis-slot').append($('analysis-content'));
@@ -434,7 +435,7 @@ function navigate() {
 
   document.querySelectorAll('[data-timeframe]').forEach(b => { const active = b.dataset.timeframe === timeframe; b.classList.toggle('active', active); b.setAttribute('aria-pressed', String(active)); });
   setError('candles', null);
-  document.title = route === 'coin' ? `${coin.split('-')[0]} · MODI 交易团队` : route === 'sim' ? '模拟交易 · MODI 交易团队' : 'MODI · AI 交易团队';
+  document.title = route === 'coin' ? `${coin.split('-')[0]} · MODI 交易团队` : route === 'sim' ? '模拟交易 · MODI 交易团队' : route === 'evolve' ? '策略进化 · MODI 交易团队' : 'MODI · AI 交易团队';
   if (['home', 'coin'].includes(route)) {
     $('coin-title').textContent = coin.replace('-USDT-SWAP', '') + ' / USDT 永续'; renderQuote();
     $('signal-summary').innerHTML = '<strong>— <small>/ —</small></strong><span>等待 K 线数据</span>';
@@ -446,7 +447,7 @@ function navigate() {
   } else if (route === 'paper') { historyPage.refresh(); }
   else { renderMarket(); refreshSlow(); }
   if (route === 'home' || route === 'paper') refreshSnapshot();
-  document.documentElement.dataset.route=route;renderPinnedBalance();renderSim();refreshSim();
+  document.documentElement.dataset.route=route;renderPinnedBalance();renderSim();refreshSim();refreshEvolve();
   refreshPublicAccount();syncStreams();
 }
 $('search').addEventListener('input', renderMarket);
@@ -753,7 +754,7 @@ function retLine(t){
  return `累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 今日 <span class="${tone(t.day)}">${Number.isFinite(t.day)?signed(t.day)+' USDT':'—'}</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
 }
 // One-line digest of the account notices; the full notices sit behind it (tap to expand).
-const PROFILE_SHORT={aggressive:'激进档',volume_test:'增量测试档',standard:'标准档'};
+const PROFILE_SHORT={aggressive:'激进档',volume_test:'增量测试档',standard:'标准档',evolved:'进化冠军'};
 function notesSummary(d,quote,now=Date.now()){
  if(!d)return {text:'账户快照读取中…',warn:false};
  const age=Math.max(0,now-Date.parse(d.updated_at)),mins=Math.floor(age/60000),late=age>OKX_STALE/2;
@@ -761,6 +762,34 @@ function notesSummary(d,quote,now=Date.now()){
  const parts=[`快照 ${mins<1?'刚刚':mins+' 分钟前'}${late?'（延迟）':''}`,quote.live?'行情实时':quote.polling?'行情轮询':quote.needsQuotes?'行情未连接':null,p?`${PROFILE_SHORT[p.mode]||'策略档'}${risk}`:null,d.paused?'已暂停':null].filter(Boolean);
  return {text:parts.join(' · '),warn:late||Boolean(quote.needsQuotes&&!quote.live&&!quote.polling)};
 }
+// ---- 策略进化 (tools/evolve → paper-data/evolve/dashboard.json) ----
+let evolveData=null,evolveBusy=false,evolveSel=null;
+async function refreshEvolve(){
+ if(evolveBusy || !['home','evolve'].includes(route))return;evolveBusy=true;
+ try{
+  const r=await fetch(`${EVOLVE_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});
+  if(!r.ok)throw new Error(r.status===404?'尚未生成':'读取失败');const d=await r.json();if(!validEvolve(d))throw new Error('格式不对');
+  evolveData=d;$('evolve-error').hidden=true;renderEvolve();
+ }catch(e){if(route==='evolve' && !evolveData){$('evolve-error').hidden=false;$('evolve-error').textContent=e.message==='尚未生成'?'进化系统还没有运行过：第一次运行后（约 3 分钟）这里会出现第一代策略。':'进化数据暂时读取失败，稍后自动重试。';}}
+ finally{evolveBusy=false;}
+}
+function renderEvolve(){
+ const d=evolveData;
+ $('home-evolve').hidden=!d;if(d)setHTML($('home-evolve'),homeCardMarkup(d));
+ if(route!=='evolve' || !d)return;
+ if(!evolveSel || !d.nodes.some(n=>n.id===evolveSel))evolveSel=d.champion?.id || d.nodes[0]?.id || null;
+ setText($('evolve-updated'),`第 ${d.generation} 代 · 更新 ${time(d.updated_at)} UTC+7`);
+ setHTML($('evolve-loop'),loopSVG(d));setHTML($('evolve-stats'),statsMarkup(d));setHTML($('evolve-fitness'),fitnessSVG(d.history));
+ setHTML($('evolve-graph'),graphSVG(d,evolveSel));setHTML($('evolve-detail'),detailMarkup(d,evolveSel));
+ setHTML($('evolve-paper'),paperMarkup(d));setText($('evolve-caption'),dataCaption(d));
+}
+function selectEvolveNode(id,focus=false){
+ if(!evolveData || !id)return;evolveSel=id;renderEvolve();
+ if(focus)$('evolve-detail').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+$('evolve-page').addEventListener('click',e=>{const n=e.target.closest('[data-node]');if(n)selectEvolveNode(n.dataset.node,n.closest('#evolve-detail')===null && innerWidth<900);});
+$('evolve-page').addEventListener('keydown',e=>{const n=e.target.closest('[data-node]');if(n && (e.key==='Enter' || e.key===' ')){e.preventDefault();selectEvolveNode(n.dataset.node,true);}});
+
 // Write only when content changed: identical rewrites still rebuild nodes (SVG, lists) and read as flicker.
 const setHTML=(el,html)=>{if(el && el.__html!==html){el.innerHTML=html;el.__html=html;}};
 const setText=(el,text)=>{if(el && el.textContent!==text)el.textContent=text;};
@@ -809,7 +838,7 @@ initTradeControls();refreshRuntimeHealth();navigate();refreshPrices();refreshEve
 setInterval(()=>{if(!document.hidden){refreshPrices();pollOkxMarks();renderPinnedBalance();updateStreamStatus();updateCompanionWork();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
  if(['home','coin'].includes(route))refreshCandles();
- refreshSnapshot();if(route==='paper')historyPage.refresh();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();refreshSim();
+ refreshSnapshot();if(route==='paper')historyPage.refresh();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();refreshSim();refreshEvolve();
 }},60000);
 setInterval(()=>{if(!document.hidden){refreshHealth();if(route==='home')renderHome();
  for(const stream of [quoteStream,candleStream])if(stream?.state==='实时' && Date.now()-stream.lastData>45000)stream.socket?.close();
