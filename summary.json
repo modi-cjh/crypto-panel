@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-04T00:17:25Z",
+ "updated_at": "2026-11-04T00:20:13Z",
  "start_equity": 100.0,
  "accounts": {
   "combined": {
@@ -61,8 +61,8 @@
      "leverage": 10,
      "qty": 73.25057332750447,
      "margin": 9.358819,
-     "mark": 1.2697,
-     "unrealized": 0.581933
+     "mark": 1.2639,
+     "unrealized": 1.006787
     }
    ],
    "pending": [],
