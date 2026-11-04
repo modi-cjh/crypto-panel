@@ -23,8 +23,9 @@ export function stopControlText(data) {
 }
 
 export function renderTradeControls(data) {
-  document.querySelectorAll('[data-stop-status]').forEach(el => { el.textContent = stopControlText(data); });
-  document.querySelectorAll('[data-execution-profile]').forEach(el => { el.textContent = executionProfileText(data); });
+  const set = (el, text) => { if (el.textContent !== text) el.textContent = text; };   // unchanged text is not rewritten
+  document.querySelectorAll('[data-stop-status]').forEach(el => set(el, stopControlText(data)));
+  document.querySelectorAll('[data-execution-profile]').forEach(el => set(el, executionProfileText(data)));
 }
 
 export function initTradeControls() {
