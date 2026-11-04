@@ -273,3 +273,14 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
 .companion-doing b{display:block;font-size:13px;margin-bottom:2px;color:var(--accent,#06727d)}
 .companion-doing[data-work=scan]{background:#eef3fb}.companion-doing[data-work=paused],.companion-doing[data-work=offline]{background:#f4f4f5}
 .still .work *,.still .m-ticket,.still .m-ticket::after{animation:none!important}
+
+/* ---- Desktop always-on-top mini window (Document Picture-in-Picture) ---- */
+.pip-body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:10px;padding:0 10px 14px;box-sizing:border-box;background:var(--bg,#f4f6f8);font-family:var(--font,system-ui);overflow:hidden}
+#mascot.in-pip{position:relative;left:auto;top:auto;transform:none!important;margin:0 auto}
+#mascot.in-pip .companion-bot{transform:none!important;width:96px;height:96px}#mascot.in-pip{width:96px;height:96px}
+#mascot.in-pip .companion-chip{display:block}#mascot.in-pip .companion-bubble{max-width:220px}
+#mascot.in-pip .m-ticket,#mascot.in-pip[data-side] .m-ticket{left:50%;right:auto;transform:translateX(-50%);animation-name:w-ticket}
+.pip-info{display:flex;flex-direction:column;align-items:center;gap:2px;font-variant-numeric:tabular-nums}
+.pip-info strong{font-size:22px;letter-spacing:-.3px}.pip-info span{font-size:12px;color:var(--muted)}
+.pip-info[data-tone=up] strong{color:var(--green)}.pip-info[data-tone=down] strong{color:var(--red)}
+#mascot.in-pip.docked .companion-bubble:not([hidden]){display:block}#mascot.in-pip.docked .m-ticket:not([hidden]){display:flex}

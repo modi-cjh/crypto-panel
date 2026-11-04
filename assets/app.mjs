@@ -526,6 +526,7 @@ function companionWork(){
 function updateCompanionWork(){
   const cw=companionWork();if(!cw)return;
   mascot.context.report=positionReport(cw.positions);mascot.setWork(cw.work,cw.mood);
+  if(mascot.floating){const t=okxTotals(simData,okxMarks);mascot.setPipInfo({equity:`${num(t.equity)} U`,line:`今日 ${Number.isFinite(t.day)?signed(t.day):'—'} · ${cw.work.label}`,tone:tone(Number.isFinite(t.day)?t.day:t.ret)});}
   const c=pnlComment(pnlMemo,{upl:cw.work.upl,equity:cw.equity,positions:cw.positions});if(c)mascot.say(c.text,c.mood);
 }
 function simContext(){
