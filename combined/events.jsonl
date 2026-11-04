@@ -44,3 +44,5 @@
 {"ts": "2026-11-03T14:00:00Z", "type": "signal", "inst": "XRP-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
 {"ts": "2026-11-03T15:00:00Z", "type": "trade_opened", "inst": "XRP-USDT-SWAP", "strategy": "mean_reversion", "side": -1, "price": 1.27764442, "stop": 1.29183943, "target": 1.255745, "leverage": 10}
 {"ts": "2026-11-04T00:00:00Z", "type": "trade_closed", "inst": "XRP-USDT-SWAP", "strategy": "mean_reversion", "side": -1, "price": 1.255745, "pnl": 1.511359, "reason": "target"}
+{"ts": "2026-11-04T01:00:00Z", "type": "signal", "inst": "SOXS-USDT-SWAP", "strategy": "breakout_long", "side": 1}
+{"ts": "2026-11-04T02:00:00Z", "type": "trade_opened", "inst": "SOXS-USDT-SWAP", "strategy": "breakout_long", "side": 1, "price": 57.041406, "stop": 54.75974976, "target": null, "leverage": 10}
