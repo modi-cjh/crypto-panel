@@ -31,6 +31,10 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   await context.route('**/paper/account.json?*', r => r.fulfill({ json: account }));
   await context.route('**/paper/team.json?*', r => r.fulfill({ json: team }));
   await context.route('**/paper/events.json?*', r => r.fulfill({ json: { schema_version: 1, generated_at: iso(Date.now()), source_status: 'ok', events: [] } }));
+  // First visit on a phone starts docked at the edge; a returning visitor's choice is kept.
+  { const fresh = await context.newPage(); await fresh.goto(BASE); await fresh.waitForSelector('#mascot');
+    assert.ok(await fresh.locator('#mascot').evaluate(e => e.classList.contains('docked')), 'phones start docked'); await fresh.close(); }
+  await context.addInitScript(() => { try { if (!sessionStorage.getItem('seeded')) { localStorage.setItem('modi-companion-position', JSON.stringify({ side: 'right', bottom: 20, docked: false })); sessionStorage.setItem('seeded', '1'); } } catch {} });
   const page = await context.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(BASE);

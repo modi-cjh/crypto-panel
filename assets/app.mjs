@@ -500,7 +500,7 @@ function renderPinnedSim(){
   const t=okxTotals(simData,okxMarks),stale=Date.now()-Date.parse(simData.updated_at)>OKX_STALE;
   $('pinned-label-text').textContent='OKX 模拟权益';$('pinned-mode').textContent='交易所模拟';
   rollNumber($('pinned-equity'),t.equity,EQUITY_ROLL_STEP);
-  $('pinned-daily').textContent=`收益 ${signed(t.ret)}% · 持仓 ${t.positions}`;$('pinned-daily').className=tone(t.ret);
+  $('pinned-daily').textContent=`今日 ${Number.isFinite(t.day)?signed(t.day):'—'} · 累计 ${signed(t.ret)}%${stale?' · 延迟':''}`;$('pinned-daily').className=tone(Number.isFinite(t.day)?t.day:t.ret);
   $('pinned-source').textContent='OKX 模拟交易 · 约每 5 分钟更新';
   $('pinned-time').textContent=`${stale?'延迟 · ':''}${time(simData.updated_at)} UTC+7`;$('pinned-time').className=stale?'stale':'';
 }
@@ -713,13 +713,29 @@ function simPrimary(){
 let showLegacy=false;
 $('legacy-toggle').addEventListener('click',()=>{showLegacy=!showLegacy;renderSim();});
 const statusPill=(el,d)=>{const st=okxStatus(d);el.textContent=st.label;el.className=`pill okx-pill ${st.cls}`;};
+// Re-rendering on every price tick must keep rows the viewer opened (or closed) as they were.
+function renderOkxPositions(id,openByDefault){
+ const box=$(id),state=new Map([...box.querySelectorAll('details.okx-pos')].map(el=>[el.dataset.inst,el.open]));
+ box.innerHTML=okxPositionsMarkup(simData,okxMarks,Date.now(),{open:openByDefault});
+ box.querySelectorAll('details.okx-pos').forEach(el=>{if(state.has(el.dataset.inst))el.open=state.get(el.dataset.inst);});
+}
 function retLine(t){
  return `累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 今日 <span class="${tone(t.day)}">${Number.isFinite(t.day)?signed(t.day)+' USDT':'—'}</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
+}
+// One-line digest of the account notices; the full notices sit behind it (tap to expand).
+const PROFILE_SHORT={aggressive:'激进档',volume_test:'增量测试档',standard:'标准档'};
+function notesSummary(d,quote,now=Date.now()){
+ if(!d)return {text:'账户快照读取中…',warn:false};
+ const age=Math.max(0,now-Date.parse(d.updated_at)),mins=Math.floor(age/60000),late=age>OKX_STALE/2;
+ const p=d.execution_profile,risk=Number.isFinite(p?.risk)?` ${(p.risk*100).toFixed(0)}%`:'';
+ const parts=[`快照 ${mins<1?'刚刚':mins+' 分钟前'}${late?'（延迟）':''}`,quote.live?'行情实时':quote.polling?'行情轮询':quote.needsQuotes?'行情未连接':null,p?`${PROFILE_SHORT[p.mode]||'策略档'}${risk}`:null,d.paused?'已暂停':null].filter(Boolean);
+ return {text:parts.join(' · '),warn:late||Boolean(quote.needsQuotes&&!quote.live&&!quote.polling)};
 }
 function renderSim(){
  renderTradeControls(simData);
  const quote=demoQuoteState(simData,okxMarks,okxMarkStream,okxMarkPollAt);
  document.querySelectorAll('[data-account-note]').forEach(el=>{el.textContent=accountDataNote(simData,quote);});
+ {const n=notesSummary(simData,quote);document.querySelectorAll('[data-notes-summary]').forEach(el=>{el.textContent=n.text;el.closest('.okx-notes')?.classList.toggle('warn',n.warn);});}
  const primary=simPrimary();
  document.documentElement.classList.toggle('sim-primary',primary);document.documentElement.classList.toggle('show-legacy',primary && showLegacy);
  $('home-sim').hidden=!primary;
@@ -730,7 +746,8 @@ function renderSim(){
   $('okx-total-ret').innerHTML=retLine(t);
   $('okx-total-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;statusPill($('home-okx-status'),simData);
   $('home-okx-curve').innerHTML=okxCurveSVG(simData);
-  $('home-okx-positions').innerHTML=okxPositionsMarkup(simData,okxMarks);$('home-okx-actions').innerHTML=okxActionsMarkup(simData,10);
+  renderOkxPositions('home-okx-positions',false);$('home-okx-pos-count').textContent=simData.positions.length;
+  $('home-okx-actions').innerHTML=okxActionsMarkup(simData,6,{kind:'trades'});$('home-okx-log').innerHTML=okxActionsMarkup(simData,10,{kind:'system'});
  }
  renderPinnedBalance();
  if(route!=='sim')return;
@@ -741,7 +758,8 @@ function renderSim(){
    ['可用 USDT',num(Number(simData.available))],['持仓',`${t.positions}`],['已平仓',`${t.trades} 笔`]].map(([k,v,c=''])=>`<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('')}</div>`;
  $('okx-start').textContent=`起始 ${num(okxStart(simData))} USDT`;
  $('okx-curve').innerHTML=okxCurveSVG(simData);
- $('okx-positions').innerHTML=okxPositionsMarkup(simData,okxMarks);$('okx-actions').innerHTML=okxActionsMarkup(simData,30);
+ renderOkxPositions('okx-positions',true);$('okx-pos-count').textContent=simData.positions.length;
+ $('okx-actions').innerHTML=okxActionsMarkup(simData,30,{kind:'trades'});$('okx-log').innerHTML=okxActionsMarkup(simData,30,{kind:'system'});
 }
 document.addEventListener('visibilitychange',()=>{
  if(document.hidden){quoteStream?.stop();candleStream?.stop();quoteStreamKey='';candleStreamKey='';syncOkxMarks();}

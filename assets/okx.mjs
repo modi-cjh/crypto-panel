@@ -94,22 +94,29 @@ export function okxCurveSVG(d) {
   if (pts.length < 2 || pts.at(-1)[0] === pts[0][0]) return '<p class="empty">资金曲线会在跟单运行几次后出现（每 15 分钟一个点）</p>';
   const base = okxStart(d), t0 = pts[0][0], t1 = pts.at(-1)[0], vals = pts.map(p => p[1]);
   const lo = Math.min(...vals, base), hi = Math.max(...vals, base), pad = Math.max((hi - lo) * .12, base * .002);
-  const W = 680, H = 230, L = 62, R = 12, T = 14, B = 34, x = t => L + (t - t0) / (t1 - t0) * (W - L - R), y = v => T + (hi + pad - v) / (hi - lo + pad * 2) * (H - T - B);
+  const W = 680, H = 250, L = 118, R = 12, T = 16, B = 40, x = t => L + (t - t0) / (t1 - t0) * (W - L - R), y = v => T + (hi + pad - v) / (hi - lo + pad * 2) * (H - T - B);
   const grid = [hi + pad, base, lo - pad].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="${v === base ? 'sim-base' : 'equity-grid'}"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt(v)}</text>`).join('');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="OKX 模拟账户资金曲线">${grid}<polyline points="${pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ')}" fill="none" stroke="${OKX_COLOR}" stroke-width="2" vector-effect="non-scaling-stroke"/>` +
-    `<text x="${L}" y="${H - 10}">${time(t0)}</text><text x="${W - R}" y="${H - 10}" text-anchor="end">${time(t1)} UTC+7</text></svg>`;
+    `<text x="${L}" y="${H - 8}">${time(t0)}</text><text x="${W - R}" y="${H - 8}" text-anchor="end">${time(t1)}</text></svg>`;
 }
 
-export function okxPositionsMarkup(d, marks = new Map(), now = Date.now()) {
+// Compact position rows: coin, side, leverage and floating PnL stay visible; tap to expand the details.
+export function okxPositionsMarkup(d, marks = new Map(), now = Date.now(), { open = false } = {}) {
   const { positions } = okxLive(d, marks, now);
   if (!positions.length) return '<p class="empty">当前没有持仓，等待策略信号</p>';
-  const open = Object.fromEntries((d.open_mirrors || []).map(m => [m.inst, m]));
+  const mirrors = Object.fromEntries((d.open_mirrors || []).map(m => [m.inst, m]));
   return positions.map(p => {
-    const m = open[p.inst], margin = num(p.margin), pct = margin > 0 && finite(p.upl) ? p.upl / margin * 100 : null;
-    return `<article class="history-card sim-position" style="--sim-color:${OKX_COLOR}"><div class="history-card-head"><h3 class="coin-label">${coinIcon(p.inst)}${esc(coin(p.inst))} <span class="${p.side === 1 ? 'up' : 'down'}">${p.side === 1 ? '多' : '空'} · ${esc(p.lever)}×</span></h3><span class="pill">${p.ours ? esc(STRATEGIES[m?.strategy] || '跟单') : '非本程序仓位'}</span></div><div class="history-metrics">` +
-      [['张数', esc(Math.abs(num(p.contracts)))], ['开仓均价', px(num(p.avgPx))], ['止损', m && finite(num(m.stop)) ? px(num(m.stop)) : '—'], ['保证金 USDT', fmt(margin)],
-       [p.live ? '标记价（实时）' : `标记价（${time(d.updated_at)}）`, px(p.mark)], ['浮动盈亏', finite(p.upl) ? `${signed(p.upl)} USDT${pct == null ? '' : ` / ${signed(pct)}%`}` : '—', tone(p.upl)]]
-        .map(([k, v, c = '']) => `<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('') + '</div></article>';
+    const m = mirrors[p.inst], margin = num(p.margin), pct = margin > 0 && finite(p.upl) ? p.upl / margin * 100 : null;
+    const tag = p.ours ? esc(STRATEGIES[m?.strategy] || '跟单') : '非本程序仓位';
+    const pnl = finite(p.upl) ? `${signed(p.upl)} USDT` : '—';
+    return `<details class="okx-pos sim-position${p.ours ? '' : ' manual'}" data-inst="${esc(p.inst)}"${open ? ' open' : ''}><summary>` +
+      `<span class="okx-pos-coin">${coinIcon(p.inst)}<b>${esc(coin(p.inst))}</b><i class="okx-side ${p.side === 1 ? 'up' : 'down'}">${p.side === 1 ? '多' : '空'} ${esc(p.lever)}×</i></span>` +
+      `<span class="okx-pos-tag">${tag}</span>` +
+      `<span class="okx-pos-pnl ${tone(p.upl)}"><b>${pnl}</b><small>${pct == null ? '' : `${signed(pct)}%`}</small></span></summary>` +
+      `<div class="history-metrics okx-pos-body">` +
+      [['张数', esc(Math.abs(num(p.contracts)))], ['开仓均价', px(num(p.avgPx))], [p.live ? '标记价（实时）' : `标记价（${time(d.updated_at)}）`, px(p.mark)],
+       ['止损', m && finite(num(m.stop)) ? px(num(m.stop)) : '—'], ['保证金 USDT', fmt(margin)], ['收益率（按保证金）', pct == null ? '—' : `${signed(pct)}%`, tone(p.upl)]]
+        .map(([k, v, c = '']) => `<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('') + '</div></details>';
   }).join('');
 }
 
@@ -123,10 +130,17 @@ function actionDetail(a) {
   return '';
 }
 
-export function okxActionsMarkup(d, limit = 10) {
-  const rows = (d.recent_actions || []).slice(0, limit);
-  if (!rows.length) return '<li class="empty">还没有交易动作</li>';
-  return rows.map(a => `<li><div><span>${esc(ACTIONS[a.action] || a.action)}${a.inst && a.inst !== '-' ? ' · ' + esc(coin(a.inst)) : ''}${a.dry_run ? ' <small class="muted">(空跑)</small>' : ''}</span><time>${time(a.ts)}</time></div><div><small class="muted">${esc(actionDetail(a))}</small></div></li>`).join('');
+// Fills and risk events versus housekeeping (pause / resume / skips), so real trades are not buried.
+const TRADE_ACTIONS = new Set(['open', 'close', 'closed_on_exchange', 'amend_stop', 'daily_halt', 'error']);
+const ACTION_TONE = { open: 'open', close: 'close', closed_on_exchange: 'stop', amend_stop: 'info', daily_halt: 'stop', error: 'stop' };
+export const isTradeAction = a => TRADE_ACTIONS.has(a.action);
+
+// kind: 'all' (default, every action), 'trades' (fills and risk events) or 'system' (housekeeping).
+export function okxActionsMarkup(d, limit = 10, { kind = 'all' } = {}) {
+  const pick = kind === 'trades' ? isTradeAction : kind === 'system' ? a => !isTradeAction(a) : () => true;
+  const rows = (d.recent_actions || []).filter(pick).slice(0, limit);
+  if (!rows.length) return `<li class="empty">${kind === 'system' ? '暂无运行记录' : kind === 'trades' ? '还没有成交，等待策略信号' : '还没有交易动作'}</li>`;
+  return rows.map(a => `<li class="okx-act" data-tone="${ACTION_TONE[a.action] || 'muted'}"><div><span><i class="okx-act-dot" aria-hidden="true"></i><b>${esc(ACTIONS[a.action] || a.action)}${a.inst && a.inst !== '-' ? ' · ' + esc(coin(a.inst)) : ''}</b>${a.dry_run ? ' <small class="muted">(空跑)</small>' : ''}</span><time>${time(a.ts)}</time></div>${actionDetail(a) ? `<p>${esc(actionDetail(a))}</p>` : ''}</li>`).join('');
 }
 
 const feedLine = a => a.action === 'open' ? { text: `开仓 ${coin(a.inst)} ${a.side === 1 ? '多' : '空'} ${a.contracts} 张 @ ${a.price}`, mood: 'excited' }

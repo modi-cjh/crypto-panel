@@ -29,7 +29,7 @@ const feed = { updated_at: iso(now - 600e3), equity: 4980.83, available: 4800, d
   await page.waitForSelector('#home-sim:not([hidden])');
   // 1580 XRP short from 1.2595 at the demo mark 1.2703: −17.06 USDT, as the OKX app shows.
   await page.waitForFunction(() => document.querySelector('#home-okx-positions').textContent.includes('-17.06 USDT'), null, { timeout: 20000 });
-  assert.match(await page.locator('#home-okx-positions').innerText(), /标记价（实时）\s*1\.2703/);
+  assert.match(await page.locator('#home-okx-positions').textContent(), /标记价（实时）\s*1\.2703/);   // inside the collapsed details row
   assert.equal(await page.locator('#pinned-equity').innerText(), '4,981.94');            // 4,980.83 + 18.17 − 17.06
   assert.ok(demoHeaders.length && demoHeaders.every(h => h === '1'));
   // Diagnostics panel: opens from the header status and probes each connection.
