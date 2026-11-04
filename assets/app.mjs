@@ -29,7 +29,8 @@ const teamRecords=new NewRecords(),fillRecords=new NewRecords(),eventRecords=new
 let quoteStream=null,candleStream=null,quoteStreamKey='',candleStreamKey='',streamReason='';
 // Connection diagnostics (tap the status in the header): recent script errors and stream state changes.
 const BUILD='2026-11-04 · 模拟行情 443 / 8443 双通道',diagLog=[];
-const diagNote=text=>{diagLog.push(`${new Date().toISOString().slice(11,19)}Z ${text}`);diagLog.splice(0,diagLog.length-12);};
+// Streams report their state on every message; log only changes so real events stay visible.
+const diagNote=text=>{if(diagLog.length && diagLog.at(-1).endsWith(' '+text))return;diagLog.push(`${new Date().toISOString().slice(11,19)}Z ${text}`);diagLog.splice(0,diagLog.length-12);};
 addEventListener('error',e=>diagNote(`脚本错误：${e.message || e.type}${e.filename?' @ '+e.filename.split('/').pop()+':'+e.lineno:''}`));
 addEventListener('unhandledrejection',e=>diagNote(`未处理的异常：${e.reason?.message || e.reason}`));
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
