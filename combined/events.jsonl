@@ -148,3 +148,5 @@
 {"ts": "2026-11-04T12:00:00Z", "type": "skip", "inst": "LIT-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
 {"ts": "2026-11-04T12:00:00Z", "type": "skip", "inst": "NIGHT-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
 {"ts": "2026-11-04T12:00:00Z", "type": "skip", "inst": "PEPE-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T12:00:00Z", "type": "signal", "inst": "SPY-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T13:00:00Z", "type": "skip", "inst": "SPY-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
