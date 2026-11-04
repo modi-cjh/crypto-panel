@@ -184,3 +184,17 @@
 {"ts": "2026-11-04T17:00:00Z", "type": "trade_opened", "inst": "XAU-USDT-SWAP", "strategy": "breakout_long", "side": 1, "price": 4073.41452, "stop": 4036.0961153, "target": null, "leverage": 10}
 {"ts": "2026-11-04T17:00:00Z", "type": "skip", "inst": "XLM-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
 {"ts": "2026-11-04T17:00:00Z", "type": "skip", "inst": "XRP-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T17:00:00Z", "type": "signal", "inst": "ADA-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T17:00:00Z", "type": "signal", "inst": "DOGE-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T17:00:00Z", "type": "signal", "inst": "LINK-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T17:00:00Z", "type": "signal", "inst": "SHIB-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T17:00:00Z", "type": "signal", "inst": "SOL-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T17:00:00Z", "type": "signal", "inst": "SUI-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T17:00:00Z", "type": "signal", "inst": "WLFI-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
+{"ts": "2026-11-04T18:00:00Z", "type": "skip", "inst": "ADA-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T18:00:00Z", "type": "skip", "inst": "DOGE-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T18:00:00Z", "type": "skip", "inst": "LINK-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T18:00:00Z", "type": "skip", "inst": "SHIB-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T18:00:00Z", "type": "skip", "inst": "SOL-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T18:00:00Z", "type": "skip", "inst": "SUI-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T18:00:00Z", "type": "skip", "inst": "WLFI-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
