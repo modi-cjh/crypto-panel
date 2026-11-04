@@ -118,6 +118,28 @@ def new_state():
     return dict(mirrored={}, paused=True, halted=False, day=None, day_start=None)
 
 
+def enrich_closes(mirror, state, actions):
+    """Fill in realised PnL for closes logged without it (e.g. before this existed), from OKX position history.
+    Results are cached in state so each close is looked up once."""
+    cache = state.setdefault('close_results', {})
+    for a in actions:
+        if a.get('action') not in ('closed_on_exchange', 'close') or a.get('execution_test') or a.get('pnl') is not None:
+            continue
+        key = f"{a['ts']}|{a['inst']}"
+        if key not in cache:
+            ts = int(datetime.fromisoformat(a['ts'].replace('Z', '+00:00')).timestamp() * 1000)
+            m = next((m for m in state.get('mirrored', {}).values() if m.get('inst') == a['inst'] and m.get('status') == 'done'
+                      and int(m.get('opened_at') or 0) <= ts), {})
+            try:
+                res = mirror.fill_result(a['inst'], m.get('posSide', 'net'), int(m.get('opened_at') or ts - 7 * 86400000), ts + 120000)
+            except OKXError:
+                continue
+            if not res:
+                continue
+            cache[key] = mirror.outcome(m, res) if a['action'] == 'closed_on_exchange' else {k: res[k] for k in ('pnl', 'close_price', 'fee')}
+        a.update(cache[key])
+
+
 def dashboard_actions(out, actions):
     """Join confirmed execution-test fills with strategy actions without replaying orders."""
     rows, closed = list(actions), set()
@@ -304,6 +326,31 @@ class Mirror:
         self.log('open', inst, side=side, strategy=p.get('strategy'), contracts=fmt(contracts), price=px, stop=algo['slTriggerPx'],
                  target=algo.get('tpTriggerPx'), leverage=lever, risk_usdt=round(risk, 2))
 
+    def fill_result(self, inst, pos_side='net', since_ms=0, until_ms=None):
+        """Realised result of the latest close of `inst` from OKX position history (read only), or None."""
+        r = self.c.request('GET', f'/api/v5/account/positions-history?instType=SWAP&instId={inst}&limit=20')
+        rows = [x for x in (r.get('data') or []) if ok(r) and x.get('instId') == inst
+                and (pos_side in ('net', None) or x.get('posSide', 'net') in (pos_side, 'net'))
+                and int(x.get('uTime') or 0) >= since_ms and (until_ms is None or int(x.get('uTime') or 0) <= until_ms)]
+        if not rows:
+            return None
+        x = max(rows, key=lambda x: int(x.get('uTime') or 0))
+        num = lambda k: float(x[k]) if x.get(k) not in (None, '') else None
+        return dict(pnl=num('realizedPnl'), close_price=num('closeAvgPx'), open_price=num('openAvgPx'), fee=num('fee'),
+                    closed_at=int(x.get('uTime') or 0), liquidated=str(x.get('type')) in ('3', '4'))
+
+    def outcome(self, m, res):
+        """Which exchange order closed it: the stop, the target, or a liquidation."""
+        if not res:
+            return {}
+        px, stop, target = res.get('close_price'), m.get('stop'), m.get('target')
+        kind = 'liquidation' if res.get('liquidated') else None
+        if not kind and px and stop and target:
+            kind = 'stop' if abs(px - float(stop)) <= abs(px - float(target)) else 'target'
+        elif not kind and res.get('pnl') is not None:
+            kind = 'target' if res['pnl'] >= 0 else 'stop'
+        return dict({k: v for k, v in res.items() if k in ('pnl', 'close_price', 'fee')}, outcome=kind)
+
     def close(self, key, m, reason):
         body = dict(instId=m['inst'], mgnMode='isolated', autoCxl=True, **({'posSide': m['posSide']} if m['posSide'] != 'net' else {}))
         r = self.post('/api/v5/trade/close-position', body)
@@ -312,7 +359,12 @@ class Mirror:
         m['status'] = 'done'; m['closed_reason'] = reason
         for k in [k for k in self.positions if k[0] == m['inst'] and k[1] in (m['posSide'], 'net')]:
             self.positions.pop(k)  # gone now, so a fresh paper entry on this coin can be mirrored in the same run
-        self.log('close', m['inst'], strategy=m.get('strategy'), reason=reason)
+        try:  # the close fills at market; its history row is usually there at once, otherwise the summary fills it in later
+            res = self.fill_result(m['inst'], m['posSide'], int(m.get('opened_at') or 0))
+        except OKXError:
+            res = None
+        extra = {k: res[k] for k in ('pnl', 'close_price', 'fee')} if res else {}
+        self.log('close', m['inst'], strategy=m.get('strategy'), reason=reason, **extra)
 
     def amend_stop(self, key, m, new_stop):
         algo = next((a for a in self.algos if a['instId'] == m['inst'] and (a.get('posSide', 'net') == m['posSide'] or m['posSide'] == 'net')), None)
@@ -365,7 +417,13 @@ class Mirror:
             same = p and f"{m['inst']}|{int(p['opened'])}" == key
             if not held:
                 m['status'] = 'done'; m['closed_reason'] = 'exchange_stop_or_target'
-                self.log('closed_on_exchange', m['inst'], strategy=m.get('strategy'))
+                try:
+                    res = self.outcome(m, self.fill_result(m['inst'], m['posSide'], int(m.get('opened_at') or 0)))
+                except OKXError:
+                    res = {}
+                if res.get('pnl') is not None:
+                    m['realized_pnl'] = res['pnl']
+                self.log('closed_on_exchange', m['inst'], strategy=m.get('strategy'), **res)
             elif not same:
                 self.close(key, m, 'paper_closed')
             elif abs(p['stop'] - m['stop']) / m['stop'] > AMEND_TOLERANCE and (p['stop'] - m['stop']) * m['side'] > 0:
@@ -457,6 +515,8 @@ def main():
             summary.update(decision_snapshot(args.data))
             lines = (out / 'actions.jsonl').read_text().splitlines()[-30:]
             summary['recent_actions'], tests_closed = dashboard_actions(out, [json.loads(l) for l in lines])
+            enrich_closes(mirror, state, summary['recent_actions'])
+            atomic_json(state_path, state)  # keep looked-up close results so each is fetched once
             summary['execution_test_trades'] = tests_closed
             summary['closed_trades'] += tests_closed
             atomic_json(out / 'summary.json', summary)

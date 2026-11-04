@@ -31,7 +31,9 @@ test('trade tickets for opens and closes, with PnL from the fill or the last flo
     { kind: 'open-long', title: '开多 BTC', detail: '3 张 @ 70000', mood: 'excited' });
   assert.equal(tradeBurst({ action: 'open', inst: 'XRP-USDT-SWAP', side: -1, contracts: 15.8, price: 1.26 }).title, '开空 XRP');
   const win = tradeBurst({ action: 'close', inst: 'BTC-USDT-SWAP', net_pnl: 2.5 });
-  assert.equal(win.kind, 'close-win'); assert.equal(win.amount, '+2.50 U'); assert.equal(win.detail, '含手续费');
+  assert.equal(win.kind, 'close-win'); assert.equal(win.amount, '+2.50 U'); assert.equal(win.detail, '已实现 · 含手续费');
+  const filled = tradeBurst({ action: 'closed_on_exchange', inst: 'XRP-USDT-SWAP', pnl: 5.9, outcome: 'target' }, new Map([['XRP-USDT-SWAP', -3]]));
+  assert.equal(filled.title, 'XRP 止盈触发'); assert.equal(filled.amount, '+5.90 U'); assert.equal(filled.detail, '已实现 · 含手续费');   // exchange result wins over the estimate
   const stop = tradeBurst({ action: 'closed_on_exchange', inst: 'ETH-USDT-SWAP' }, new Map([['ETH-USDT-SWAP', -48.2]]));
   assert.equal(stop.kind, 'close-loss'); assert.equal(stop.title, 'ETH 止损触发'); assert.equal(stop.amount, '-48.20 U'); assert.equal(stop.mood, 'sad');
   assert.equal(tradeBurst({ action: 'closed_on_exchange', inst: 'ETH-USDT-SWAP' }, new Map([['ETH-USDT-SWAP', 9]])).title, 'ETH 止盈触发');

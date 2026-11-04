@@ -120,11 +120,16 @@ export function okxPositionsMarkup(d, marks = new Map(), now = Date.now(), { ope
   }).join('');
 }
 
+// Exchange-side closes carry the realised result from OKX position history (pnl incl. fees, close price, outcome).
+const OUTCOME = { stop: '止损', target: '止盈', liquidation: '强平' };
+const closeTitle = a => a.action === 'closed_on_exchange' ? (OUTCOME[a.outcome] ? `交易所${OUTCOME[a.outcome]}触发` : '交易所止损 / 止盈触发') : (ACTIONS[a.action] || a.action);
+const realised = a => finite(num(a.pnl)) ? `已实现 ${signed(num(a.pnl))} USDT（含手续费）` : '';
 function actionDetail(a) {
   if (a.action === 'skip') return SKIPS[a.reason] || a.reason || '';
   if (a.action === 'open') return `${STRATEGIES[a.strategy] ? STRATEGIES[a.strategy] + ' · ' : ''}${a.side === 1 ? '多' : '空'} ${a.contracts} 张 @ ${a.price} · 止损 ${a.stop}${a.target ? ' · 止盈 ' + a.target : ''} · ${a.leverage}×`;
   if (a.action === 'amend_stop') return `止损 ${a.old} → ${a.new}`;
-  if (a.action === 'close') return a.execution_test ? `${CLOSES.execution_test} · ${a.contracts} 张 @ ${a.price} · 净损益 ${signed(num(a.net_pnl), 4)} USDT（含手续费）` : CLOSES[a.reason] || a.reason || '';
+  if (a.action === 'close') return a.execution_test ? `${CLOSES.execution_test} · ${a.contracts} 张 @ ${a.price} · 净损益 ${signed(num(a.net_pnl), 4)} USDT（含手续费）` : [CLOSES[a.reason] || a.reason || '', finite(num(a.close_price)) ? `平仓价 ${px(num(a.close_price))}` : '', realised(a)].filter(Boolean).join(' · ');
+  if (a.action === 'closed_on_exchange') return [finite(num(a.close_price)) ? `成交价 ${px(num(a.close_price))}` : '', realised(a) || '金额待下次运行从交易所补全'].filter(Boolean).join(' · ');
   if (a.action === 'daily_halt') return '当日亏损达到 8%，全部平仓，次日恢复';
   if (a.action === 'error') return a.detail || a.step || '';
   return '';
@@ -133,6 +138,7 @@ function actionDetail(a) {
 // Fills and risk events versus housekeeping (pause / resume / skips), so real trades are not buried.
 const TRADE_ACTIONS = new Set(['open', 'close', 'closed_on_exchange', 'amend_stop', 'daily_halt', 'error']);
 const ACTION_TONE = { open: 'open', close: 'close', closed_on_exchange: 'stop', amend_stop: 'info', daily_halt: 'stop', error: 'stop' };
+const toneOf = a => a.action === 'closed_on_exchange' && finite(num(a.pnl)) ? (num(a.pnl) >= 0 ? 'close' : 'stop') : ACTION_TONE[a.action] || 'muted';
 export const isTradeAction = a => TRADE_ACTIONS.has(a.action);
 
 // kind: 'all' (default, every action), 'trades' (fills and risk events) or 'system' (housekeeping).
@@ -140,12 +146,12 @@ export function okxActionsMarkup(d, limit = 10, { kind = 'all' } = {}) {
   const pick = kind === 'trades' ? isTradeAction : kind === 'system' ? a => !isTradeAction(a) : () => true;
   const rows = (d.recent_actions || []).filter(pick).slice(0, limit);
   if (!rows.length) return `<li class="empty">${kind === 'system' ? '暂无运行记录' : kind === 'trades' ? '还没有成交，等待策略信号' : '还没有交易动作'}</li>`;
-  return rows.map(a => `<li class="okx-act" data-tone="${ACTION_TONE[a.action] || 'muted'}"><div><span><i class="okx-act-dot" aria-hidden="true"></i><b>${esc(ACTIONS[a.action] || a.action)}${a.inst && a.inst !== '-' ? ' · ' + esc(coin(a.inst)) : ''}</b>${a.dry_run ? ' <small class="muted">(空跑)</small>' : ''}</span><time>${time(a.ts)}</time></div>${actionDetail(a) ? `<p>${esc(actionDetail(a))}</p>` : ''}</li>`).join('');
+  return rows.map(a => `<li class="okx-act" data-tone="${toneOf(a)}"><div><span><i class="okx-act-dot" aria-hidden="true"></i><b>${esc(closeTitle(a))}${a.inst && a.inst !== '-' ? ' · ' + esc(coin(a.inst)) : ''}</b>${a.dry_run ? ' <small class="muted">(空跑)</small>' : ''}</span><time>${time(a.ts)}</time></div>${actionDetail(a) ? `<p>${esc(actionDetail(a))}</p>` : ''}</li>`).join('');
 }
 
 const feedLine = a => a.action === 'open' ? { text: `开仓 ${coin(a.inst)} ${a.side === 1 ? '多' : '空'} ${a.contracts} 张 @ ${a.price}`, mood: 'excited' }
-  : a.action === 'close' ? { text: `平仓 ${coin(a.inst)} · ${CLOSES[a.reason] || '策略信号'}`, mood: 'happy' }
-  : a.action === 'closed_on_exchange' ? { text: `${coin(a.inst)} 交易所止损 / 止盈触发`, mood: 'sad' }
+  : a.action === 'close' ? { text: `平仓 ${coin(a.inst)} · ${CLOSES[a.reason] || '策略信号'}${finite(num(a.pnl)) ? ` · ${signed(num(a.pnl))} USDT` : ''}`, mood: finite(num(a.pnl)) && num(a.pnl) < 0 ? 'sad' : 'happy' }
+  : a.action === 'closed_on_exchange' ? { text: `${coin(a.inst)} ${closeTitle(a)}${finite(num(a.pnl)) ? ` · ${signed(num(a.pnl))} USDT` : ''}`, mood: finite(num(a.pnl)) && num(a.pnl) >= 0 ? 'happy' : 'sad' }
   : a.action === 'daily_halt' ? { text: '触发日亏停手，全部平仓，今天不再开新仓', mood: 'sad' }
   : a.action === 'error' ? { text: `跟单出错${a.inst && a.inst !== '-' ? ' · ' + coin(a.inst) : ''}`, mood: 'sad' } : null;
 const actionKey = a => `${a.ts}|${a.action}|${a.inst}`;
