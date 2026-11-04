@@ -107,10 +107,30 @@ let feed = {
   }
   // The companion follows the OKX account and announces a new exchange action.
   await page.waitForFunction(() => document.querySelector('#mascot').dataset.state === 'excited');   // just opened BTC
+  // At work: watching the open position with a small trading screen tinted by live PnL; the chip says so.
+  await page.waitForFunction(() => document.querySelector('#mascot-status').textContent === '盯盘 · 1 仓');
+  assert.equal(await page.locator('#mascot').getAttribute('data-work'), 'watch');
+  assert.equal(await page.locator('#mascot').getAttribute('data-tone'), 'up');
+  assert.ok(await page.locator('#mascot .work-monitor').isVisible());
+  // Double tap: a spoken position report.
+  await page.locator('#mascot-touch').click(); await page.locator('#mascot-touch').click();
+  await page.waitForFunction(() => /持仓 1 个：BTC 多 \+18\.00U/.test(document.querySelector('#mascot-bubble').textContent));
+  // A new open pops a ticket above the head and the robot presses its button.
+  feed = { ...feed, updated_at: iso(Date.now()), recent_actions: [{ ts: iso(Date.now()), action: 'open', inst: 'ETH-USDT-SWAP', side: 1, contracts: 2, price: 3000, stop: 2900, leverage: 5, dry_run: false }, ...feed.recent_actions] };
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForSelector('#mascot-ticket:not([hidden])[data-kind="open-long"]');
+  assert.match(await page.locator('#mascot-ticket').innerText(), /开多 ETH[\s\S]*2 张 @ 3000/);
+  assert.equal(await page.locator('#mascot-status').innerText(), '开仓中');
+  assert.equal(await page.locator('#mascot').getAttribute('data-reaction'), 'trade');
+  await page.waitForSelector('#mascot-ticket[hidden]', { state: 'attached', timeout: 6000 });
   feed = { ...feed, updated_at: iso(Date.now()), positions: [], open_mirrors: [], closed_trades: 2,
     recent_actions: [{ ts: iso(Date.now()), action: 'closed_on_exchange', inst: 'BTC-USDT-SWAP', dry_run: false }, ...feed.recent_actions] };
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await page.waitForFunction(() => document.querySelector('#mascot').dataset.state === 'sad');
+  // The stop-or-target fill shows its PnL from the last live mark (+18.00 U, so a target): coins, then back to waiting.
+  await page.waitForSelector('#mascot-ticket:not([hidden])[data-kind="close-win"]');
+  assert.match(await page.locator('#mascot-ticket').innerText(), /BTC 止盈触发 \+18\.00 U/);
+  await page.waitForFunction(() => /^(等信号|扫描信号)/.test(document.querySelector('#mascot-status').textContent), null, { timeout: 8000 });
   await page.waitForFunction(() => document.querySelector('#toasts').textContent.includes('OKX 模拟 · BTC 交易所止损 / 止盈触发'));
   assert.match(await page.locator('#okx-positions').innerText(), /当前没有持仓/);
   await page.locator('#mascot-touch').click(); await page.waitForSelector('#mascot-drawer[open]');
