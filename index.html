@@ -8,6 +8,13 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://www.okx.com wss://ws.okx.com:8443 wss://ws.okx.com wss://wspap.okx.com wss://wspap.okx.com:8443 https://raw.githubusercontent.com; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>MODI · AI 交易团队</title>
   <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+  <!-- Home-screen app: Safari "添加到主屏幕" / Android "安装应用" opens full screen with the MODI robot icon. -->
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./assets/icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="MODI">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="./assets/style.css?v=20261104-connect">
   <script defer src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
   <script type="module" src="./assets/app.mjs?v=20261104-quotes443"></script>

@@ -1,0 +1,17 @@
+{
+  "name": "MODI 模拟盘",
+  "short_name": "MODI",
+  "description": "OKX 模拟交易看板与 MODI 机器人伙伴：权益、持仓、成交实时查看。仅模拟资金。",
+  "lang": "zh-CN",
+  "start_url": "./?source=app",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f6f8",
+  "theme_color": "#f5f6f8",
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
