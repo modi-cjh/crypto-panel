@@ -265,6 +265,10 @@
 - 新增 `manifest.webmanifest`（名称 MODI、全屏 standalone、主题色）与机器人 App 图标（`assets/icons/`：180 apple-touch-icon、192、512、maskable 512，源文件 `app-icon.svg`），`index.html` 加入 iOS 全屏标签。iPhone 用 Safari“添加到主屏幕”、Android 用 Chrome“安装应用”后，点图标全屏打开看板。安装说明见 `widgets/README.md`。
 - 未加 Service Worker，避免缓存旧版本；内容与网页同步。新增 `tests/app_browser.cjs`（manifest 解析、图标、iOS 标签、Chrome 安装性检查）。
 
+
+### PR #47 AGENTS.md：给编码助手的工作说明
+- 新增 `AGENTS.md`（Codex 等助手开工时自动读取）：安全红线（只做模拟交易、密钥只放 Secrets、不动人工仓位、常驻服务与定时任务不能同时执行）、协作流程（分支 + PR、不强推 master、不改 paper-data、每次改动记 CHANGELOG）、目录与数据流、代码约定、测试命令、真实踩过的坑。
+
 ---
 
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
