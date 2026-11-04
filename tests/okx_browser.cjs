@@ -57,7 +57,7 @@ let feed = {
   assert.equal(paperRequests, 0, 'the paper account feed is no longer read');
   // With prices unchanged (OKX is blocked here) the equity numbers must not animate on each refresh.
   await page.evaluate(() => { window.__rolls = 0; for (const id of ['pinned-equity', 'okx-total-equity'])
-    new MutationObserver(m => { window.__rolls += m.filter(r => [...r.addedNodes].some(n => n.classList?.contains('number-in'))).length; }).observe(document.getElementById(id), { childList: true }); });
+    new MutationObserver(m => { for (const r of m) for (const n of r.addedNodes) if (n.classList?.contains('number-in')) { window.__rolls++; window.__lastRoll = { id: r.target.id, moved: n.textContent, still: r.target.firstChild?.textContent }; } }).observe(document.getElementById(id), { childList: true }); });
   await page.waitForTimeout(20000);
   assert.equal(await page.evaluate(() => window.__rolls), 0, 'equity animated without a change');
   // Floating PnL follows the demo market's own mark price (not the live exchange): 3 contracts × 0.01 BTC × (70,500 − 70,000).
@@ -70,6 +70,8 @@ let feed = {
   assert.equal(await page.locator('#home-okx-positions details[open]').count(), 1);
   assert.match(await page.locator('#home-okx-positions').innerText(), /标记价（实时）\s*70,500/);
   await page.waitForFunction(() => document.querySelector('#pinned-equity').textContent.trim() === '5,015.00');   // 5,012.50 − 12.50 + 15.00
+  // Gentle update: only the changed digits animate (5,01|2.50 → 5,01|5.00); the leading digits stay still.
+  assert.deepEqual(await page.evaluate(() => ({ moved: window.__lastRoll.moved, still: window.__lastRoll.still })), { moved: '5.00', still: '5,01' });
   // Exchange REST/WebSockets are blocked here, so the top-bar status comes from the demo price feed alone.
   await page.waitForFunction(() => document.querySelector('#connection-text').textContent === '行情实时', null, { timeout: 12000 });
   await page.locator('#legacy-toggle').click();

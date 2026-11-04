@@ -43,6 +43,8 @@ export function roleEffect(role,kind,label='止损'){
  }
 }
 // minStep: changes smaller than this update the text quietly instead of playing the roll animation.
+// Gentle number updates: only the digits that changed fade in with a slight rise and a short green / red tint;
+// the rest of the number stays perfectly still, so frequent small price moves read as calm.
 export function rollNumber(element,value,minStep=0){
  if(!element)return;
  if(!Number.isFinite(value)){element.textContent='—';delete element.dataset.value;return;}
@@ -50,12 +52,12 @@ export function rollNumber(element,value,minStep=0){
  const changed=element.dataset.value!==undefined && Math.round(old*100)!==Math.round(value*100) && Math.abs(value-old)>=minStep;
  element.dataset.value=value;
  if(!changed){if(element.textContent!==text)element.textContent=text;return;}
- element.classList.remove('up','down');element.classList.add(value>old?'up':'down');
- setTimeout(()=>{if(element.dataset.value===String(value))element.classList.remove('up','down');},1400);
  if(reducedMotion() || document.hidden){element.textContent=text;return;}
- const incoming=document.createElement('span');incoming.className='number-in';incoming.textContent=text;
- element.replaceChildren(incoming);
- setTimeout(()=>{if(element.dataset.value===String(value))element.textContent=text;},460);
+ const prev=element.textContent;let i=0;
+ while(i<prev.length && i<text.length && prev[i]===text[i])i++;
+ const incoming=document.createElement('span');incoming.className=`number-in ${value>old?'number-up':'number-down'}`;incoming.textContent=text.slice(i);
+ element.replaceChildren(document.createTextNode(text.slice(0,i)),incoming);
+ setTimeout(()=>{if(element.dataset.value===String(value))element.textContent=text;},1300);
 }
 // Per-node timers stop when the node is removed; hidden/reduced pages finish directly.
 export function typeLine(node,text){
