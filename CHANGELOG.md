@@ -243,6 +243,12 @@
 - 互动：双击机器人播报当前持仓（按浮盈大小排序与合计）；浮盈变化较大时（≥ 权益 0.2% 且间隔 ≥ 2 分钟）主动点评；面板“状态”页顶部显示“正在做什么”。
 - 系统“减少动态效果”时动画停用，仍显示状态与票据。
 
+
+### PR #43 机器人挂到桌面：电脑悬浮窗 + iPhone 小组件
+- 电脑（Chrome / Edge）：伙伴面板底部新增“桌面悬浮窗”，用 Document Picture-in-Picture 把机器人移到始终置顶的小窗，保留盯盘 / 扫描状态、行情屏、表情与开平仓票据，小窗显示权益与“今日 · 正在做什么”，点按播报持仓；关闭小窗回到页面。不支持的浏览器（Safari、手机）不显示该按钮。
+- iPhone：新增 Scriptable 小组件脚本 `widgets/modi-robot.js` 与安装说明 `widgets/README.md`。小组件绘制机器人表情，显示正在做什么、OKX 模拟权益、今日盈亏、浮盈最大的 3 个持仓；能连 OKX 时按模拟盘标记价算实时浮盈，否则用快照；点按打开看板；不读取任何密钥。
+- 测试：`tests/float_browser.cjs`（悬浮窗移入 / 移回、样式、信息、点按播报）、`tests/widget.test.mjs`（小组件数据逻辑）。
+
 ---
 
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
@@ -269,6 +275,7 @@ PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/okx_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/market_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/okx_rest_browser.cjs
+PANEL_URL=http://127.0.0.1:8008/ node tests/float_browser.cjs
 ```
 
 已知情况：`tests/team_browser.cjs`、`tests/browser_smoke.cjs` 在基线 `cc25dc5` 上就已失败（仍查找 v3 删除的角色卡），本次改动未改变其结果。

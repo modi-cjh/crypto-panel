@@ -95,7 +95,7 @@ export class Mascot {
     this.queue=[];this.feed=[];this.context={};this.team=null;this.events=[];this.reaction=null;this.speaking=false;this.greeted=false;this.taps=0;this.tab='status';
     host.classList.add('m-host');
     host.innerHTML=`<div id="mascot-ticket" class="m-ticket" aria-hidden="true" hidden><b></b><strong></strong><small></small></div><p id="mascot-bubble" class="companion-bubble" aria-hidden="true" hidden></p><button id="mascot-touch" class="companion-bot" type="button" aria-label="MODI 团队伙伴：点按打开面板，可拖动" aria-haspopup="dialog" aria-expanded="false">${svg('bot')}<span id="mascot-status" class="companion-chip">—</span></button>`;
-    panel.innerHTML=`<header class="companion-head"><div class="companion-face m-host" aria-hidden="true">${svg('panel')}</div><div><h2 id="mascot-drawer-title">MODI 团队伙伴</h2><p id="companion-mood">—</p></div><button data-close type="button" aria-label="关闭面板">关闭</button></header><p id="companion-tip" class="companion-tip"></p><div class="companion-tabs" role="tablist" aria-label="伙伴面板">${TABS.map(([k,n])=>`<button type="button" role="tab" id="companion-tab-${k}" aria-controls="companion-panel-${k}" aria-selected="${k==='status'}" tabindex="${k==='status'?0:-1}">${n}</button>`).join('')}</div><section id="companion-panel-status" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-status"></section><section id="companion-panel-team" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-team" hidden><p id="team-updated" class="muted">等待团队数据</p><div id="mascot-report-list"></div></section><section id="companion-panel-feed" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-feed" hidden><ol id="companion-feed" class="companion-feed"></ol></section><div class="companion-foot"><button id="companion-dock" type="button">收进边缘</button></div>`;
+    panel.innerHTML=`<header class="companion-head"><div class="companion-face m-host" aria-hidden="true">${svg('panel')}</div><div><h2 id="mascot-drawer-title">MODI 团队伙伴</h2><p id="companion-mood">—</p></div><button data-close type="button" aria-label="关闭面板">关闭</button></header><p id="companion-tip" class="companion-tip"></p><div class="companion-tabs" role="tablist" aria-label="伙伴面板">${TABS.map(([k,n])=>`<button type="button" role="tab" id="companion-tab-${k}" aria-controls="companion-panel-${k}" aria-selected="${k==='status'}" tabindex="${k==='status'?0:-1}">${n}</button>`).join('')}</div><section id="companion-panel-status" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-status"></section><section id="companion-panel-team" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-team" hidden><p id="team-updated" class="muted">等待团队数据</p><div id="mascot-report-list"></div></section><section id="companion-panel-feed" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-feed" hidden><ol id="companion-feed" class="companion-feed"></ol></section><div class="companion-foot"><button id="companion-dock" type="button">收进边缘</button><button id="companion-float" type="button" hidden>桌面悬浮窗</button></div>`;
     this.button=host.querySelector('#mascot-touch');this.bubble=host.querySelector('#mascot-bubble');this.face=panel.querySelector('.companion-face');
     panel.querySelector('.companion-foot').insertAdjacentHTML('beforebegin','<section id="companion-panel-decisions" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-decisions" hidden></section>');
     this.eyes=host.querySelector('.m-eyes');
@@ -123,6 +123,7 @@ export class Mascot {
   }
   save(){try{localStorage.setItem('modi-companion-position',JSON.stringify({...this.pos,docked:this.docked}));}catch{}}
   place(){
+    if(this.floating)return;
     const w=innerWidth,h=innerHeight,s=this.size,m=12;
     const bottom=Math.min(Math.max(m,this.pos.bottom),Math.max(m,h-72-s));
     this.moveTo(this.pos.side==='left'?m:w-s-m,h-bottom-s);
@@ -146,7 +147,7 @@ export class Mascot {
     b.addEventListener('pointermove',e=>{
       const d=this.drag;if(!d)return;
       d.moved ||= isDrag(d.start,{x:e.clientX,y:e.clientY});
-      if(!d.moved)return;
+      if(!d.moved || this.floating)return;   // the mini window itself is what the user drags
       clearTimeout(this.pressTimer);
       if(!this.host.classList.contains('dragging')){this.host.classList.add('dragging');this.host.classList.remove('snapping','docked');this.docked=false;}
       const s=this.size;
@@ -176,6 +177,7 @@ export class Mascot {
     b.addEventListener('click',e=>{if(e.detail===0)this.tap(true);}); // keyboard activation only
   }
   tap(keyboard=false){
+    if(this.floating){this.react('squash',450);this.say(this.context.report || this.value.message,'report',5500,{interrupt:true});return;}
     if(this.docked){this.dock(false);this.react('wave',1200);return;}
     if(keyboard){this.open();return;}
     this.taps++;clearTimeout(this.tapTimer);
@@ -261,6 +263,37 @@ export class Mascot {
     clearTimeout(this.ticketTimer);
     this.ticketTimer=setTimeout(()=>{el.hidden=true;this.ticketOn=false;this.host.classList.remove('peek');delete this.host.dataset.burst;this.renderChip();},this.still?2200:3200);
   }
+  // Move the live robot into an always-on-top mini window; it keeps its state, animations and tickets.
+  async float(request=()=>window.documentPictureInPicture.requestWindow({width:260,height:300})){
+    if(this.floating)return this.floating;
+    const win=await request(),doc=win.document;
+    // Copy the page's CSS rules in directly (applies at once, nothing to load); fall back to a link if unreadable.
+    for(const sheet of document.styleSheets){
+      try{const style=doc.createElement('style');style.textContent=[...sheet.cssRules].map(r=>r.cssText).join('\n');doc.head.append(style);}
+      catch{if(sheet.href){const link=doc.createElement('link');link.rel='stylesheet';link.href=sheet.href;doc.head.append(link);}}
+    }
+    doc.title='MODI · 模拟盘伙伴';doc.documentElement.lang='zh-CN';doc.body.className='pip-body';
+    const info=doc.createElement('div');info.className='pip-info';info.innerHTML='<strong data-pip-equity>—</strong><span data-pip-line>—</span>';
+    this.floating=win;this.pipInfo=info;
+    doc.body.append(this.host,info);this.host.classList.add('in-pip');this.host.style.transform='';
+    win.addEventListener('pagehide',()=>this.unfloat(),{once:true});
+    this.renderPipInfo();this.say('我在这儿盯着，有开平仓马上告诉你','wave',3500,{interrupt:true});
+    return win;
+  }
+  unfloat(){
+    if(!this.floating)return;
+    const win=this.floating;this.floating=null;this.pipInfo=null;
+    document.body.append(this.host);this.host.classList.remove('in-pip');this.place();
+    try{if(!win.closed)win.close();}catch{}
+  }
+  setPipInfo(info){this.pipText=info;this.renderPipInfo();}
+  renderPipInfo(){
+    if(!this.pipInfo || !this.pipText)return;
+    const e=this.pipInfo.querySelector('[data-pip-equity]'),l=this.pipInfo.querySelector('[data-pip-line]');
+    if(e.textContent!==this.pipText.equity)e.textContent=this.pipText.equity;
+    if(l.textContent!==this.pipText.line)l.textContent=this.pipText.line;
+    this.pipInfo.dataset.tone=this.pipText.tone || '';
+  }
   update(snapshot,team,context={}){
     const previous=this.value;
     // Paper accounts drive the companion once their data has loaded; the old bot snapshot is the fallback.
@@ -281,6 +314,9 @@ export class Mascot {
     p.addEventListener('click',e=>{if(e.target===p){const r=p.getBoundingClientRect();if(e.clientY<r.top || e.clientX<r.left || e.clientX>r.right)p.close();}});
     p.addEventListener('close',()=>{this.button.setAttribute('aria-expanded','false');this.button.focus();});
     p.querySelector('#companion-dock').addEventListener('click',()=>{p.close();this.dock(true);});
+    // Desktop Chrome / Edge: an always-on-top mini window (Document Picture-in-Picture) that keeps the robot on screen.
+    const floatBtn=p.querySelector('#companion-float');floatBtn.hidden=!('documentPictureInPicture' in window);
+    floatBtn.addEventListener('click',()=>{p.close();this.float().catch(()=>this.say('悬浮窗没能打开，请用电脑上的 Chrome 或 Edge 再试','sad',3500,{interrupt:true}));});
     const tabs=[...p.querySelectorAll('[role=tab]')];
     p.querySelector('[role=tablist]').addEventListener('click',e=>{const t=e.target.closest('[role=tab]');if(t)this.select(t.id.replace('companion-tab-',''));});
     p.querySelector('[role=tablist]').addEventListener('keydown',e=>{
