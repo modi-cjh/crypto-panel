@@ -112,3 +112,16 @@ test('companion uses the latest trade instead of announcing a position already c
   state = okxMascotState(summary({recent_actions:[{...opened,ts:'2026-11-03T11:55:00Z'},{...closed,action:'closed_on_exchange'}]}), NOW);
   assert.equal(state.label, '刚开仓');
 });
+
+test('exchange-side closes show the realised amount, price and which order filled', async () => {
+  const { okxActionsMarkup: acts, okxFeed: feed } = await import('../assets/okx.mjs');
+  const d = { recent_actions: [{ ts: '2026-11-04T01:33:13Z', action: 'closed_on_exchange', inst: 'XRP-USDT-SWAP', pnl: 5.9, close_price: 1.2556, outcome: 'target' },
+    { ts: '2026-11-04T01:00:00Z', action: 'closed_on_exchange', inst: 'BTC-USDT-SWAP', pnl: -50.8, close_price: 68610, outcome: 'stop' },
+    { ts: '2026-11-04T00:30:00Z', action: 'closed_on_exchange', inst: 'ETH-USDT-SWAP' }] };
+  const html = acts(d, 10, { kind: 'trades' });
+  assert.match(html, /交易所止盈触发 · XRP/); assert.match(html, /成交价 1\.2556 · 已实现 \+5\.90 USDT（含手续费）/);
+  assert.match(html, /交易所止损触发 · BTC/); assert.match(html, /已实现 -50\.80 USDT/);
+  assert.match(html, /交易所止损 \/ 止盈触发 · ETH[\s\S]*金额待下次运行从交易所补全/);
+  assert.match(html, /data-tone="close"[\s\S]*XRP/);
+  assert.match(feed(d)[0].text, /XRP 交易所止盈触发 · \+5\.90 USDT/);
+});

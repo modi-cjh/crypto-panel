@@ -42,11 +42,13 @@ export function tradeBurst(a, prevUpl = new Map()) {
     return { kind: long ? 'open-long' : 'open-short', title: `${long ? '开多' : '开空'} ${c}`, detail: `${a.contracts} 张 @ ${a.price}`, mood: 'excited' };
   }
   if (a.action === 'close' || a.action === 'closed_on_exchange') {
-    const pnl = finite(Number(a.net_pnl)) ? Number(a.net_pnl) : finite(Number(a.pnl)) ? Number(a.pnl) : finite(last) ? last : null;
+    const reported = finite(Number(a.net_pnl)) ? Number(a.net_pnl) : a.pnl !== undefined && a.pnl !== null && finite(Number(a.pnl)) ? Number(a.pnl) : null;
+    const pnl = reported !== null ? reported : finite(last) ? last : null;
     const win = pnl !== null && pnl >= 0;
-    const what = a.action === 'closed_on_exchange' ? (pnl === null ? `${c} 止损 / 止盈触发` : win ? `${c} 止盈触发` : `${c} 止损触发`) : `平仓 ${c}`;
+    const hit = { stop: '止损触发', target: '止盈触发', liquidation: '强平' }[a.outcome] || (pnl === null ? '止损 / 止盈触发' : win ? '止盈触发' : '止损触发');
+    const what = a.action === 'closed_on_exchange' ? `${c} ${hit}` : `平仓 ${c}`;
     return { kind: pnl === null ? 'close' : win ? 'close-win' : 'close-loss', title: what, amount: pnl === null ? null : `${signed(pnl)} U`,
-      detail: pnl === null ? null : a.net_pnl !== undefined ? '含手续费' : '按平仓前浮盈估算', mood: pnl === null ? 'happy' : win ? 'happy' : 'sad' };
+      detail: pnl === null ? null : reported !== null ? '已实现 · 含手续费' : '按平仓前浮盈估算', mood: pnl === null ? 'happy' : win ? 'happy' : 'sad' };
   }
   if (a.action === 'daily_halt') return { kind: 'close-loss', title: '日亏停手', detail: '全部平仓，今天不再开新仓', mood: 'sad' };
   return null;

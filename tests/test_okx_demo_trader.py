@@ -16,6 +16,7 @@ class FakeOKX:
         self.equity, self.positions, self.algos = equity, list(positions), list(algos)
         self.prices = prices or {'BTC-USDT-SWAP': 70000.0, 'XRP-USDT-SWAP': 1.25}
         self.acct, self.perm, self.pos_mode, self.posts = acct, perm, pos_mode, []
+        self.history, self.history_calls = [], 0
 
     def request(self, method, path, body=None):
         if method == 'POST':
@@ -25,6 +26,10 @@ class FakeOKX:
             return {'code': '0', 'data': [{'acctLv': self.acct, 'perm': self.perm, 'posMode': self.pos_mode}]}
         if path.startswith('/api/v5/account/balance'):
             return {'code': '0', 'data': [{'details': [{'ccy': 'USDT', 'eq': str(self.equity), 'availBal': str(self.equity)}]}]}
+        if path.startswith('/api/v5/account/positions-history'):
+            self.history_calls += 1
+            inst = path.split('instId=')[1].split('&')[0]
+            return {'code': '0', 'data': [h for h in self.history if h['instId'] == inst]}
         if path.startswith('/api/v5/account/positions'):
             return {'code': '0', 'data': self.positions}
         if path.startswith('/api/v5/trade/orders-algo-pending'):
@@ -140,6 +145,32 @@ class MirrorTests(unittest.TestCase):
         self.assertEqual(fake.posts, [])
         run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), state, action='resume')
         self.assertEqual(fake.posts[-1][0], '/api/v5/trade/order')
+
+    def test_exchange_stop_or_target_fill_records_realised_pnl_and_which_order_hit(self):
+        fake = FakeOKX(); _, state = run(fake, paper(**{'BTC-USDT-SWAP': {**long_btc(), 'tp': 72000.0}}))
+        fake.history = [dict(instId='BTC-USDT-SWAP', posSide='long', realizedPnl='-50.8', closeAvgPx='68610', openAvgPx='70000', fee='-1.2', type='2', uTime=str(NOW_MS + 60_000))]
+        m, _ = run(fake, paper(**{'BTC-USDT-SWAP': {**long_btc(), 'tp': 72000.0}}), state)   # position vanished: the stop filled
+        a = next(a for a in m.actions if a['action'] == 'closed_on_exchange')
+        self.assertEqual((a['pnl'], a['close_price'], a['outcome']), (-50.8, 68610.0, 'stop'))
+        fake2 = FakeOKX(); _, s2 = run(fake2, paper(**{'BTC-USDT-SWAP': {**long_btc(), 'tp': 72000.0}}))
+        fake2.history = [dict(instId='BTC-USDT-SWAP', posSide='long', realizedPnl='88.1', closeAvgPx='71990', type='2', uTime=str(NOW_MS + 60_000))]
+        m2, _ = run(fake2, paper(**{'BTC-USDT-SWAP': {**long_btc(), 'tp': 72000.0}}), s2)
+        self.assertEqual(next(a for a in m2.actions if a['action'] == 'closed_on_exchange')['outcome'], 'target')
+        fake3 = FakeOKX(); _, s3 = run(fake3, paper(**{'BTC-USDT-SWAP': long_btc()}))   # no history yet: still logged, no amount
+        m3, _ = run(fake3, paper(**{'BTC-USDT-SWAP': long_btc()}), s3)
+        self.assertNotIn('pnl', next(a for a in m3.actions if a['action'] == 'closed_on_exchange'))
+
+    def test_summary_fills_in_pnl_for_older_closes_once(self):
+        fake = FakeOKX(); m, state = run(fake, paper())
+        ts = '2026-11-04T01:33:13Z'; t = int(odt.datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp() * 1000)
+        state['mirrored']['XRP-USDT-SWAP|1'] = dict(inst='XRP-USDT-SWAP', side=-1, posSide='short', status='done', opened_at=t - 3600_000, stop=1.2918, target=1.2557)
+        fake.history = [dict(instId='XRP-USDT-SWAP', posSide='short', realizedPnl='5.9', closeAvgPx='1.2556', type='2', uTime=str(t - 60_000))]
+        actions = [dict(ts=ts, action='closed_on_exchange', inst='XRP-USDT-SWAP')]
+        odt.enrich_closes(m, state, actions)
+        self.assertEqual((actions[0]['pnl'], actions[0]['outcome']), (5.9, 'target'))
+        calls = fake.history_calls; again = [dict(ts=ts, action='closed_on_exchange', inst='XRP-USDT-SWAP')]
+        odt.enrich_closes(m, state, again)
+        self.assertEqual(again[0]['pnl'], 5.9); self.assertEqual(fake.history_calls, calls)   # cached
 
     def test_follow_current_opens_entries_skipped_for_age_but_keeps_price_checks(self):
         fake = FakeOKX()
