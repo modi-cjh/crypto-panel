@@ -116,7 +116,8 @@ export class Mascot {
   restore(){
     let saved=null;try{saved=JSON.parse(localStorage.getItem('modi-companion-position'));}catch{}
     this.pos={side:saved?.side==='left'?'left':'right',bottom:Number.isFinite(saved?.bottom)?saved.bottom:20};
-    this.docked=saved?.docked===true;this.place();
+    // First visit on a phone: start tucked at the edge so it does not cover the account; tap to bring it out.
+    this.docked=saved?saved.docked===true:innerWidth<760;this.place();
   }
   save(){try{localStorage.setItem('modi-companion-position',JSON.stringify({...this.pos,docked:this.docked}));}catch{}}
   place(){

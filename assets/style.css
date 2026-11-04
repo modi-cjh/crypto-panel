@@ -183,3 +183,51 @@ html.sim-primary:not(.show-legacy) #home-page>#timeline-fold{display:none}
 #okx-metrics{padding:0 16px 12px}@media(min-width:700px){#okx-metrics{padding:0 22px 14px}}
 @media(max-width:700px){.okx-side{flex-direction:row;align-items:center;gap:10px}}
 button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}.diag{position:fixed;inset:0;z-index:100;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px}.diag[hidden]{display:none}.diag-box{background:var(--panel,#fff);color:var(--text,#111);border-radius:14px;padding:16px;width:min(560px,100%);max-height:90vh;overflow:auto;box-shadow:0 10px 40px #0004}.diag-head{display:flex;justify-content:space-between;align-items:center}.diag-head h2{margin:0;font-size:17px}.diag pre{white-space:pre-wrap;word-break:break-all;font-size:11px;line-height:1.5;margin:8px 0;background:#f4f5f7;border-radius:8px;padding:8px}.diag pre:empty{display:none}.diag-actions{display:flex;gap:8px}.diag-actions .pill{cursor:pointer;font:inherit;font-size:13px}
+
+/* ---- UI refresh: OKX demo account (home overview + detail page) ---- */
+.visually-hidden{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+#home-sim .okx-hero{padding:18px 18px 10px}
+.okx-hero-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.okx-hero-top h1{margin:0;font-size:13px;font-weight:500;color:var(--muted);display:flex;align-items:center;gap:6px}
+#home-sim .okx-hero .equity-number{margin:6px 0 2px}#home-sim .okx-hero .equity-number strong{font-size:clamp(34px,10vw,46px)}
+.okx-ret{margin:0;font-size:13px;line-height:1.6;color:var(--text)}
+.okx-notes{margin:12px 0 2px}
+.okx-notes>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-radius:10px;background:#f3f5f8;font-size:12px;color:var(--muted);line-height:1.5}
+.okx-notes>summary::-webkit-details-marker{display:none}.okx-notes>summary::after{content:'详情 ▾';flex:none;font-size:11px}.okx-notes[open]>summary::after{content:'收起 ▴'}
+.okx-notes.warn>summary{background:#fff6e5;color:#7a4e00}
+.okx-notes-body{padding:6px 4px 0}.okx-notes-body p,.okx-notes-body p.trade-profile,.okx-notes-body p.account-data-note,.okx-notes-body p.runtime-health{margin:0;padding:5px 2px;border:0;background:none;color:var(--muted);font-size:12px;line-height:1.6}
+.okx-hero-notes{padding:0 16px 14px}@media(min-width:700px){.okx-hero-notes{padding:0 22px 16px}}
+#home-sim .okx-curve-head{padding:14px 0 4px}
+.okx-pos-list{display:flex;flex-direction:column;gap:8px;padding:0 14px 14px}@media(min-width:700px){.okx-pos-list{padding:0 22px 18px}}
+.okx-pos{border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}.okx-pos.manual{border-style:dashed}
+.okx-pos>summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px}
+.okx-pos>summary::-webkit-details-marker{display:none}
+.okx-pos-coin{display:flex;align-items:center;gap:6px}.okx-pos-coin b{font-size:15px}.okx-pos-coin .coin-icon{width:24px;height:24px}
+.okx-side{font-style:normal;font-size:11px;font-weight:600;padding:2px 6px;border-radius:6px;background:#e7f6ee}.okx-side.down{background:#fdebee}
+.okx-pos-tag{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.okx-pos-pnl{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}.okx-pos-pnl b{font-size:15px;font-variant-numeric:tabular-nums}.okx-pos-pnl small{font-size:11px;opacity:.85}
+.okx-pos-body{padding:4px 12px 12px;border-top:1px solid var(--line);margin:0}
+.okx-acts{list-style:none;margin:0;padding:0 16px 4px}@media(min-width:700px){.okx-acts{padding:0 22px 6px}}
+.okx-act{padding:10px 0;border-top:1px solid var(--line)}.okx-act:first-child{border-top:0}
+.okx-act>div{display:flex;justify-content:space-between;align-items:baseline;gap:10px}.okx-act b{font-size:13.5px;font-weight:600}
+.okx-act time{flex:none;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.okx-act p{margin:3px 0 0 14px;font-size:12px;line-height:1.55;color:var(--muted);overflow-wrap:anywhere}
+.okx-act-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px;background:#9aa4b2}
+.okx-act[data-tone=open] .okx-act-dot{background:var(--green)}.okx-act[data-tone=close] .okx-act-dot{background:#2f6fb0}.okx-act[data-tone=stop] .okx-act-dot{background:var(--red)}.okx-act[data-tone=info] .okx-act-dot{background:#c98a00}
+.okx-acts .empty{padding:12px 0;color:var(--muted);font-size:13px;list-style:none}
+.okx-log{margin:0 16px 12px;border-top:1px dashed var(--line)}@media(min-width:700px){.okx-log{margin:0 22px 14px}}
+.okx-log>summary{cursor:pointer;padding:10px 0 4px;font-size:12px;color:var(--muted)}.okx-log .okx-acts{padding:0}
+.okx-danger{background:none;border:0;box-shadow:none}.okx-danger .panel-heading h2{font-size:14px;color:var(--muted)}
+.okx-danger .trade-controls{border:1px dashed var(--line);background:none}
+.okx-danger .trade-stop-button{background:transparent;color:var(--red);border:1px solid #efc3c9;font-weight:500;box-shadow:none}
+.sim-primary #pinned-source,.sim-primary #pinned-time{display:none}
+.sim-curve svg text{font-size:13px}@media(max-width:760px){.sim-curve svg text{font-size:21px}}
+@media(max-width:760px){#home-sim,#sim-page{padding-bottom:84px}}
+@media(min-width:900px){
+  #home-sim .okx-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);column-gap:32px;align-content:start}
+  #home-sim .okx-hero>*{grid-column:1}
+  #home-sim .okx-hero>.okx-curve-head{grid-column:2;grid-row:1}
+  #home-sim .okx-hero>#home-okx-curve{grid-column:2;grid-row:2/span 5}
+  #home-sim .okx-curve-head{padding:0 0 4px}
+  .sim-curve svg{max-height:300px}
+}

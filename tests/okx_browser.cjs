@@ -26,6 +26,8 @@ let feed = {
   const pushMark = (instId, markPx) => demoSockets.at(-1).send(JSON.stringify({ arg: { channel: 'mark-price', instId }, data: [{ instId, markPx: String(markPx), ts: String(Date.now()) }] }));
   await context.route('**/paper-data/dashboard.json*', r => { paperRequests++; r.abort(); });
   await context.route('**/paper-data/okx_demo/summary.json*', r => mode === 'ok' ? r.fulfill({ body: JSON.stringify(feed), contentType: 'application/json' }) : r.fulfill({ status: 404, body: 'missing' }));
+  // A returning visitor who brought the companion out keeps it floating (phones start with it docked).
+  await context.addInitScript(() => { try { localStorage.setItem('modi-companion-position', JSON.stringify({ side: 'right', bottom: 20, docked: false })); } catch {} });
   const page = await context.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(BASE);
@@ -40,7 +42,18 @@ let feed = {
   assert.match(await page.locator('#home-okx-status').innerText(), /允许开仓/);
   assert.equal(await page.locator('#home-okx-curve polyline').count(), 1);
   assert.match(await page.locator('#home-okx-positions').innerText(), /趋势突破只做多/);
-  assert.match(await page.locator('#home-okx-actions').innerText(), /信号已超过 2 小时/);
+  // Home shows fills only; housekeeping (skips, pauses) is folded into the run log.
+  assert.match(await page.locator('#home-okx-actions').innerText(), /开仓 · BTC/);
+  assert.doesNotMatch(await page.locator('#home-okx-actions').innerText(), /信号已超过 2 小时/);
+  await page.locator('#home-okx-log').evaluate(el => el.closest('details').open = true);
+  assert.match(await page.locator('#home-okx-log').innerText(), /信号已超过 2 小时/);
+  // Positions are compact rows: PnL visible, details one tap away.
+  assert.equal(await page.locator('#home-okx-pos-count').innerText(), '1');
+  assert.equal(await page.locator('#home-okx-positions details[open]').count(), 0);
+  assert.match(await page.locator('#home-okx-positions summary').innerText(), /BTC[\s\S]*多 5×[\s\S]*\+12\.50 USDT/);
+  // The notices collapse into one line that expands on tap.
+  assert.match(await page.locator('[data-notes-summary]').first().innerText(), /快照 .*分钟前|快照 刚刚/);
+  assert.equal(await page.locator('#home-sim [data-stop-demo]').count(), 0);            // stop control lives on the detail page
   assert.equal(paperRequests, 0, 'the paper account feed is no longer read');
   // With prices unchanged (OKX is blocked here) the equity numbers must not animate on each refresh.
   await page.evaluate(() => { window.__rolls = 0; for (const id of ['pinned-equity', 'okx-total-equity'])
@@ -52,6 +65,9 @@ let feed = {
   assert.ok(demoSubs.length >= 1 && demoSubs.every(x => x.channel === 'mark-price' && x.instId === 'BTC-USDT-SWAP'));
   pushMark('BTC-USDT-SWAP', 70500);
   await page.waitForFunction(() => document.querySelector('#home-okx-positions').textContent.includes('+15.00 USDT'));
+  await page.locator('#home-okx-positions summary').first().click();                  // expand; the open state survives re-renders
+  await page.waitForTimeout(1500);
+  assert.equal(await page.locator('#home-okx-positions details[open]').count(), 1);
   assert.match(await page.locator('#home-okx-positions').innerText(), /标记价（实时）\s*70,500/);
   await page.waitForFunction(() => document.querySelector('#pinned-equity').textContent.trim() === '5,015.00');   // 5,012.50 − 12.50 + 15.00
   // Exchange REST/WebSockets are blocked here, so the top-bar status comes from the demo price feed alone.
@@ -68,7 +84,10 @@ let feed = {
   assert.equal(await page.locator('#okx-curve polyline').count(), 1);
   assert.match(await page.locator('#okx-start').innerText(), /起始 5,000\.00/);
   assert.equal(await page.locator('#okx-positions .sim-position').count(), 1);
-  assert.equal(await page.locator('#okx-actions li').count(), 2);
+  assert.equal(await page.locator('#okx-actions li').count(), 1);                      // the open; the skip is in the run log
+  assert.equal(await page.locator('#okx-log li').count(), 1);
+  assert.equal(await page.locator('#okx-positions details[open]').count(), 1);          // detail page expands positions
+  assert.equal(await page.locator('#sim-page [data-stop-demo]').count(), 1);
   for (const width of [320, 360, 390]) {
     await page.setViewportSize({ width, height: 844 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `overflow at ${width}`);
