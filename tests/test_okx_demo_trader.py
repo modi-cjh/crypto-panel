@@ -154,6 +154,17 @@ class MirrorTests(unittest.TestCase):
         m2, _ = run(fake2, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=300)}), action='follow-current')
         self.assertEqual(fake2.posts, []); self.assertIn('stop_too_close_or_crossed', [a.get('reason') for a in m2.actions])
 
+    def test_manual_positions_on_any_usdt_swap_are_shown_but_never_managed(self):
+        SPECS.setdefault('PEPE-USDT-SWAP', dict(ctVal='10000000', lotSz='1', minSz='1', tickSz='0.00000001'))
+        fake = FakeOKX(positions=[dict(instId='PEPE-USDT-SWAP', posSide='long', pos='2', avgPx='0.00001', markPx='0.000011', upl='20', lever='5', margin='40'),
+                                  dict(instId='BTC-USD-SWAP', posSide='long', pos='1', avgPx='70000', upl='1', lever='5')])
+        m, _ = run(fake, paper())
+        s = m.summary()
+        self.assertEqual([(p['inst'], p['ours']) for p in s['positions']], [('PEPE-USDT-SWAP', False)])   # coin-margined swaps are left out
+        self.assertNotIn(('PEPE-USDT-SWAP', 'long'), m.positions)                                       # and nothing manages it
+        m2, _ = run(fake, paper(), action='flatten')
+        self.assertFalse(any(p[0] == '/api/v5/trade/close-position' for p in fake.posts))
+
     def test_summary_carries_equity_curve_start_equity_and_contract_value(self):
         fake = FakeOKX(positions=[dict(instId='BTC-USDT-SWAP', posSide='long', pos='3', avgPx='70000', markPx='70100', upl='3', lever='5')])
         m, state = run(fake, paper())

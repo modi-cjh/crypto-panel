@@ -209,11 +209,18 @@ class Mirror:
         self.equity = float(usdt.get('eq') or 0)
         self.available = float(usdt.get('availBal') or 0)
         pos = self.c.request('GET', '/api/v5/account/positions?instType=SWAP')
-        self.positions = {}
+        self.positions, self.all_positions = {}, {}
         managed = set(INSTRUMENTS) | {m['inst'] for m in self.s['mirrored'].values() if m.get('status') == 'open'}
         for p in (pos.get('data') or []) if ok(pos) else []:
-            if p.get('instId') in managed and float(p.get('pos') or 0) != 0:
-                self.positions[(p['instId'], p.get('posSide', 'net'))] = p
+            if float(p.get('pos') or 0) == 0:
+                continue
+            key = (p.get('instId'), p.get('posSide', 'net'))
+            # Every USDT-margined swap is shown on the dashboard (manual ones marked as not ours);
+            # only managed instruments are ever traded, amended or closed by this program.
+            if str(p.get('instId', '')).endswith('-USDT-SWAP'):
+                self.all_positions[key] = p
+            if p.get('instId') in managed:
+                self.positions[key] = p
         algos = self.c.request('GET', '/api/v5/trade/orders-algo-pending?instType=SWAP&ordType=conditional')
         oco = self.c.request('GET', '/api/v5/trade/orders-algo-pending?instType=SWAP&ordType=oco')
         self.algos = [a for r in (algos, oco) if ok(r) for a in r.get('data') or [] if a.get('instId') in managed]
@@ -383,7 +390,7 @@ class Mirror:
         pos = [dict(inst=p['instId'], side=p.get('posSide', 'net'), contracts=p.get('pos'), avgPx=p.get('avgPx'), markPx=p.get('markPx'),
                     upl=p.get('upl'), uplRatio=p.get('uplRatio'), lever=p.get('lever'), margin=p.get('margin'), ctVal=self.spec(p['instId'])['ctVal'],
                     ours=any(m['status'] == 'open' and m['inst'] == p['instId'] for m in self.s['mirrored'].values()))
-               for p in self.positions.values()]
+               for p in getattr(self, 'all_positions', self.positions).values()]
         return dict(updated_at=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), equity=self.equity, available=self.available,
                     day_start=self.s.get('day_start'), paused=self.s['paused'], halted=self.s['halted'], dry_run=self.dry, positions=pos,
                     stop_control=self.s.get('stop_control'),
