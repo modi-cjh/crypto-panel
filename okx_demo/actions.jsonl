@@ -18,3 +18,4 @@
 {"ts": "2026-11-04T10:51:03Z", "action": "skip", "inst": "HYPE-USDT-SWAP", "dry_run": false, "reason": "no_price"}
 {"ts": "2026-11-04T10:51:03Z", "action": "skip", "inst": "UNITREE-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-04T11:43:12Z", "action": "skip", "inst": "HYPE-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
+{"ts": "2026-11-04T14:45:13Z", "action": "skip", "inst": "AMZN-USDT-SWAP", "dry_run": false, "reason": "no_price"}

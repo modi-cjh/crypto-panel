@@ -150,3 +150,6 @@
 {"ts": "2026-11-04T12:00:00Z", "type": "skip", "inst": "PEPE-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
 {"ts": "2026-11-04T12:00:00Z", "type": "signal", "inst": "SPY-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
 {"ts": "2026-11-04T13:00:00Z", "type": "skip", "inst": "SPY-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T13:00:00Z", "type": "trade_closed", "inst": "HYPE-USDT-SWAP", "strategy": "breakout_long", "side": 1, "price": 84.18098986, "pnl": -3.219049, "reason": "stop"}
+{"ts": "2026-11-04T13:00:00Z", "type": "signal", "inst": "AMZN-USDT-SWAP", "strategy": "breakout_long", "side": 1}
+{"ts": "2026-11-04T14:00:00Z", "type": "trade_opened", "inst": "AMZN-USDT-SWAP", "strategy": "breakout_long", "side": 1, "price": 261.022194, "stop": 256.44265325, "target": null, "leverage": 5}
