@@ -63,8 +63,11 @@ let feed = {
   // Floating PnL follows the demo market's own mark price (not the live exchange): 3 contracts × 0.01 BTC × (70,500 − 70,000).
   // (the 20 s quiet period above lets the stream's no-data watchdog reconnect, so there can be more than one subscribe)
   assert.ok(demoSubs.length >= 1 && demoSubs.every(x => x.channel === 'mark-price' && x.instId === 'BTC-USDT-SWAP'));
+  await page.evaluate(() => { document.querySelector('#home-okx-positions details').dataset.keep = '1'; });
   pushMark('BTC-USDT-SWAP', 70500);
   await page.waitForFunction(() => document.querySelector('#home-okx-positions').textContent.includes('+15.00 USDT'));
+  // Price ticks patch the row in place: same element, icon not reloaded (no flashing).
+  assert.equal(await page.evaluate(() => document.querySelector('#home-okx-positions details').dataset.keep), '1');
   await page.locator('#home-okx-positions summary').first().click();                  // expand; the open state survives re-renders
   await page.waitForTimeout(1500);
   assert.equal(await page.locator('#home-okx-positions details[open]').count(), 1);

@@ -713,10 +713,20 @@ function simPrimary(){
 let showLegacy=false;
 $('legacy-toggle').addEventListener('click',()=>{showLegacy=!showLegacy;renderSim();});
 const statusPill=(el,d)=>{const st=okxStatus(d);el.textContent=st.label;el.className=`pill okx-pill ${st.cls}`;};
-// Re-rendering on every price tick must keep rows the viewer opened (or closed) as they were.
+// Prices tick several times a second. When the same positions are listed, patch only the parts whose text
+// changed (PnL, details) so icons and rows stay put instead of the whole list flashing; rebuild on open / close.
 function renderOkxPositions(id,openByDefault){
- const box=$(id),state=new Map([...box.querySelectorAll('details.okx-pos')].map(el=>[el.dataset.inst,el.open]));
- box.innerHTML=okxPositionsMarkup(simData,okxMarks,Date.now(),{open:openByDefault});
+ const box=$(id),html=okxPositionsMarkup(simData,okxMarks,Date.now(),{open:openByDefault});
+ const tpl=document.createElement('template');tpl.innerHTML=html;
+ const next=[...tpl.content.querySelectorAll('details.okx-pos')],cur=[...box.querySelectorAll('details.okx-pos')];
+ if(next.length && next.length===cur.length && next.every((n,i)=>n.dataset.inst===cur[i].dataset.inst && n.className===cur[i].className)){
+  next.forEach((n,i)=>{for(const sel of ['.okx-side','.okx-pos-tag','.okx-pos-pnl','.okx-pos-body']){
+   const was=cur[i].querySelector(sel),now=n.querySelector(sel);if(was && now && was.outerHTML!==now.outerHTML)was.replaceWith(now);
+  }});
+  return;
+ }
+ const state=new Map(cur.map(el=>[el.dataset.inst,el.open]));
+ box.replaceChildren(tpl.content);
  box.querySelectorAll('details.okx-pos').forEach(el=>{if(state.has(el.dataset.inst))el.open=state.get(el.dataset.inst);});
 }
 function retLine(t){
