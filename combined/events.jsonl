@@ -48,3 +48,21 @@
 {"ts": "2026-11-04T02:00:00Z", "type": "trade_opened", "inst": "SOXS-USDT-SWAP", "strategy": "breakout_long", "side": 1, "price": 57.041406, "stop": 54.75974976, "target": null, "leverage": 10}
 {"ts": "2026-11-04T02:00:00Z", "type": "signal", "inst": "UNITREE-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
 {"ts": "2026-11-04T03:00:00Z", "type": "skip", "inst": "UNITREE-USDT-SWAP", "strategy": "mean_reversion", "reason": "already_at_mean"}
+{"ts": "2026-11-04T03:00:00Z", "type": "signal", "inst": "AAVE-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
+{"ts": "2026-11-04T03:00:00Z", "type": "signal", "inst": "BTC-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
+{"ts": "2026-11-04T03:00:00Z", "type": "signal", "inst": "DOGE-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
+{"ts": "2026-11-04T03:00:00Z", "type": "signal", "inst": "ETH-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
+{"ts": "2026-11-04T03:00:00Z", "type": "signal", "inst": "HYPE-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
+{"ts": "2026-11-04T03:00:00Z", "type": "signal", "inst": "OKB-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
+{"ts": "2026-11-04T03:00:00Z", "type": "signal", "inst": "ONDO-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
+{"ts": "2026-11-04T03:00:00Z", "type": "signal", "inst": "SHIB-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
+{"ts": "2026-11-04T03:00:00Z", "type": "signal", "inst": "XLM-USDT-SWAP", "strategy": "mean_reversion", "side": 1}
+{"ts": "2026-11-04T04:00:00Z", "type": "trade_opened", "inst": "AAVE-USDT-SWAP", "strategy": "mean_reversion", "side": 1, "price": 125.045004, "stop": 122.74509453, "target": 127.2665, "leverage": 5}
+{"ts": "2026-11-04T04:00:00Z", "type": "skip", "inst": "BTC-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T04:00:00Z", "type": "skip", "inst": "DOGE-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T04:00:00Z", "type": "skip", "inst": "ETH-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T04:00:00Z", "type": "skip", "inst": "HYPE-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T04:00:00Z", "type": "skip", "inst": "OKB-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T04:00:00Z", "type": "skip", "inst": "ONDO-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T04:00:00Z", "type": "skip", "inst": "SHIB-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T04:00:00Z", "type": "skip", "inst": "XLM-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}

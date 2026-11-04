@@ -7,3 +7,5 @@
 {"ts": "2026-11-04T02:08:44Z", "action": "skip", "inst": "SOXS-USDT-SWAP", "dry_run": false, "reason": "no_price"}
 {"ts": "2026-11-04T02:25:28Z", "action": "skip", "inst": "SOXS-USDT-SWAP", "dry_run": false, "reason": "no_price"}
 {"ts": "2026-11-04T03:19:22Z", "action": "skip", "inst": "SOXS-USDT-SWAP", "dry_run": false, "reason": "no_price"}
+{"ts": "2026-11-04T04:20:31Z", "action": "skip", "inst": "AAVE-USDT-SWAP", "dry_run": false, "reason": "stop_too_close_or_crossed", "price": 122.63, "stop": 122.74509452742842}
+{"ts": "2026-11-04T04:20:31Z", "action": "skip", "inst": "SOXS-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}

@@ -50,6 +50,10 @@
   [
    1793762362296,
    4645.95
+  ],
+  [
+   1793766031729,
+   4838.66
   ]
  ],
  "mirrored": {
@@ -67,6 +71,13 @@
    "strategy": "mean_reversion",
    "target": 1.2557450000000001,
    "closed_reason": "exchange_stop_or_target"
+  },
+  "SOXS-USDT-SWAP|1793757600000": {
+   "inst": "SOXS-USDT-SWAP",
+   "status": "skipped",
+   "side": 1,
+   "posSide": "net",
+   "reason": "too_old"
   }
  },
  "paused": false,
