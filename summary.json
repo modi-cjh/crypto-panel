@@ -1,31 +1,31 @@
 {
- "updated_at": "2026-11-04T00:24:41Z",
+ "updated_at": "2026-11-04T01:31:29Z",
  "start_equity": 100.0,
  "accounts": {
   "combined": {
    "name": "合并账户",
-   "equity": 104.0777,
-   "cash": 103.979256,
-   "return_pct": 4.08,
+   "equity": 105.4906,
+   "cash": 105.490614,
+   "return_pct": 5.49,
    "max_drawdown_pct": 3.64,
-   "closed_trades": 14,
-   "win_rate_pct": 50.0,
-   "avg_r": 0.282,
-   "payoff": 1.7,
+   "closed_trades": 15,
+   "win_rate_pct": 53.3,
+   "avg_r": 0.361,
+   "payoff": 1.72,
    "halted": false,
-   "last_bar": "2026-11-03T23:00:00Z",
+   "last_bar": "2026-11-04T00:00:00Z",
    "started": "2026-10-04T18:00:00Z",
    "live_since": "2026-11-03T18:27:45Z",
    "by_strategy": [
     {
      "key": "mean_reversion",
      "name": "均值回归",
-     "pnl": 5.9732,
-     "positions": 1,
-     "closed_trades": 11,
-     "win_rate_pct": 63.6,
-     "avg_r": 0.539,
-     "payoff": 1.5
+     "pnl": 7.4846,
+     "positions": 0,
+     "closed_trades": 12,
+     "win_rate_pct": 66.7,
+     "avg_r": 0.615,
+     "payoff": 1.52
     },
     {
      "key": "breakout_long",
@@ -48,23 +48,7 @@
      "payoff": null
     }
    ],
-   "open_positions": [
-    {
-     "inst": "XRP-USDT-SWAP",
-     "strategy": "mean_reversion",
-     "strategy_name": "均值回归",
-     "side": -1,
-     "entry": 1.27764442,
-     "stop": 1.29183943,
-     "target": 1.255745,
-     "opened": "2026-11-03T15:00:00Z",
-     "leverage": 10,
-     "qty": 73.25057332750447,
-     "margin": 9.358819,
-     "mark": 1.2637,
-     "unrealized": 1.021437
-    }
-   ],
+   "open_positions": [],
    "pending": [],
    "pending_detail": []
   }

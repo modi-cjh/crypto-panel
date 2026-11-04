@@ -3,3 +3,4 @@
 {"ts": "2026-11-03T20:54:57Z", "action": "follow_current", "inst": "-", "dry_run": false}
 {"ts": "2026-11-03T20:54:57Z", "action": "open", "inst": "XRP-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "mean_reversion", "contracts": "15.8", "price": 1.2602, "stop": "1.2918", "target": "1.2557", "leverage": 10, "risk_usdt": 50.0}
 {"ts": "2026-11-03T22:35:37Z", "action": "resume", "inst": "-", "dry_run": false}
+{"ts": "2026-11-04T01:33:13Z", "action": "closed_on_exchange", "inst": "XRP-USDT-SWAP", "dry_run": false, "strategy": "mean_reversion"}

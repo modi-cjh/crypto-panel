@@ -34,6 +34,10 @@
   [
    1793751549604,
    4941.0
+  ],
+  [
+   1793755993795,
+   4852.36
   ]
  ],
  "mirrored": {
@@ -46,10 +50,11 @@
    "ordId": "4068035287708057600",
    "posSide": "short",
    "side": -1,
-   "status": "open",
+   "status": "done",
    "stop": 1.2918394291025557,
    "strategy": "mean_reversion",
-   "target": 1.2557450000000001
+   "target": 1.2557450000000001,
+   "closed_reason": "exchange_stop_or_target"
   }
  },
  "paused": false,
