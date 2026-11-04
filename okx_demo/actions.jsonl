@@ -22,3 +22,4 @@
 {"ts": "2026-11-04T15:40:22Z", "action": "skip", "inst": "AMZN-USDT-SWAP", "dry_run": false, "reason": "no_price"}
 {"ts": "2026-11-04T16:36:17Z", "action": "skip", "inst": "AMZN-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-04T16:36:17Z", "action": "skip", "inst": "ARX-USDT-SWAP", "dry_run": false, "reason": "no_price"}
+{"ts": "2026-11-04T17:31:46Z", "action": "open", "inst": "XAU-USDT-SWAP", "dry_run": false, "side": 1, "strategy": "breakout_long", "contracts": "2991", "price": 4095.7, "stop": "4036.1", "target": null, "leverage": 10, "risk_usdt": 178.31}

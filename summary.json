@@ -1,19 +1,19 @@
 {
- "updated_at": "2026-11-04T16:34:32Z",
+ "updated_at": "2026-11-04T17:30:01Z",
  "start_equity": 100.0,
  "accounts": {
   "combined": {
    "name": "合并账户",
-   "equity": 104.2497,
-   "cash": 99.548417,
-   "return_pct": 4.25,
+   "equity": 101.9928,
+   "cash": 96.344685,
+   "return_pct": 1.99,
    "max_drawdown_pct": 6.31,
-   "closed_trades": 20,
-   "win_rate_pct": 50.0,
-   "avg_r": 0.175,
-   "payoff": 0.97,
+   "closed_trades": 21,
+   "win_rate_pct": 47.6,
+   "avg_r": 0.118,
+   "payoff": 0.88,
    "halted": false,
-   "last_bar": "2026-11-04T15:00:00Z",
+   "last_bar": "2026-11-04T16:00:00Z",
    "started": "2026-10-04T18:00:00Z",
    "live_since": "2026-11-03T18:27:45Z",
    "by_strategy": [
@@ -30,11 +30,11 @@
     {
      "key": "breakout_long",
      "name": "趋势突破只做多",
-     "pnl": -11.714,
+     "pnl": -14.9177,
      "positions": 2,
-     "closed_trades": 6,
+     "closed_trades": 7,
      "win_rate_pct": 0.0,
-     "avg_r": -0.842,
+     "avg_r": -0.868,
      "payoff": null
     },
     {
@@ -61,23 +61,8 @@
      "leverage": 5,
      "qty": 0.6597587752340989,
      "margin": 34.442337,
-     "mark": 266.08,
-     "unrealized": 3.336932
-    },
-    {
-     "inst": "ARX-USDT-SWAP",
-     "strategy": "breakout_long",
-     "strategy_name": "趋势突破只做多",
-     "side": 1,
-     "entry": 0.27825564,
-     "stop": 0.26712541,
-     "target": null,
-     "opened": "2026-11-04T16:00:00Z",
-     "leverage": 5,
-     "qty": 280.95729252754154,
-     "margin": 15.63559,
-     "mark": 0.2749,
-     "unrealized": -0.942792
+     "mark": 268.75,
+     "unrealized": 5.098488
     },
     {
      "inst": "UNITREE-USDT-SWAP",
@@ -91,8 +76,23 @@
      "leverage": 5,
      "qty": 1.491783070285122,
      "margin": 28.764774,
-     "mark": 96.04,
-     "unrealized": 0.553025
+     "mark": 95.71,
+     "unrealized": 1.045313
+    },
+    {
+     "inst": "XAU-USDT-SWAP",
+     "strategy": "breakout_long",
+     "strategy_name": "趋势突破只做多",
+     "side": 1,
+     "entry": 4073.41452,
+     "stop": 4036.0961153,
+     "target": null,
+     "opened": "2026-11-04T17:00:00Z",
+     "leverage": 10,
+     "qty": 0.08204499210423116,
+     "margin": 33.420326,
+     "mark": 4072.5,
+     "unrealized": -0.075032
     }
    ],
    "pending": [],
