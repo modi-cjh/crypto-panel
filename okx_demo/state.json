@@ -74,6 +74,10 @@
   [
    1793789463881,
    5299.92
+  ],
+  [
+   1793792592189,
+   5331.44
   ]
  ],
  "mirrored": {
@@ -110,6 +114,13 @@
    "inst": "UNITREE-USDT-SWAP",
    "status": "skipped",
    "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "HYPE-USDT-SWAP|1793782800000": {
+   "inst": "HYPE-USDT-SWAP",
+   "status": "skipped",
+   "side": 1,
    "posSide": "net",
    "reason": "too_old"
   }

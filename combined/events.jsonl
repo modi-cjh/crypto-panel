@@ -126,3 +126,13 @@
 {"ts": "2026-11-04T10:00:00Z", "type": "skip", "inst": "BE-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
 {"ts": "2026-11-04T10:00:00Z", "type": "skip", "inst": "PENGU-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
 {"ts": "2026-11-04T10:00:00Z", "type": "skip", "inst": "SUI-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T10:00:00Z", "type": "signal", "inst": "INJ-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T10:00:00Z", "type": "signal", "inst": "ZAMA-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T10:00:00Z", "type": "signal", "inst": "BE-USDT-SWAP", "strategy": "breakout_long", "side": 1}
+{"ts": "2026-11-04T10:00:00Z", "type": "signal", "inst": "BEAT-USDT-SWAP", "strategy": "breakout_long", "side": 1}
+{"ts": "2026-11-04T10:00:00Z", "type": "signal", "inst": "LIT-USDT-SWAP", "strategy": "breakout_long", "side": 1}
+{"ts": "2026-11-04T11:00:00Z", "type": "skip", "inst": "BE-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
+{"ts": "2026-11-04T11:00:00Z", "type": "skip", "inst": "BEAT-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
+{"ts": "2026-11-04T11:00:00Z", "type": "skip", "inst": "INJ-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T11:00:00Z", "type": "skip", "inst": "LIT-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
+{"ts": "2026-11-04T11:00:00Z", "type": "skip", "inst": "ZAMA-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
