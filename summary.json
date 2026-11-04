@@ -1,19 +1,19 @@
 {
- "updated_at": "2026-11-04T14:43:28Z",
+ "updated_at": "2026-11-04T15:38:38Z",
  "start_equity": 100.0,
  "accounts": {
   "combined": {
    "name": "合并账户",
-   "equity": 100.6786,
+   "equity": 106.0682,
    "cash": 99.548417,
-   "return_pct": 0.68,
+   "return_pct": 6.07,
    "max_drawdown_pct": 6.31,
    "closed_trades": 20,
    "win_rate_pct": 50.0,
    "avg_r": 0.175,
    "payoff": 0.97,
    "halted": false,
-   "last_bar": "2026-11-04T13:00:00Z",
+   "last_bar": "2026-11-04T14:00:00Z",
    "started": "2026-10-04T18:00:00Z",
    "live_since": "2026-11-03T18:27:45Z",
    "by_strategy": [
@@ -55,14 +55,14 @@
      "strategy_name": "趋势突破只做多",
      "side": 1,
      "entry": 261.022194,
-     "stop": 256.44265325,
+     "stop": 262.25992538,
      "target": null,
      "opened": "2026-11-04T14:00:00Z",
      "leverage": 5,
      "qty": 0.6597587752340989,
      "margin": 34.442337,
-     "mark": 269.51,
-     "unrealized": 5.599904
+     "mark": 267.89,
+     "unrealized": 4.531095
     },
     {
      "inst": "UNITREE-USDT-SWAP",
