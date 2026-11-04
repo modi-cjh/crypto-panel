@@ -260,6 +260,11 @@
 ### PR #45 已实现盈亏拆分为价差、手续费、资金费
 - XRP 那笔在止盈价附近成交（1.2559，止盈 1.2557），OKX 记录的已实现盈亏却是 -11.28 USDT：已实现 = 价差 + 手续费 + 资金费。现在一并记录 OKX 仓位历史里的价差盈亏（`pnl`）与资金费（`fundingFee`），看板显示为“已实现 -11.28 USDT（价差 …，手续费 …，资金费 …）”。旧缓存（无拆分）作废后重新查询一次。
 
+
+### PR #46 可以装到手机主屏幕的 App（PWA）
+- 新增 `manifest.webmanifest`（名称 MODI、全屏 standalone、主题色）与机器人 App 图标（`assets/icons/`：180 apple-touch-icon、192、512、maskable 512，源文件 `app-icon.svg`），`index.html` 加入 iOS 全屏标签。iPhone 用 Safari“添加到主屏幕”、Android 用 Chrome“安装应用”后，点图标全屏打开看板。安装说明见 `widgets/README.md`。
+- 未加 Service Worker，避免缓存旧版本；内容与网页同步。新增 `tests/app_browser.cjs`（manifest 解析、图标、iOS 标签、Chrome 安装性检查）。
+
 ---
 
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
@@ -287,6 +292,7 @@ PANEL_URL=http://127.0.0.1:8008/ node tests/okx_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/market_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/okx_rest_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/float_browser.cjs
+PANEL_URL=http://127.0.0.1:8008/ node tests/app_browser.cjs
 ```
 
 已知情况：`tests/team_browser.cjs`、`tests/browser_smoke.cjs` 在基线 `cc25dc5` 上就已失败（仍查找 v3 删除的角色卡），本次改动未改变其结果。
