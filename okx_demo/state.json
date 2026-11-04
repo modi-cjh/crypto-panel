@@ -94,6 +94,10 @@
   [
    1793806822457,
    5916.48
+  ],
+  [
+   1793810177839,
+   5922.44
   ]
  ],
  "mirrored": {
@@ -135,6 +139,13 @@
   },
   "HYPE-USDT-SWAP|1793782800000": {
    "inst": "HYPE-USDT-SWAP",
+   "status": "skipped",
+   "side": 1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "AMZN-USDT-SWAP|1793800800000": {
+   "inst": "AMZN-USDT-SWAP",
    "status": "skipped",
    "side": 1,
    "posSide": "net",

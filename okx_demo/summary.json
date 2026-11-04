@@ -1,6 +1,6 @@
 {
- "updated_at": "2026-11-04T15:40:22Z",
- "equity": 5916.478709996864,
+ "updated_at": "2026-11-04T16:36:17Z",
+ "equity": 5922.443278315413,
  "available": 3114.308697225,
  "day_start": 5000.0,
  "paused": false,
@@ -12,11 +12,11 @@
    "side": "long",
    "contracts": "29.72",
    "avgPx": "2275.21",
-   "markPx": "2429.63",
-   "upl": "458.9362400000002",
-   "uplRatio": "0.6787065809309922",
+   "markPx": "2432.79",
+   "upl": "468.3277599999998",
+   "uplRatio": "0.6925954087754538",
    "lever": "10",
-   "margin": "676.6038650829429857",
+   "margin": "679.0165469841065068",
    "ctVal": 0.1,
    "ours": false
   },
@@ -25,11 +25,11 @@
    "side": "long",
    "contracts": "15.35",
    "avgPx": "77451.924814332247558",
-   "markPx": "80569.69",
-   "upl": "478.5769560000004",
-   "uplRatio": "0.4025419888713766",
+   "markPx": "80533.44",
+   "upl": "473.01258100000035",
+   "uplRatio": "0.3978616661954826",
    "lever": "10",
-   "margin": "1188.0529516889209701",
+   "margin": "1187.5925131063063009",
    "ctVal": 0.01,
    "ours": false
   }
@@ -47,9 +47,9 @@
    "SOXL-USDT-SWAP",
    "SOL-USDT-SWAP",
    "XAU-USDT-SWAP",
+   "SKHYNIX-USDT-SWAP",
    "HYPE-USDT-SWAP",
    "SPCX-USDT-SWAP",
-   "SKHYNIX-USDT-SWAP",
    "XRP-USDT-SWAP",
    "PEPE-USDT-SWAP",
    "MU-USDT-SWAP",
@@ -57,20 +57,20 @@
    "NEAR-USDT-SWAP",
    "SOXS-USDT-SWAP",
    "TRUMP-USDT-SWAP",
-   "KORU-USDT-SWAP",
+   "CL-USDT-SWAP",
    "UNI-USDT-SWAP",
-   "PUMP-USDT-SWAP",
+   "KORU-USDT-SWAP",
    "INTC-USDT-SWAP",
    "CRCL-USDT-SWAP",
-   "CL-USDT-SWAP",
-   "WLD-USDT-SWAP",
+   "PUMP-USDT-SWAP",
    "SKHY-USDT-SWAP",
-   "LIT-USDT-SWAP",
+   "WLD-USDT-SWAP",
    "GOOGL-USDT-SWAP",
    "QQQ-USDT-SWAP",
+   "LIT-USDT-SWAP",
    "XAG-USDT-SWAP",
-   "SNXX-USDT-SWAP",
    "MSTR-USDT-SWAP",
+   "SNXX-USDT-SWAP",
    "SUI-USDT-SWAP",
    "AMD-USDT-SWAP",
    "ENA-USDT-SWAP",
@@ -81,9 +81,9 @@
    "LINK-USDT-SWAP",
    "FIL-USDT-SWAP",
    "MRVL-USDT-SWAP",
+   "BZ-USDT-SWAP",
    "CAP-USDT-SWAP",
    "BCH-USDT-SWAP",
-   "BZ-USDT-SWAP",
    "ADA-USDT-SWAP",
    "LITE-USDT-SWAP",
    "AAVE-USDT-SWAP",
@@ -91,17 +91,17 @@
    "NBIS-USDT-SWAP",
    "TQQQ-USDT-SWAP",
    "ZHONGJI-USDT-SWAP",
+   "ARB-USDT-SWAP",
    "STRK-USDT-SWAP",
    "LTC-USDT-SWAP",
-   "ARB-USDT-SWAP",
    "XPL-USDT-SWAP",
-   "AVAX-USDT-SWAP",
-   "DGAI-USDT-SWAP",
-   "AAOI-USDT-SWAP",
-   "ONDO-USDT-SWAP",
-   "USELESS-USDT-SWAP",
    "WLFI-USDT-SWAP",
+   "AVAX-USDT-SWAP",
    "AAPL-USDT-SWAP",
+   "AAOI-USDT-SWAP",
+   "USELESS-USDT-SWAP",
+   "DGAI-USDT-SWAP",
+   "ONDO-USDT-SWAP",
    "SAMSUNG-USDT-SWAP",
    "PONS-USDT-SWAP",
    "OKB-USDT-SWAP",
@@ -109,37 +109,37 @@
    "COIN-USDT-SWAP",
    "ORCL-USDT-SWAP",
    "AXTI-USDT-SWAP",
+   "TAO-USDT-SWAP",
+   "CXMT-USDT-SWAP",
    "BEAT-USDT-SWAP",
    "AXIS-USDT-SWAP",
-   "TAO-USDT-SWAP",
    "ZRO-USDT-SWAP",
-   "CXMT-USDT-SWAP",
-   "INJ-USDT-SWAP",
    "XLM-USDT-SWAP",
-   "APR-USDT-SWAP",
-   "ZHIPU-USDT-SWAP",
-   "DOT-USDT-SWAP",
+   "INJ-USDT-SWAP",
    "PENGU-USDT-SWAP",
+   "DOT-USDT-SWAP",
+   "ZHIPU-USDT-SWAP",
    "TRX-USDT-SWAP",
+   "APR-USDT-SWAP",
    "BTW-USDT-SWAP",
    "DRAM-USDT-SWAP",
    "SKDD-USDT-SWAP",
-   "TIA-USDT-SWAP",
-   "CRWV-USDT-SWAP",
-   "CASHCAT-USDT-SWAP",
    "VVV-USDT-SWAP",
+   "CRWV-USDT-SWAP",
+   "TIA-USDT-SWAP",
+   "CASHCAT-USDT-SWAP",
    "NIGHT-USDT-SWAP",
    "CRV-USDT-SWAP",
    "BE-USDT-SWAP",
    "SPY-USDT-SWAP",
    "AMZN-USDT-SWAP",
-   "PIEVERSE-USDT-SWAP",
    "META-USDT-SWAP",
    "SHIB-USDT-SWAP",
-   "OP-USDT-SWAP",
    "INTW-USDT-SWAP",
+   "ARX-USDT-SWAP",
+   "OP-USDT-SWAP",
    "ANTHROPIC-USDT-SWAP",
-   "ZAMA-USDT-SWAP"
+   "PIEVERSE-USDT-SWAP"
   ],
   "scan_limit": 100,
   "risk": 0.03,
@@ -242,11 +242,119 @@
   [
    1793806822457,
    5916.48
+  ],
+  [
+   1793810177839,
+   5922.44
   ]
  ],
  "closed_trades": 2,
- "strategy_updated_at": "2026-11-04T15:38:38Z",
+ "strategy_updated_at": "2026-11-04T16:34:32Z",
  "strategy_decisions": [
+  {
+   "ts": "2026-11-04T16:00:00+00:00",
+   "type": "skip",
+   "inst": "AAVE-USDT-SWAP",
+   "strategy": "mean_reversion",
+   "side": null,
+   "reason": "same_side_risk"
+  },
+  {
+   "ts": "2026-11-04T16:00:00+00:00",
+   "type": "skip",
+   "inst": "DOT-USDT-SWAP",
+   "strategy": "mean_reversion",
+   "side": null,
+   "reason": "same_side_risk"
+  },
+  {
+   "ts": "2026-11-04T16:00:00+00:00",
+   "type": "skip",
+   "inst": "ETH-USDT-SWAP",
+   "strategy": "breakout_long",
+   "side": null,
+   "reason": "same_side_risk"
+  },
+  {
+   "ts": "2026-11-04T16:00:00+00:00",
+   "type": "skip",
+   "inst": "SOXS-USDT-SWAP",
+   "strategy": "breakout_long",
+   "side": null,
+   "reason": "same_side_risk"
+  },
+  {
+   "ts": "2026-11-04T16:00:00+00:00",
+   "type": "skip",
+   "inst": "SPY-USDT-SWAP",
+   "strategy": "mean_reversion",
+   "side": null,
+   "reason": "same_side_risk"
+  },
+  {
+   "ts": "2026-11-04T16:00:00+00:00",
+   "type": "skip",
+   "inst": "UNI-USDT-SWAP",
+   "strategy": "breakout_long",
+   "side": null,
+   "reason": "same_side_risk"
+  },
+  {
+   "ts": "2026-11-04T15:00:00+00:00",
+   "type": "signal",
+   "inst": "AAVE-USDT-SWAP",
+   "strategy": "mean_reversion",
+   "side": -1,
+   "reason": null
+  },
+  {
+   "ts": "2026-11-04T15:00:00+00:00",
+   "type": "signal",
+   "inst": "DOT-USDT-SWAP",
+   "strategy": "mean_reversion",
+   "side": -1,
+   "reason": null
+  },
+  {
+   "ts": "2026-11-04T15:00:00+00:00",
+   "type": "signal",
+   "inst": "SPY-USDT-SWAP",
+   "strategy": "mean_reversion",
+   "side": -1,
+   "reason": null
+  },
+  {
+   "ts": "2026-11-04T15:00:00+00:00",
+   "type": "signal",
+   "inst": "ARX-USDT-SWAP",
+   "strategy": "breakout_long",
+   "side": 1,
+   "reason": null
+  },
+  {
+   "ts": "2026-11-04T15:00:00+00:00",
+   "type": "signal",
+   "inst": "ETH-USDT-SWAP",
+   "strategy": "breakout_long",
+   "side": 1,
+   "reason": null
+  },
+  {
+   "ts": "2026-11-04T15:00:00+00:00",
+   "type": "signal",
+   "inst": "SOXS-USDT-SWAP",
+   "strategy": "breakout_long",
+   "side": 1,
+   "reason": null
+  },
+  {
+   "ts": "2026-11-04T15:00:00+00:00",
+   "type": "signal",
+   "inst": "UNI-USDT-SWAP",
+   "strategy": "breakout_long",
+   "side": 1,
+   "reason": null
+  },
   {
    "ts": "2026-11-04T13:00:00+00:00",
    "type": "skip",
@@ -542,113 +650,23 @@
    "strategy": "mean_reversion",
    "side": -1,
    "reason": null
-  },
-  {
-   "ts": "2026-11-04T08:00:00+00:00",
-   "type": "signal",
-   "inst": "HYPE-USDT-SWAP",
-   "strategy": "breakout_long",
-   "side": 1,
-   "reason": null
-  },
-  {
-   "ts": "2026-11-04T08:00:00+00:00",
-   "type": "signal",
-   "inst": "PEPE-USDT-SWAP",
-   "strategy": "breakout_long",
-   "side": 1,
-   "reason": null
-  },
-  {
-   "ts": "2026-11-04T07:00:00+00:00",
-   "type": "skip",
-   "inst": "PIEVERSE-USDT-SWAP",
-   "strategy": "breakout_long",
-   "side": null,
-   "reason": "same_side_risk"
-  },
-  {
-   "ts": "2026-11-04T07:00:00+00:00",
-   "type": "skip",
-   "inst": "UNI-USDT-SWAP",
-   "strategy": "breakout_long",
-   "side": null,
-   "reason": "same_side_risk"
-  },
-  {
-   "ts": "2026-11-04T07:00:00+00:00",
-   "type": "skip",
-   "inst": "ZRO-USDT-SWAP",
-   "strategy": "breakout_long",
-   "side": null,
-   "reason": "same_side_risk"
-  },
-  {
-   "ts": "2026-11-04T07:00:00+00:00",
-   "type": "signal",
-   "inst": "UNI-USDT-SWAP",
-   "strategy": "breakout_long",
-   "side": 1,
-   "reason": null
-  },
-  {
-   "ts": "2026-11-04T06:00:00+00:00",
-   "type": "signal",
-   "inst": "UNITREE-USDT-SWAP",
-   "strategy": "mean_reversion",
-   "side": -1,
-   "reason": null
-  },
-  {
-   "ts": "2026-11-04T06:00:00+00:00",
-   "type": "signal",
-   "inst": "PIEVERSE-USDT-SWAP",
-   "strategy": "breakout_long",
-   "side": 1,
-   "reason": null
-  },
-  {
-   "ts": "2026-11-04T06:00:00+00:00",
-   "type": "signal",
-   "inst": "UNI-USDT-SWAP",
-   "strategy": "breakout_long",
-   "side": 1,
-   "reason": null
-  },
-  {
-   "ts": "2026-11-04T06:00:00+00:00",
-   "type": "signal",
-   "inst": "ZRO-USDT-SWAP",
-   "strategy": "breakout_long",
-   "side": 1,
-   "reason": null
-  },
-  {
-   "ts": "2026-11-04T05:00:00+00:00",
-   "type": "skip",
-   "inst": "BCH-USDT-SWAP",
-   "strategy": "mean_reversion",
-   "side": null,
-   "reason": "same_side_risk"
-  },
-  {
-   "ts": "2026-11-04T05:00:00+00:00",
-   "type": "skip",
-   "inst": "BNB-USDT-SWAP",
-   "strategy": "mean_reversion",
-   "side": null,
-   "reason": "same_side_risk"
-  },
-  {
-   "ts": "2026-11-04T05:00:00+00:00",
-   "type": "skip",
-   "inst": "CASHCAT-USDT-SWAP",
-   "strategy": "breakout_long",
-   "side": null,
-   "reason": "same_side_risk"
   }
  ],
  "recent_actions": [
+  {
+   "ts": "2026-11-04T16:36:17Z",
+   "action": "skip",
+   "inst": "AMZN-USDT-SWAP",
+   "dry_run": false,
+   "reason": "paper_entry_too_old"
+  },
+  {
+   "ts": "2026-11-04T16:36:17Z",
+   "action": "skip",
+   "inst": "ARX-USDT-SWAP",
+   "dry_run": false,
+   "reason": "no_price"
+  },
   {
    "ts": "2026-11-04T15:40:22Z",
    "action": "skip",
