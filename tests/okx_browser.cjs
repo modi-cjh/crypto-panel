@@ -75,6 +75,14 @@ let feed = {
   await page.waitForFunction(() => document.querySelector('#pinned-equity').textContent.trim() === '5,015.00');   // 5,012.50 − 12.50 + 15.00
   // Gentle update: only the changed digits animate (5,01|2.50 → 5,01|5.00); the leading digits stay still.
   assert.deepEqual(await page.evaluate(() => ({ moved: window.__lastRoll.moved, still: window.__lastRoll.still })), { moved: '5.00', still: '5,01' });
+  // A burst of ticks (10 in 2 s) leaves the curve, trades list and rows untouched and rolls the equity at most once.
+  await page.evaluate(() => { for (const sel of ['#home-okx-curve svg', '#home-okx-actions li', '#home-okx-positions details']) document.querySelector(sel).dataset.keep2 = '1';
+    window.__burstRolls = 0; new MutationObserver(m => { for (const r of m) for (const n of r.addedNodes) if (n.classList?.contains('number-in')) window.__burstRolls++; }).observe(document.getElementById('okx-total-equity'), { childList: true }); });
+  for (let i = 1; i <= 10; i++) { pushMark('BTC-USDT-SWAP', 70500 + i * 10); await page.waitForTimeout(200); }
+  await page.waitForTimeout(1500);
+  assert.deepEqual(await page.evaluate(() => ['#home-okx-curve svg', '#home-okx-actions li', '#home-okx-positions details'].map(sel => document.querySelector(sel).dataset.keep2)), ['1', '1', '1']);
+  assert.ok(await page.evaluate(() => window.__burstRolls) <= 1, 'equity animated more than once in a burst');
+  assert.match(await page.locator('#home-okx-positions summary').innerText(), /\+18\.00 USDT/);   // still converges to the latest mark (70,600)
   // Exchange REST/WebSockets are blocked here, so the top-bar status comes from the demo price feed alone.
   await page.waitForFunction(() => document.querySelector('#connection-text').textContent === '行情实时', null, { timeout: 12000 });
   await page.locator('#legacy-toggle').click();
@@ -84,7 +92,7 @@ let feed = {
   await page.waitForSelector('#sim-page:not([hidden]) #okx-metrics .history-metrics');
   assert.equal(await page.locator('[data-nav="sim"]').getAttribute('aria-current'), 'page');
   const metrics = await page.locator('#okx-metrics').innerText();
-  assert.match(metrics, /5,01(5\.00|2\.50)/);   // live demo mark while fresh, else the recorded equity
+  assert.match(metrics, /5,01\d\.\d\d/);   // live demo mark while fresh, else the recorded equity
   assert.match(metrics, /已平仓\s*1 笔/);
   assert.equal(await page.locator('#okx-curve polyline').count(), 1);
   assert.match(await page.locator('#okx-start').innerText(), /起始 5,000\.00/);

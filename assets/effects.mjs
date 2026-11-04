@@ -44,7 +44,9 @@ export function roleEffect(role,kind,label='止损'){
 }
 // minStep: changes smaller than this update the text quietly instead of playing the roll animation.
 // Gentle number updates: only the digits that changed fade in with a slight rise and a short green / red tint;
-// the rest of the number stays perfectly still, so frequent small price moves read as calm.
+// the rest of the number stays perfectly still, so frequent small price moves read as calm. Live prices tick many
+// times a second, so one element animates at most once per ROLL_GAP; updates in between change the digits quietly.
+const ROLL_GAP=3000;
 export function rollNumber(element,value,minStep=0){
  if(!element)return;
  if(!Number.isFinite(value)){element.textContent='—';delete element.dataset.value;return;}
@@ -52,7 +54,8 @@ export function rollNumber(element,value,minStep=0){
  const changed=element.dataset.value!==undefined && Math.round(old*100)!==Math.round(value*100) && Math.abs(value-old)>=minStep;
  element.dataset.value=value;
  if(!changed){if(element.textContent!==text)element.textContent=text;return;}
- if(reducedMotion() || document.hidden){element.textContent=text;return;}
+ if(reducedMotion() || document.hidden || Date.now()-(element.__rolledAt||0)<ROLL_GAP){if(element.textContent!==text)element.textContent=text;return;}
+ element.__rolledAt=Date.now();
  const prev=element.textContent;let i=0;
  while(i<prev.length && i<text.length && prev[i]===text[i])i++;
  const incoming=document.createElement('span');incoming.className=`number-in ${value>old?'number-up':'number-down'}`;incoming.textContent=text.slice(i);

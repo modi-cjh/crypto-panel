@@ -679,7 +679,8 @@ function syncOkxMarks(){
     const id=body.arg?.instId,row=body.data[0],value=number(row?.markPx);
     if(!symbols.includes(id) || !(value>0))return false;
     okxMarks.set(id,{price:value,at:Date.now()});
-    if(!okxMarkFrame)okxMarkFrame=requestAnimationFrame(()=>{okxMarkFrame=0;if(['home','sim'].includes(route))renderSim();else renderPinnedBalance();});
+    // Demo marks arrive ~10× a second; redraw at most once a second so the page reads as calm.
+    if(!okxMarkFrame)okxMarkFrame=setTimeout(()=>requestAnimationFrame(()=>{okxMarkFrame=0;if(['home','sim'].includes(route))renderSim();else renderPinnedBalance();}),1000);
   }});
   okxMarkStream.start();
 }
@@ -712,7 +713,7 @@ function simPrimary(){
 }
 let showLegacy=false;
 $('legacy-toggle').addEventListener('click',()=>{showLegacy=!showLegacy;renderSim();});
-const statusPill=(el,d)=>{const st=okxStatus(d);el.textContent=st.label;el.className=`pill okx-pill ${st.cls}`;};
+const statusPill=(el,d)=>{const st=okxStatus(d),cls=`pill okx-pill ${st.cls}`;if(el.textContent!==st.label)el.textContent=st.label;if(el.className!==cls)el.className=cls;};
 // Prices tick several times a second. When the same positions are listed, patch only the parts whose text
 // changed (PnL, details) so icons and rows stay put instead of the whole list flashing; rebuild on open / close.
 function renderOkxPositions(id,openByDefault){
@@ -741,35 +742,38 @@ function notesSummary(d,quote,now=Date.now()){
  const parts=[`快照 ${mins<1?'刚刚':mins+' 分钟前'}${late?'（延迟）':''}`,quote.live?'行情实时':quote.polling?'行情轮询':quote.needsQuotes?'行情未连接':null,p?`${PROFILE_SHORT[p.mode]||'策略档'}${risk}`:null,d.paused?'已暂停':null].filter(Boolean);
  return {text:parts.join(' · '),warn:late||Boolean(quote.needsQuotes&&!quote.live&&!quote.polling)};
 }
+// Write only when content changed: identical rewrites still rebuild nodes (SVG, lists) and read as flicker.
+const setHTML=(el,html)=>{if(el && el.__html!==html){el.innerHTML=html;el.__html=html;}};
+const setText=(el,text)=>{if(el && el.textContent!==text)el.textContent=text;};
 function renderSim(){
  renderTradeControls(simData);
  const quote=demoQuoteState(simData,okxMarks,okxMarkStream,okxMarkPollAt);
- document.querySelectorAll('[data-account-note]').forEach(el=>{el.textContent=accountDataNote(simData,quote);});
- {const n=notesSummary(simData,quote);document.querySelectorAll('[data-notes-summary]').forEach(el=>{el.textContent=n.text;el.closest('.okx-notes')?.classList.toggle('warn',n.warn);});}
+ document.querySelectorAll('[data-account-note]').forEach(el=>setText(el,accountDataNote(simData,quote)));
+ {const n=notesSummary(simData,quote);document.querySelectorAll('[data-notes-summary]').forEach(el=>{setText(el,n.text);el.closest('.okx-notes')?.classList.toggle('warn',n.warn);});}
  const primary=simPrimary();
  document.documentElement.classList.toggle('sim-primary',primary);document.documentElement.classList.toggle('show-legacy',primary && showLegacy);
  $('home-sim').hidden=!primary;
- $('legacy-toggle').textContent=showLegacy?'收起原主力盘':'显示原主力盘（crypto-bot · 已暂停）';$('legacy-toggle').setAttribute('aria-expanded',String(showLegacy));
+ setText($('legacy-toggle'),showLegacy?'收起原主力盘':'显示原主力盘（crypto-bot · 已暂停）');$('legacy-toggle').setAttribute('aria-expanded',String(showLegacy));
  if(primary && route==='home'){
   const t=okxTotals(simData,okxMarks);
   rollNumber($('okx-total-equity'),t.equity,EQUITY_ROLL_STEP);
-  $('okx-total-ret').innerHTML=retLine(t);
-  $('okx-total-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;statusPill($('home-okx-status'),simData);
-  $('home-okx-curve').innerHTML=okxCurveSVG(simData);
-  renderOkxPositions('home-okx-positions',false);$('home-okx-pos-count').textContent=simData.positions.length;
-  $('home-okx-actions').innerHTML=okxActionsMarkup(simData,6,{kind:'trades'});$('home-okx-log').innerHTML=okxActionsMarkup(simData,10,{kind:'system'});
+  setHTML($('okx-total-ret'),retLine(t));
+  setText($('okx-total-updated'),`更新 ${time(simData.updated_at)} UTC+7`);statusPill($('home-okx-status'),simData);
+  setHTML($('home-okx-curve'),okxCurveSVG(simData));
+  renderOkxPositions('home-okx-positions',false);setText($('home-okx-pos-count'),String(simData.positions.length));
+  setHTML($('home-okx-actions'),okxActionsMarkup(simData,6,{kind:'trades'}));setHTML($('home-okx-log'),okxActionsMarkup(simData,10,{kind:'system'}));
  }
  renderPinnedBalance();
  if(route!=='sim')return;
  if(!simData){$('okx-metrics').innerHTML='<p class="empty">正在读取 OKX 模拟账户…</p>';return;}
  const t=okxTotals(simData,okxMarks);
- $('sim-updated').textContent=`更新 ${time(simData.updated_at)} UTC+7`;statusPill($('okx-status'),simData);
- $('okx-metrics').innerHTML=`<div class="history-metrics">${[['权益 USDT',num(t.equity)],['累计收益',`${signed(t.ret)}%`,tone(t.ret)],['今日盈亏',Number.isFinite(t.day)?`${signed(t.day)} USDT`:'—',tone(t.day)],
-   ['可用 USDT',num(Number(simData.available))],['持仓',`${t.positions}`],['已平仓',`${t.trades} 笔`]].map(([k,v,c=''])=>`<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('')}</div>`;
- $('okx-start').textContent=`起始 ${num(okxStart(simData))} USDT`;
- $('okx-curve').innerHTML=okxCurveSVG(simData);
- renderOkxPositions('okx-positions',true);$('okx-pos-count').textContent=simData.positions.length;
- $('okx-actions').innerHTML=okxActionsMarkup(simData,30,{kind:'trades'});$('okx-log').innerHTML=okxActionsMarkup(simData,30,{kind:'system'});
+ setText($('sim-updated'),`更新 ${time(simData.updated_at)} UTC+7`);statusPill($('okx-status'),simData);
+ setHTML($('okx-metrics'),`<div class="history-metrics">${[['权益 USDT',num(t.equity)],['累计收益',`${signed(t.ret)}%`,tone(t.ret)],['今日盈亏',Number.isFinite(t.day)?`${signed(t.day)} USDT`:'—',tone(t.day)],
+   ['可用 USDT',num(Number(simData.available))],['持仓',`${t.positions}`],['已平仓',`${t.trades} 笔`]].map(([k,v,c=''])=>`<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('')}</div>`);
+ setText($('okx-start'),`起始 ${num(okxStart(simData))} USDT`);
+ setHTML($('okx-curve'),okxCurveSVG(simData));
+ renderOkxPositions('okx-positions',true);setText($('okx-pos-count'),String(simData.positions.length));
+ setHTML($('okx-actions'),okxActionsMarkup(simData,30,{kind:'trades'}));setHTML($('okx-log'),okxActionsMarkup(simData,30,{kind:'system'}));
 }
 document.addEventListener('visibilitychange',()=>{
  if(document.hidden){quoteStream?.stop();candleStream?.stop();quoteStreamKey='';candleStreamKey='';syncOkxMarks();}
