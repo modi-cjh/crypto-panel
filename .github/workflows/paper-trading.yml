@@ -1,6 +1,6 @@
-# Learning-only paper trading: every hour, replay newly closed OKX 1H candles through two rule sets
-# (tools/paper_trader.py) and commit the results to the separate `paper-data` branch.
-# Public market data only; no API keys and no orders. master and the dashboard are untouched.
+# Self-evolving strategies on real OKX candles (tools/evolve): each run evolves 5 generations, keeps the
+# out-of-sample-qualified champion paper-trading with the backtest engine, and mirrors its positions to OKX demo
+# trading (simulated funds; tools/okx_demo_trader.py). Results are committed to the separate `paper-data` branch.
 name: Paper trading
 
 on:
@@ -11,13 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       reset:
-        description: 'Delete all paper-account data and start over'
+        description: 'Restart evolution from a fresh random population (keeps cached candles)'
         type: boolean
         default: false
-      backfill_days:
-        description: 'Start fresh accounts this many days ago and replay to now (0-90)'
-        type: string
-        default: '0'
       okx_demo:
         description: 'OKX demo mirror: run (default) / dry-run (log only) / pause / resume / flatten (close all and pause) / follow-current (also open paper positions older than 2h at the current price)'
         type: choice
@@ -53,15 +49,15 @@ jobs:
             git -C data remote add origin "$remote"
           fi
 
-      - name: Run the paper trader
+      # Self-evolving strategies (tools/evolve): 5 generations per run on real OKX 1H candles, then the qualified
+      # champion paper-trades with the same execution engine as the backtests; its positions go to signals.json.
+      - name: Evolve strategies and paper-trade the champion
         env:
           RESET: ${{ inputs.reset }}
-          BACKFILL: ${{ inputs.backfill_days }}
         run: |
-          args=(--data data)
+          args=(--data data --generations 5)
           if [ "$RESET" = "true" ]; then args+=(--reset); fi
-          if [[ "$BACKFILL" =~ ^[0-9]+$ ]] && [ "$BACKFILL" -gt 0 ]; then args+=(--backfill-days "$BACKFILL"); fi
-          python3 code/tools/paper_trader.py "${args[@]}"
+          python3 code/tools/evolve/run.py "${args[@]}"
 
       # Mirrors the paper account onto OKX demo trading (simulated funds only). Skips itself when the
       # OKX_* secrets are absent; a failure here never blocks committing the paper results.

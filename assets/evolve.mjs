@@ -1,0 +1,166 @@
+// 策略进化 page: renders paper-data/evolve/dashboard.json written by tools/evolve/run.py. Pure functions (unit-tested).
+export const EVOLVE_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/evolve/dashboard.json';
+export const SPECIES_COLORS = { momentum: '#2f6fb0', mean_revert: '#7b4bd1', vol_breakout: '#d98200', trend: '#1f9d63' };
+const SPECIES_ORDER = ['momentum', 'mean_revert', 'vol_breakout', 'trend'];
+const finite = Number.isFinite;
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const fmt = (v, d = 2) => finite(v) ? v.toLocaleString('zh-CN', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
+const signed = (v, d = 2) => finite(v) ? (v > 0 ? '+' : '') + fmt(v, d) : '—';
+const tone = v => finite(v) ? v >= 0 ? 'up' : 'down' : '';
+const clock = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Bangkok', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+const day = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' });
+const time = t => finite(typeof t === 'number' ? t : Date.parse(t)) ? clock.format(typeof t === 'number' ? t : Date.parse(t)) : '—';
+const date = t => finite(Date.parse(t)) ? day.format(Date.parse(t)) : '—';
+const coin = inst => String(inst).split('-')[0];
+const GENE_NAMES = { species: '物种', direction: '方向', lookback: '回看窗口', threshold: '偏离阈值 σ', expand: '振幅倍数', fast: '快线 EMA', slow: '慢线 EMA',
+  stop_atr: '止损 ×ATR', target_rr: '止盈 R', max_hold: '最长持有 h', risk: '单笔风险', vol_min: '波动下限', vol_max: '波动上限' };
+const USED = { momentum: ['lookback'], mean_revert: ['lookback', 'threshold'], vol_breakout: ['expand'], trend: ['fast', 'slow'] };
+const HOW = { seed: '初始随机', immigrant: '随机移民', crossover: '交叉', mutation: '突变' };
+const REASON = { stop: '止损', target: '止盈', time: '到期', switch: '换冠军平仓' };
+
+export function validEvolve(d) {
+  return Boolean(d) && typeof d === 'object' && d.schema === 1 && finite(d.generation) && Array.isArray(d.nodes) && Array.isArray(d.history) &&
+    d.nodes.every(n => n && typeof n.id === 'string' && SPECIES_ORDER.includes(n.species) && n.genes && n.train && n.test);
+}
+export const speciesName = (d, sp) => d?.species_names?.[sp] || sp;
+
+// ---- evolution loop: observe → breed → test → out-of-sample gate → select → deploy
+const PHASES = [['观察波动', '读取市场波动率，决定变异强度'], ['交叉 · 突变', '锦标赛选择父母，交叉与突变产生后代'], ['训练集回测', '前 70% 数据计算适应度'],
+  ['样本外检验', '后 30% 没见过的数据：收益、回撤、交易次数'], ['选择淘汰', '精英保留，其余被新一代取代'], ['部署冠军', '合格者中训练适应度最高的接管纸面交易']];
+export function loopSVG(d) {
+  const cx = 160, cy = 160, r = 112;
+  const pts = PHASES.map((_, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / PHASES.length; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; });
+  const v = d.volatility || {};
+  return `<svg class="evo-loop" viewBox="0 0 320 320" role="img" aria-label="进化循环：${PHASES.map(p => p[0]).join('、')}">` +
+    `<circle cx="${cx}" cy="${cy}" r="${r}" class="evo-ring"/><circle cx="${cx}" cy="${cy}" r="${r}" class="evo-ring-run"/>` +
+    pts.map(([x, y], i) => `<g class="evo-phase"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9"/><text x="${x.toFixed(1)}" y="${(y + (y > cy ? 25 : -15)).toFixed(1)}" text-anchor="middle">${PHASES[i][0]}</text><title>${PHASES[i][1]}</title></g>`).join('') +
+    `<text x="${cx}" y="${cy - 22}" text-anchor="middle" class="evo-loop-cap">第</text><text x="${cx}" y="${cy + 14}" text-anchor="middle" class="evo-loop-gen">${d.generation}</text>` +
+    `<text x="${cx}" y="${cy + 38}" text-anchor="middle" class="evo-loop-cap">代 · 波动${esc(v.label || '—')}</text></svg>`;
+}
+
+export function statsMarkup(d) {
+  const h = d.history, last = h.at(-1), ref = h.length > 10 ? h.at(-11) : h[0];
+  const delta = last && ref && ref.best ? (last.best - ref.best) / Math.abs(ref.best) * 100 : null;
+  const v = d.volatility || {};
+  return `<div class="history-metrics evo-stats">${[
+    ['种群', `${d.stats.population}`], ['每代新生', `${d.stats.offspring}`], ['精英保留', `${d.stats.elites}`],
+    ['累计出生', `${fmt(d.stats.born, 0)}`], ['累计淘汰', `${fmt(d.stats.killed, 0)}`], ['本代样本外合格', `${last ? last.qualified : '—'} / ${d.stats.population}`],
+    ['最佳适应度', last ? fmt(last.best, 3) : '—'], ['近 10 代适应度变化', delta === null ? '—' : `${signed(delta, 1)}%`, tone(delta)],
+    ['市场波动', `${esc(v.label || '—')} · ${fmt(v.market, 2)}×`], ['变异率', finite(v.mutation_rate) ? `${Math.round(v.mutation_rate * 100)}%` : '—']]
+    .map(([k, val, c = '']) => `<div><span>${k}</span><strong class="${c}">${val}</strong></div>`).join('')}</div>`;
+}
+
+// ---- fitness by generation: best and population mean
+export function fitnessSVG(history) {
+  if (!history.length) return '<p class="empty">等待第一代</p>';
+  const W = 680, H = 220, L = 54, R = 12, T = 14, B = 30;
+  const xs = history.map(r => r.gen), g0 = xs[0], g1 = Math.max(xs.at(-1), g0 + 1);
+  const vals = history.flatMap(r => [r.best, r.mean]), lo = Math.min(0, ...vals), hi = Math.max(...vals, lo + .5);
+  const x = g => L + (g - g0) / (g1 - g0) * (W - L - R), y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const line = k => history.map(r => `${x(r.gen).toFixed(1)},${y(r[k]).toFixed(1)}`).join(' ');
+  const grid = [hi, (hi + lo) / 2, lo].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="equity-grid"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt(v, 2)}</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" class="evo-fitness" role="img" aria-label="每代最佳与平均适应度">${grid}` +
+    `<polyline points="${line('mean')}" class="evo-mean"/><polyline points="${line('best')}" class="evo-best"/>` +
+    `<text x="${L}" y="${H - 8}">第 ${g0} 代</text><text x="${W - R}" y="${H - 8}" text-anchor="end">第 ${history.at(-1).gen} 代</text></svg>` +
+    `<div class="sim-legend"><span><i style="background:#06727d"></i>最佳</span><span><i style="background:#9aa4b2"></i>种群平均</span></div>`;
+}
+
+// ---- gene pool: x = generation born, y = species band (+ stable jitter), edges = parent → child
+const hash = s => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0) / 4294967295; };
+export function graphLayout(d, W = 1000, H = 520) {
+  const nodes = d.nodes, gens = nodes.map(n => n.born), g0 = Math.min(...gens), g1 = Math.max(...gens, g0 + 1);
+  const band = (H - 60) / SPECIES_ORDER.length, pos = {};
+  const fits = nodes.map(n => n.fitness).sort((a, b) => a - b), rank = f => fits.length > 1 ? fits.indexOf(f) / (fits.length - 1) : .5;
+  for (const n of nodes) {
+    const b = SPECIES_ORDER.indexOf(n.species);
+    pos[n.id] = { x: 50 + (n.born - g0) / (g1 - g0) * (W - 90) + (hash(n.id + 'x') - .5) * 14, y: 40 + b * band + 12 + hash(n.id) * (band - 24), r: 4 + rank(n.fitness) * 8 };
+  }
+  return pos;
+}
+export function graphSVG(d, selected) {
+  const W = 1000, H = 520, pos = graphLayout(d, W, H), pop = new Set(d.population || []), hall = new Set(d.hall || []), champ = d.champion?.id;
+  const byId = Object.fromEntries(d.nodes.map(n => [n.id, n]));
+  const edges = d.nodes.flatMap(n => n.parents.filter(p => pos[p]).map(p => {
+    const a = pos[p], b = pos[n.id], hot = selected && (n.id === selected || p === selected);
+    return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" class="evo-edge${hot ? ' hot' : ''}${n.how === 'crossover' ? ' cross' : ''}"/>`;
+  })).join('');
+  const bands = SPECIES_ORDER.map((sp, i) => { const y = 40 + i * (H - 60) / SPECIES_ORDER.length;
+    return `<text x="8" y="${(y + 14).toFixed(1)}" class="evo-band" fill="${SPECIES_COLORS[sp]}">${esc(speciesName(d, sp))} · ${d.nodes.filter(n => n.species === sp && pop.has(n.id)).length}</text>`; }).join('');
+  const order = [...d.nodes].sort((a, b) => (pop.has(a.id) - pop.has(b.id)) || a.fitness - b.fitness);
+  const dots = order.map(n => {
+    const p = pos[n.id], cls = ['evo-node', pop.has(n.id) ? 'alive' : 'dead', n.qualified ? 'ok' : '', hall.has(n.id) ? 'hall' : '', n.id === champ ? 'champ' : '', n.id === selected ? 'sel' : ''].filter(Boolean).join(' ');
+    const label = `${speciesName(d, n.species)} ${n.id} · 第 ${n.born} 代 · 适应度 ${fmt(n.fitness, 2)} · 样本外 ${signed(n.test.ret, 1)}%${n.qualified ? ' · 合格' : ''}${pop.has(n.id) ? '' : ` · 第 ${n.died ?? '—'} 代淘汰`}`;
+    return `<g class="${cls}" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(label)}"><circle class="hit" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 9).toFixed(1)}"/>` +
+      `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.r.toFixed(1)}" fill="${SPECIES_COLORS[n.species]}"/>${n.id === champ ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 5).toFixed(1)}" class="champ-ring"/>` : ''}<title>${esc(label)}</title></g>`;
+  }).join('');
+  const g0 = Math.min(...d.nodes.map(n => n.born)), g1 = Math.max(...d.nodes.map(n => n.born));
+  return `<svg viewBox="0 0 ${W} ${H}" class="evo-graph" role="group" aria-label="基因池：每个点是一个策略，点击查看基因与回测">${bands}<g>${edges}</g><g>${dots}</g>` +
+    `<text x="50" y="${H - 6}" class="evo-axis">第 ${g0} 代</text><text x="${W - 40}" y="${H - 6}" text-anchor="end" class="evo-axis">第 ${g1} 代 →</text></svg>`;
+}
+
+// ---- small equity curve: each series normalised to its own start (100 = break-even), x spread over its own span
+export function miniCurve(curves) {
+  const series = curves.filter(c => c.pts && c.pts.length > 1 && c.pts[0][1] > 0).map(c => ({ ...c, norm: c.pts.map(p => p[1] / c.pts[0][1] * 100) }));
+  if (!series.length) return '<p class="empty">暂无曲线</p>';
+  const W = 320, H = 110, all = series.flatMap(c => c.norm);
+  let lo = Math.min(...all, 100), hi = Math.max(...all, 100);
+  if (hi - lo < 1) { lo -= .5; hi += .5; }
+  const y = v => (6 + (hi - v) / (hi - lo) * (H - 12)).toFixed(1);
+  const paths = series.map(c => `<polyline points="${c.norm.map((v, i) => `${(6 + i / (c.norm.length - 1) * (W - 12)).toFixed(1)},${y(v)}`).join(' ')}" class="${c.cls}"/>`);
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="evo-mini" role="img" aria-label="${series.map(c => `${c.label} ${signed(c.norm.at(-1) - 100, 1)}%`).join('、')}">` +
+    `<line x1="6" x2="${W - 6}" y1="${y(100)}" y2="${y(100)}" class="sim-base"/>${paths.join('')}</svg>`;
+}
+
+const metricRow = (label, m) => `<tr><th>${label}</th><td class="${tone(m.ret)}">${signed(m.ret, 2)}%</td><td>${fmt(m.max_dd, 2)}%</td><td>${m.trades}</td><td>${fmt(m.win_rate, 1)}%</td><td>${m.profit_factor == null ? '—' : fmt(m.profit_factor, 2)}</td></tr>`;
+
+export function detailMarkup(d, id) {
+  const n = d.nodes.find(x => x.id === id) || (d.champion?.id === id ? d.champion : null);
+  if (!n) return '<p class="empty">点击基因池里的任意节点，查看它的基因与回测</p>';
+  const pop = new Set(d.population || []), champ = d.champion?.id === n.id;
+  const status = champ ? '<span class="pill okx-pill up">冠军 · 纸面交易中</span>' : pop.has(n.id) ? '<span class="pill">存活</span>' : `<span class="pill muted">第 ${n.died ?? '—'} 代淘汰</span>`;
+  const gate = n.qualified ? '<span class="pill okx-pill up">样本外合格</span>' : '<span class="pill okx-pill down">样本外不合格</span>';
+  const used = new Set(['species', 'direction', 'stop_atr', 'target_rr', 'max_hold', 'risk', 'vol_min', 'vol_max', ...(USED[n.species] || [])]);
+  const bounds = d.gene_bounds || {};
+  const genes = Object.keys(GENE_NAMES).filter(k => k in n.genes).map(k => {
+    const v = n.genes[k], b = bounds[k];
+    const shown = k === 'species' ? speciesName(d, v) : k === 'direction' ? { both: '多空', long: '只做多', short: '只做空' }[v] : k === 'risk' ? `${fmt(v * 100, 2)}%` : k === 'target_rr' && !v ? '无' : esc(v);
+    const bar = Array.isArray(b) && b.length === 2 && finite(b[0]) ? `<i class="evo-gbar"><b style="width:${Math.max(2, Math.min(100, (v - b[0]) / (b[1] - b[0]) * 100)).toFixed(0)}%"></b></i>` : '';
+    return `<tr class="${used.has(k) ? '' : 'inert'}"><th>${GENE_NAMES[k]}</th><td>${shown}</td><td>${bar}</td></tr>`;
+  }).join('');
+  const parents = n.parents.length ? n.parents.map(p => d.nodes.some(x => x.id === p) ? `<button type="button" class="pill" data-node="${esc(p)}">${esc(p)}</button>` : `<span class="pill muted">${esc(p)}</span>`).join(' ') : '无（随机生成）';
+  const curves = [{ pts: n.train_curve, cls: 'evo-train', label: '训练集' }, { pts: n.test_curve, cls: 'evo-test', label: '样本外' }].filter(c => c.pts && c.pts.length);
+  return `<div class="evo-detail-head"><h3><i class="evo-dot" style="background:${SPECIES_COLORS[n.species]}"></i>${esc(speciesName(d, n.species))} · ${esc(n.id)}</h3>${status}${gate}</div>` +
+    `<p class="evo-summary">${esc(n.summary || '')}</p>` +
+    `<p class="muted evo-origin">第 ${n.born} 代出生 · ${HOW[n.how] || esc(n.how)} · 父代 ${parents} · 训练适应度 <b>${fmt(n.fitness, 3)}</b></p>` +
+    `<div class="table-scroll"><table class="evo-metrics"><thead><tr><th></th><th>收益</th><th>最大回撤</th><th>交易次数</th><th>胜率</th><th>盈亏比</th></tr></thead><tbody>${metricRow('训练集 70%', n.train)}${metricRow('样本外 30%', n.test)}</tbody></table></div>` +
+    `${miniCurve(curves)}<div class="sim-legend">${curves.map(c => `<span><i class="${c.cls}"></i>${c.label}</span>`).join('')}</div>` +
+    `<h4>基因</h4><table class="evo-genes"><tbody>${genes}</tbody></table><p class="muted evo-note">灰色基因当前物种用不到，但会遗传给后代。</p>`;
+}
+
+export function paperMarkup(d) {
+  const p = d.paper, c = d.champion;
+  if (!p || !c) return '<p class="empty">还没有样本外合格的策略，纸面交易等待冠军出现</p>';
+  const pos = (p.positions || []).map(x => `<li><b class="${x.side === 1 ? 'up' : 'down'}">${x.side === 1 ? '多' : '空'}</b> ${esc(coin(x.inst))} @ ${fmt(x.entry, 4)} · 止损 ${fmt(x.stop, 4)}${x.target ? ` · 止盈 ${fmt(x.target, 4)}` : ''}<time>${time(x.opened)}</time></li>`).join('');
+  const pend = (p.pending || []).map(x => `<li><b class="${x.side === 1 ? 'up' : 'down'}">${x.side === 1 ? '多' : '空'}</b> ${esc(coin(x.inst))} · 下一根 K 线开盘成交</li>`).join('');
+  const trades = (p.trades || []).slice(0, 12).map(t => `<li><span><b class="${t.side === 1 ? 'up' : 'down'}">${t.side === 1 ? '多' : '空'}</b> ${esc(coin(t.inst))} · ${REASON[t.reason] || esc(t.reason)}</span><span class="${tone(t.pnl)}">${signed(t.pnl)} U</span><time>${time(t.closed)}</time></li>`).join('');
+  const segs = (p.segments || []).slice().reverse().slice(0, 6).map(s => `<li><span>${esc(s.champion)} · ${esc(speciesName(d, s.species))}</span><span>${time(s.from_ts)} 起${s.to_ts ? ` · ${time(s.to_ts)} 止` : ' · 当前'}</span></li>`).join('');
+  return `<div class="history-metrics evo-stats">${[['纸面权益 USDT', fmt(p.equity)], ['收益', `${signed(p.ret, 2)}%`, tone(p.ret)], ['持仓', `${(p.positions || []).length}`], ['已平仓', `${(p.trades || []).length}`]]
+      .map(([k, v, cl = '']) => `<div><span>${k}</span><strong class="${cl}">${v}</strong></div>`).join('')}</div>` +
+    `${miniCurve([{ pts: p.curve, cls: 'evo-test', label: '纸面' }])}` +
+    `<h4>当前冠军 · ${esc(c.id)}</h4><p class="evo-summary">${esc(c.summary)}</p>` +
+    `<h4>持仓</h4><ul class="evo-list">${pos + pend || '<li class="empty">空仓，等待冠军的信号</li>'}</ul>` +
+    `<h4>纸面成交</h4><ul class="evo-list">${trades || '<li class="empty">还没有平仓</li>'}</ul>` +
+    `<h4>冠军更替</h4><ul class="evo-list">${segs}</ul>`;
+}
+
+export function homeCardMarkup(d) {
+  const c = d.champion, last = d.history.at(-1);
+  return `<span class="evo-home-gen">第 ${d.generation} 代</span><span class="evo-home-main">${c ? `冠军 ${esc(speciesName(d, c.species))} · 样本外 <b class="${tone(c.test.ret)}">${signed(c.test.ret, 1)}%</b> · 回撤 ${fmt(c.test.max_dd, 1)}%` : '等待第一个样本外合格的策略'}</span>` +
+    `<span class="muted">本代合格 ${last ? last.qualified : '—'} / ${d.stats.population} · 纸面 ${d.paper ? signed(d.paper.ret, 2) + '%' : '—'} · 查看进化 →</span>`;
+}
+
+export function dataCaption(d) {
+  const x = d.data, g = d.gate;
+  return `数据：${x.instruments.map(coin).join(' / ')} · 1 小时 K 线 · 共 ${fmt(x.bars, 0)} 根。训练集 ${date(x.train_from)} – ${date(x.train_to)}（70%），样本外 ${date(x.test_from)} – ${date(x.test_to)}（30%，策略进化时从没见过）。` +
+    `样本外合格条件：收益 > ${g.min_ret}%、最大回撤 < ${g.max_dd}%、交易 ≥ ${g.min_trades} 次。回测与纸面交易共用同一套执行逻辑（下一根开盘成交、手续费 0.05%、滑点 0.02%、同根 K 线同时触及止损与止盈按止损计）。更新 ${time(d.updated_at)} UTC+7`;
+}

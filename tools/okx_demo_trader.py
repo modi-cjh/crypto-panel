@@ -44,7 +44,17 @@ OPEN_WINDOW = 2 * 3600_000        # only mirror paper entries that are at most t
 MIN_STOP_DIST = .002              # skip entries whose stop is already too close to the current price
 AMEND_TOLERANCE = .001            # amend the exchange stop when the paper stop moved more than 0.1%
 UTC7 = timezone(timedelta(hours=7))
-TAG = {'mean_reversion': 'mr', 'breakout_long': 'bl', 'breakout_daily': 'bd'}
+TAG = {'mean_reversion': 'mr', 'breakout_long': 'bl', 'breakout_daily': 'bd', 'evolved': 'ev'}
+EVOLVED_INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
+ACTIVE_PROFILE = None
+
+
+def configure_evolved():
+    """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply."""
+    global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE
+    INSTRUMENTS, RISK, SAME_SIDE_CAP = list(EVOLVED_INSTRUMENTS), .01, .05
+    ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, same_side_cap=SAME_SIDE_CAP)
+    return ACTIVE_PROFILE
 
 
 def configure_volume_test(now=None, universe=None):
@@ -453,7 +463,7 @@ class Mirror:
         return dict(updated_at=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), equity=self.equity, available=self.available,
                     day_start=self.s.get('day_start'), paused=self.s['paused'], halted=self.s['halted'], dry_run=self.dry, positions=pos,
                     stop_control=self.s.get('stop_control'),
-                    execution_profile=dict(volume_profile(self.now), instruments=list(INSTRUMENTS), risk=RISK, same_side_cap=SAME_SIDE_CAP),
+                    execution_profile=dict(ACTIVE_PROFILE or volume_profile(self.now), instruments=list(INSTRUMENTS), risk=RISK, same_side_cap=SAME_SIDE_CAP),
                     open_mirrors=[dict(m, key=k) for k, m in self.s['mirrored'].items() if m['status'] == 'open'],
                     start_equity=self.s.get('start_equity'), history=self.curve(),
                     closed_trades=sum(1 for m in self.s['mirrored'].values() if m['status'] == 'done'))
@@ -482,12 +492,18 @@ def main():
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
     if not all(creds):
         print('未配置 OKX 模拟交易密钥，跳过跟单。'); return
-    paper_path = args.data / 'combined' / 'state.json'
-    if not paper_path.exists():
-        print('没有合并模拟盘状态，跳过跟单。'); return
-    paper = json.loads(paper_path.read_text())
-    applied = configure_volume_test(universe=paper.get('universe') if paper.get('profile_mode') == 'aggressive' else None)
-    print(describe_volume(applied))
+    # Signal source: the evolution champion's paper positions when present (tools/evolve), else the retired strategy engine.
+    evolved_path, paper_path = args.data / 'evolve' / 'signals.json', args.data / 'combined' / 'state.json'
+    if evolved_path.exists():
+        paper = {'positions': json.loads(evolved_path.read_text()).get('positions', {}), 'source': 'evolve'}
+        applied = configure_evolved()
+        print(f"跟随进化冠军 · 每笔风险 {RISK:.0%} · {len(INSTRUMENTS)} 币")
+    else:
+        if not paper_path.exists():
+            print('没有策略信号，跳过跟单。'); return
+        paper = json.loads(paper_path.read_text())
+        applied = configure_volume_test(universe=paper.get('universe') if paper.get('profile_mode') == 'aggressive' else None)
+        print(describe_volume(applied))
     if args.action in ('run', 'resume', 'follow-current', 'dry-run') and applied['mode'] == 'aggressive' and len(INSTRUMENTS) != applied['scan_limit']:
         raise SystemExit('Aggressive execution requires the confirmed 100-contract signal universe; no orders submitted')
     out = args.data / 'okx_demo'; out.mkdir(parents=True, exist_ok=True)

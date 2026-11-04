@@ -22,7 +22,7 @@ const time = t => finite(typeof t === 'number' ? t : Date.parse(t)) ? clock.form
 // Prices at exchange precision: about five significant digits (BTC 70,000.1 · XRP 1.2595 · DOGE 0.18123), no padding zeros.
 const px = v => finite(v) ? v.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: Math.min(8, Math.max(2, 4 - Math.floor(Math.log10(Math.abs(v) || 1)))) }) : '—';
 const coin = inst => String(inst).split('-')[0];
-const STRATEGIES = { mean_reversion: '均值回归', breakout_long: '趋势突破只做多', breakout_daily: '日线趋势突破', execution_test: '模拟成交测试' };
+const STRATEGIES = { mean_reversion: '均值回归', breakout_long: '趋势突破只做多', breakout_daily: '日线趋势突破', execution_test: '模拟成交测试' , evolved: '进化冠军' };
 const ACTIONS = { open: '开仓', close: '平仓', amend_stop: '上移止损', closed_on_exchange: '交易所止损 / 止盈触发', skip: '跳过', daily_halt: '日亏停手',
   pause: '暂停跟单', resume: '恢复跟单', follow_current: '手动跟进当前持仓', flatten: '全部平仓并暂停', error: '出错' };
 const SKIPS = { paper_entry_too_old: '信号已超过 2 小时', stop_too_close_or_crossed: '价格已接近或越过止损', target_already_reached: '价格已到止盈',

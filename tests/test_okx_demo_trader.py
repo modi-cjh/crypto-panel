@@ -197,6 +197,17 @@ class MirrorTests(unittest.TestCase):
         m2, _ = run(fake, paper(), action='flatten')
         self.assertFalse(any(p[0] == '/api/v5/trade/close-position' for p in fake.posts))
 
+    def test_following_the_evolution_champion_uses_standard_risk_on_its_coins(self):
+        try:
+            p = odt.configure_evolved()
+            self.assertEqual((p['mode'], odt.RISK, odt.SAME_SIDE_CAP), ('evolved', .01, .05))
+            self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
+            fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved')}))
+            self.assertTrue(fake.posts[-1][1]['clOrdId'].startswith('evbtc'))
+            self.assertEqual(m.summary()['execution_profile']['mode'], 'evolved')
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
     def test_summary_carries_equity_curve_start_equity_and_contract_value(self):
         fake = FakeOKX(positions=[dict(instId='BTC-USDT-SWAP', posSide='long', pos='3', avgPx='70000', markPx='70100', upl='3', lever='5')])
         m, state = run(fake, paper())

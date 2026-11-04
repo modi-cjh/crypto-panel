@@ -4,7 +4,7 @@ import { runtimeConfig } from './runtime.mjs';
 export function executionProfileText(data, now = Date.now()) {
   const p = data?.execution_profile;
   if (!p || !Number.isFinite(p.risk) || !Array.isArray(p.instruments)) return '策略档位：等待任务回执确认';
-  const names = {aggressive:'激进模拟档',volume_test:'增量测试档',standard:'标准模拟档'};
+  const names = {aggressive:'激进模拟档',volume_test:'增量测试档',standard:'标准模拟档',evolved:'进化冠军'};
   const name = names[p.mode] || '模拟策略';
   if (p.active && Number.isFinite(Date.parse(p.until)) && now >= Date.parse(p.until)) return `${name}窗口已结束，等待任务回执确认恢复标准档。`;
   const until = p.active && Number.isFinite(Date.parse(p.until))

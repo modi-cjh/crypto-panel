@@ -269,6 +269,15 @@
 ### PR #47 AGENTS.md：给编码助手的工作说明
 - 新增 `AGENTS.md`（Codex 等助手开工时自动读取）：安全红线（只做模拟交易、密钥只放 Secrets、不动人工仓位、常驻服务与定时任务不能同时执行）、协作流程（分支 + PR、不强推 master、不改 paper-data、每次改动记 CHANGELOG）、目录与数据流、代码约定、测试命令、真实踩过的坑。
 
+
+### PR #48 自我进化交易策略（取代全部固定策略）
+- 放弃原有三套策略（均值回归、趋势突破、日线突破）及激进档启动任务（删除 `start-aggressive-demo.yml`）。新增 `tools/evolve/`：在真实 OKX 1H K 线（5 个主流币、一年）上进化策略。
+- 三层：数据（K 线缓存、70/30 时间切分、波动观察）、引擎（基因：4 个物种 + 13 个参数；每代观察波动 → 锦标赛选择 / 交叉 / 突变 / 移民 → 训练适应度 → 样本外闸门 → 精英保留；合格者中训练适应度最高者接管纸面交易）、界面（“策略进化”页）。
+- 同源执行：回测与纸面交易共用 `execution.simulate()`；纸面账户按冠军分段重放，换冠军时按当根收盘平仓、资金延续。冠军持仓（及下一根开盘待成交的信号）写入 `evolve/signals.json`，OKX 模拟盘跟单改为跟随它（标准 1% 风险、5 币，不再受旧档位影响）。
+- `paper-trading.yml` 每次运行进化 5 代（实测：首次回补一年数据约 2.5 分钟，之后约 12 秒）。
+- 看板新增“策略进化”页：进化循环（当前代数、波动状态）、统计（种群、新生、淘汰、合格数、适应度变化、变异率）、适应度曲线、基因池谱系图（物种分带、大小 = 适应度、连线 = 父子、冠军光环，可点击 / 键盘选择）、节点详情（基因与取值范围、训练 vs 样本外：收益、回撤、交易次数、胜率、盈亏比、资金曲线，父代可跳转）、冠军纸面交易；首页进化卡片。
+- 测试：`tests/test_evolve.py`（执行规则、无未来函数、回测与纸面同源一致、基因边界、精英与谱系、闸门与换冠军、修剪、数据回补与增量、端到端）、`tests/evolve.test.mjs`、`tests/evolve_browser.cjs`，夹具 `tests/fixtures/evolve-dashboard.json` 由引擎生成。
+
 ---
 
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
@@ -297,6 +306,7 @@ PANEL_URL=http://127.0.0.1:8008/ node tests/market_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/okx_rest_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/float_browser.cjs
 PANEL_URL=http://127.0.0.1:8008/ node tests/app_browser.cjs
+PANEL_URL=http://127.0.0.1:8008/ node tests/evolve_browser.cjs
 ```
 
 已知情况：`tests/team_browser.cjs`、`tests/browser_smoke.cjs` 在基线 `cc25dc5` 上就已失败（仍查找 v3 删除的角色卡），本次改动未改变其结果。

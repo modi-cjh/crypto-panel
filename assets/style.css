@@ -284,3 +284,51 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
 .pip-info strong{font-size:22px;letter-spacing:-.3px}.pip-info span{font-size:12px;color:var(--muted)}
 .pip-info[data-tone=up] strong{color:var(--green)}.pip-info[data-tone=down] strong{color:var(--red)}
 #mascot.in-pip.docked .companion-bubble:not([hidden]){display:block}#mascot.in-pip.docked .m-ticket:not([hidden]){display:flex}
+/* ---- 策略进化 page ---- */
+.evo-top{display:grid;grid-template-columns:minmax(220px,320px) minmax(0,1fr);gap:16px;align-items:center;padding:16px}
+@media(max-width:760px){.evo-top{grid-template-columns:1fr;padding:12px}}
+.evo-loop{width:100%;max-width:320px;display:block;margin:auto;font-size:12px}
+.evo-ring{fill:none;stroke:var(--line);stroke-width:2}.evo-ring-run{fill:none;stroke:#06727d;stroke-width:3;stroke-dasharray:44 660;stroke-linecap:round;transform-origin:160px 160px;animation:evo-spin 6s linear infinite}
+@keyframes evo-spin{to{transform:rotate(360deg)}}
+.evo-phase circle{fill:var(--panel,#fff);stroke:#06727d;stroke-width:2.5}.evo-phase text{fill:var(--text);font-size:12px;font-weight:600}
+.evo-loop-gen{font-size:44px;font-weight:700;fill:var(--text);font-variant-numeric:tabular-nums}.evo-loop-cap{font-size:12px;fill:var(--muted)}
+.evo-stats{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+.evo-fitness{width:100%;height:auto;font-size:12px;fill:var(--muted)}.evo-best{fill:none;stroke:#06727d;stroke-width:2.5;vector-effect:non-scaling-stroke}.evo-mean{fill:none;stroke:#9aa4b2;stroke-width:1.5;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
+#evolve-fitness{padding:0 16px 12px}
+.evo-pool-body{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:14px;padding:0 16px 16px}
+@media(max-width:900px){.evo-pool-body{grid-template-columns:1fr}}
+.evo-graph-box{overflow-x:auto;overscroll-behavior-x:contain;border:1px solid var(--line);border-radius:12px;background:#fbfcfd}
+.evo-graph{display:block;min-width:720px;width:100%;height:auto}
+.evo-band{font-size:13px;font-weight:600}.evo-axis{font-size:12px;fill:var(--muted)}
+.evo-edge{stroke:#9aa4b2;stroke-width:.8;opacity:.35}.evo-edge.cross{stroke-dasharray:3 3}.evo-edge.hot{stroke:#06727d;stroke-width:2;opacity:1}
+.evo-node{cursor:pointer;outline:none}.evo-node .hit{fill:transparent}
+.evo-node.dead circle:not(.hit){opacity:.28}.evo-node.alive circle:not(.hit):not(.champ-ring){stroke:#fff;stroke-width:1.5}
+.evo-node.ok.alive circle:not(.hit):not(.champ-ring){stroke:#10233a;stroke-width:1.5}
+.evo-node .champ-ring{fill:none;stroke:#f5a524;stroke-width:3;animation:evo-pulse 2s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes evo-pulse{50%{transform:scale(1.25);opacity:.6}}
+.evo-node.sel circle:not(.hit):not(.champ-ring),.evo-node:focus-visible circle:not(.hit):not(.champ-ring){stroke:#10233a;stroke-width:3}
+.evo-detail{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--panel,#fff);font-size:13px;min-width:0}
+.evo-detail-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.evo-detail-head h3{margin:0 6px 0 0;font-size:15px;display:flex;align-items:center;gap:6px}
+.evo-dot{display:inline-block;width:10px;height:10px;border-radius:50%}
+.evo-summary{margin:8px 0 4px;line-height:1.6}.evo-origin{margin:0 0 8px;font-size:12px;line-height:1.8}.evo-origin .pill{font:inherit;cursor:pointer}
+.evo-metrics{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}.evo-metrics th,.evo-metrics td{padding:6px 4px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}.evo-metrics th:first-child{text-align:left}.evo-metrics thead th{color:var(--muted);font-weight:500}
+.evo-mini{width:100%;height:auto;margin-top:8px}.evo-mini .sim-base{stroke:#c9d1da;stroke-dasharray:3 3}.evo-train{fill:none;stroke:#9aa4b2;stroke-width:1.8}.evo-test{fill:none;stroke:#06727d;stroke-width:2.2}
+.sim-legend i.evo-train{background:#9aa4b2}.sim-legend i.evo-test{background:#06727d}
+.evo-detail h4,#evolve-paper h4{margin:14px 0 6px;font-size:13px}
+.evo-genes{width:100%;border-collapse:collapse;font-size:12px}.evo-genes th,.evo-genes td{padding:4px 2px;border-top:1px solid var(--line);text-align:left}.evo-genes th{font-weight:500;color:var(--muted);width:38%}.evo-genes td:last-child{width:34%}
+.evo-genes tr.inert td,.evo-genes tr.inert th{opacity:.45}
+.evo-gbar{display:block;height:6px;border-radius:3px;background:#edf1f4;overflow:hidden}.evo-gbar b{display:block;height:100%;background:#06727d}
+.evo-note{font-size:11px;margin:6px 0 0}
+.evo-list{list-style:none;margin:0;padding:0;font-size:12.5px}.evo-list li{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}.evo-list li:first-child{border-top:0}.evo-list time{color:var(--muted);flex:none}
+.evo-home{display:flex;flex-direction:column;gap:3px;padding:14px 18px;text-decoration:none;color:var(--text);font-size:13px}
+.evo-home-gen{font-size:12px;font-weight:600;color:#06727d}.evo-home-main{font-size:14px}
+.still .evo-ring-run,.still .champ-ring{animation:none!important}
+.evo-fitness{max-height:260px}.evo-fitness text{font-size:12px}@media(max-width:760px){.evo-fitness text{font-size:20px}}
+.evo-mini{height:120px}.evo-mini polyline,.evo-mini line{vector-effect:non-scaling-stroke}
+#evolve-paper .evo-mini{height:150px}
+/* Five nav links + status on small phones: tighter gaps, and the link row scrolls instead of pushing the status off-screen. */
+@media(max-width:760px){.header nav{gap:14px;min-width:0;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}.header nav::-webkit-scrollbar{display:none}.header nav>a{flex:none;white-space:nowrap}.header nav .connection{flex:none;margin-left:auto}}
+@media(max-width:360px){.header nav{gap:10px}}
+@media(max-width:360px){.header nav{gap:8px}.header nav>a{font-size:13px}.header nav .connection{font-size:11px;gap:4px}}
+@media(max-width:340px){.header nav .connection #connection-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.header nav .connection{padding:6px 2px}}
+@media(max-width:360px){.header nav{gap:6px}.header nav>a{font-size:12.5px;letter-spacing:-.2px}}
