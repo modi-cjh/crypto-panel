@@ -231,3 +231,45 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
   #home-sim .okx-curve-head{padding:0 0 4px}
   .sim-curve svg{max-height:300px}
 }
+/* ---- Companion at work: trading screen while watching, magnifier while scanning, trade tickets ---- */
+.work{display:none}
+.m-host[data-work=watch] .work-monitor,.m-host[data-work=scan] .work-scan{display:inline}
+.m-host[data-acc~=paper] .work{display:none}
+.w-screen{fill:#10233a;stroke:#3a5674;stroke-width:1.5}.w-stand{stroke:#3a5674;stroke-width:2;stroke-linecap:round;fill:none}
+.w-c{fill:#5b7896;transform-box:fill-box;transform-origin:50% 100%}
+.m-host[data-tone=up] .w-c{fill:#2fbf7a}.m-host[data-tone=down] .w-c{fill:#ef5b6b}
+.m-host[data-work=watch] .w-c{animation:w-candle 2.4s ease-in-out infinite}
+.w-c2{animation-delay:-.6s!important}.w-c3{animation-delay:-1.2s!important}.w-c4{animation-delay:-1.8s!important}
+@keyframes w-candle{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.55)}}
+.m-host[data-work=watch] .m-eyes .m-blink{animation:w-look 5s ease-in-out infinite}
+@keyframes w-look{0%,55%,100%{transform:none}65%,90%{transform:translate(3px,2px)}}
+.work-scan circle{fill:#ffffffcc;stroke:#2a6f97;stroke-width:3}.work-scan path{stroke:#2a6f97;stroke-width:4;stroke-linecap:round}
+.m-host[data-work=scan] .work-scan{animation:w-scan 1.8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.m-host[data-work=scan] .m-eyes .m-blink{animation:w-sweep 1.8s ease-in-out infinite}
+.m-host[data-work=scan] .m-antenna{animation:w-ping 1.2s ease-in-out infinite}
+@keyframes w-scan{0%,100%{transform:translate(-4px,0) rotate(-8deg)}50%{transform:translate(4px,-2px) rotate(8deg)}}
+@keyframes w-sweep{0%,100%{transform:translateX(-3px)}50%{transform:translateX(3px)}}
+@keyframes w-ping{0%,100%{fill:var(--accent,#06727d)}50%{fill:#ffd166}}
+.m-host[data-reaction=trade] .m-arm-r{animation:w-press .5s ease-in-out 3;transform-box:fill-box;transform-origin:0 0}
+@keyframes w-press{0%,100%{transform:rotate(0)}50%{transform:rotate(-55deg)}}
+.m-host[data-reaction=trade] .m-float{animation:m-hop .5s ease-in-out 3}
+/* trade ticket above the head */
+.m-ticket{position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:1px;min-width:max-content;padding:6px 11px 5px;border-radius:12px;background:var(--panel,#fff);border:1.5px solid var(--line);box-shadow:0 8px 20px #12263a26;pointer-events:none;z-index:2;animation:w-ticket 3.2s cubic-bezier(.2,.9,.3,1.2) both}
+.m-ticket[hidden]{display:none}
+.m-ticket b{position:absolute;left:-9px;top:-9px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;color:#fff;background:#5b7896}
+.m-ticket strong{font-size:13px;line-height:1.3;white-space:nowrap;font-variant-numeric:tabular-nums}.m-ticket small{font-size:10px;color:var(--muted);white-space:nowrap}.m-ticket small:empty{display:none}
+.m-ticket[data-kind=open-long]{border-color:#9edcbc}.m-ticket[data-kind=open-long] b,.m-ticket[data-kind=close-win] b{background:var(--green)}.m-ticket[data-kind=open-long] strong,.m-ticket[data-kind=close-win] strong{color:var(--green)}
+.m-ticket[data-kind=open-short]{border-color:#f3b6bf}.m-ticket[data-kind=open-short] b,.m-ticket[data-kind=close-loss] b{background:var(--red)}.m-ticket[data-kind=open-short] strong,.m-ticket[data-kind=close-loss] strong{color:var(--red)}
+.m-ticket[data-kind=close-win]{border-color:#9edcbc}.m-ticket[data-kind=close-loss]{border-color:#f3b6bf}
+.m-ticket[data-kind=close-win]::after{content:'🪙 🪙 🪙';position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:12px;letter-spacing:3px;animation:w-coins 1.6s ease-out .2s both}
+@keyframes w-ticket{0%{opacity:0;transform:translate(-50%,10px) scale(.7)}12%{opacity:1;transform:translate(-50%,0) scale(1.06)}20%{transform:translate(-50%,0) scale(1)}85%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-8px)}}
+@keyframes w-coins{0%{opacity:0;transform:translate(-50%,8px)}30%{opacity:1}100%{opacity:0;transform:translate(-50%,-18px)}}
+#mascot[data-burst] .companion-bubble{display:none}
+#mascot.docked.peek .companion-bot{transform:none}#mascot.docked.peek .m-ticket{display:flex}
+#mascot.docked .m-ticket{display:none}
+#mascot[data-side=right] .m-ticket{left:auto;right:0;transform:none;animation-name:w-ticket-r}#mascot[data-side=left] .m-ticket{left:0;transform:none;animation-name:w-ticket-r}
+@keyframes w-ticket-r{0%{opacity:0;transform:translateY(10px) scale(.7)}12%{opacity:1;transform:none scale(1.06)}20%{transform:none}85%{opacity:1}100%{opacity:0;transform:translateY(-8px)}}
+.companion-doing{margin:0 0 10px;padding:10px 12px;border-radius:12px;background:#eef6f7;font-size:12px;line-height:1.6;color:var(--text)}
+.companion-doing b{display:block;font-size:13px;margin-bottom:2px;color:var(--accent,#06727d)}
+.companion-doing[data-work=scan]{background:#eef3fb}.companion-doing[data-work=paused],.companion-doing[data-work=offline]{background:#f4f4f5}
+.still .work *,.still .m-ticket,.still .m-ticket::after{animation:none!important}

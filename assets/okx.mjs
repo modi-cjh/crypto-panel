@@ -155,6 +155,13 @@ export function okxFeed(d, limit = 20) {
 }
 
 // Actions that appeared since the previous summary, oldest first, for toasts and the companion.
+// Raw actions that appeared since the previous summary, oldest first (for the companion's trade tickets).
+export function okxNewActions(prev, next) {
+  if (!prev || !next) return [];
+  const seen = new Set((prev.recent_actions || []).map(actionKey));
+  return (next.recent_actions || []).filter(a => !seen.has(actionKey(a))).reverse();
+}
+
 export function okxChanges(prev, next) {
   if (!prev || !next) return [];
   const seen = new Set((prev.recent_actions || []).map(actionKey));

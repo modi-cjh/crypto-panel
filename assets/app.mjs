@@ -4,11 +4,12 @@ import { runtimeConfig, refreshRuntimeHealth } from './runtime.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { HistoryPage, riskProgress } from './history.mjs';
-import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-quotes443';
+import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-quotes443';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261104-quotes443';
 import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
+import { workState, pnlMood, tradeBurst, positionReport, pnlComment } from './robot-work.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
 import config from '../config.js';
@@ -514,10 +515,23 @@ function updateCompanion(current=liveBalance(publicAccount,effectiveQuotes())){
     long:risk?.long,short:risk?.short,decision:rule?BIAS[rule.bias] || null:null,eventText,...simContext()});
 }
 // Once the OKX demo account has loaded, the companion follows it instead of the paused bot snapshot.
+// What the companion is doing (watching / scanning / waiting), its PnL mood and the double-tap report.
+const pnlMemo={upl:null,at:0};
+function companionWork(){
+  if(!simData)return null;
+  const l=okxLive(simData,okxMarks),positions=l.positions.map(p=>({inst:p.inst,side:p.side,upl:p.upl,ours:p.ours}));
+  const work=workState({positions,equity:l.equity,paused:Boolean(simData.paused),halted:Boolean(simData.halted),offline:Date.now()-Date.parse(simData.updated_at)>OKX_STALE});
+  return {work,mood:pnlMood(work.upl,l.equity),positions,equity:l.equity};
+}
+function updateCompanionWork(){
+  const cw=companionWork();if(!cw)return;
+  mascot.context.report=positionReport(cw.positions);mascot.setWork(cw.work,cw.mood);
+  const c=pnlComment(pnlMemo,{upl:cw.work.upl,equity:cw.equity,positions:cw.positions});if(c)mascot.say(c.text,c.mood);
+}
 function simContext(){
   if(!simData)return {};
   const t=okxTotals(simData,okxMarks);
-  return {simState:okxMascotState(simData),simFeed:okxFeed(simData),sim:{totals:t,
+  return {report:positionReport(okxLive(simData,okxMarks).positions),simState:okxMascotState(simData),simFeed:okxFeed(simData),sim:{totals:t,
     accounts:[{name:'OKX 模拟账户',color:OKX_COLOR,equity:t.equity,return_pct:t.ret,positions:t.positions,halted:Boolean(simData.halted)}],strategies:[]}};
 }
 const ago=ms=>ms?`${Math.round((Date.now()-ms)/1000)} 秒前`:'从未';
@@ -661,9 +675,13 @@ async function refreshSim(){
   const source=new URL(runtime.account_url||OKX_URL);source.searchParams.set('t',Math.floor(Date.now()/60000));
   const response=await fetch(source,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(12000)});
   if(!response.ok)throw new Error();const data=await response.json();if(!validOkx(data))throw new Error();
-  const changes=okxChanges(simData,data);
+  const changes=okxChanges(simData,data),fresh=okxNewActions(simData,data);
+  const lastUpl=new Map(simData?okxLive(simData,okxMarks).positions.map(p=>[p.inst,p.upl]):[]);
   simData=data;$('sim-error').hidden=true;setError('sim-account',null);syncOkxMarks();pollOkxMarks();renderSim();updateCompanion();updateStreamStatus();
   for(const line of changes)notify(line,`OKX 模拟 · ${line.text}`);
+  // One ticket per new exchange action, played one after another.
+  fresh.map(a=>tradeBurst(a,lastUpl)).filter(Boolean).forEach((b,i)=>setTimeout(()=>mascot.burst(b),i*3400));
+  updateCompanionWork();
  }catch{setError('sim-account','账户快照暂时读取失败，保留上次数据');if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='OKX 模拟账户数据暂时读取失败，保留已有数据，稍后自动重试。';}}
  finally{simBusy=false;}
 }
@@ -746,7 +764,7 @@ function notesSummary(d,quote,now=Date.now()){
 const setHTML=(el,html)=>{if(el && el.__html!==html){el.innerHTML=html;el.__html=html;}};
 const setText=(el,text)=>{if(el && el.textContent!==text)el.textContent=text;};
 function renderSim(){
- renderTradeControls(simData);
+ renderTradeControls(simData);updateCompanionWork();
  const quote=demoQuoteState(simData,okxMarks,okxMarkStream,okxMarkPollAt);
  document.querySelectorAll('[data-account-note]').forEach(el=>setText(el,accountDataNote(simData,quote)));
  {const n=notesSummary(simData,quote);document.querySelectorAll('[data-notes-summary]').forEach(el=>{setText(el,n.text);el.closest('.okx-notes')?.classList.toggle('warn',n.warn);});}
@@ -787,7 +805,7 @@ async function refreshDecisionHistory(){
 document.addEventListener('modi-decisions-open',refreshDecisionHistory);
 document.querySelector('[data-open-decisions]').addEventListener('click',()=>{mascot.select('decisions');mascot.open();});
 initTradeControls();refreshRuntimeHealth();navigate();refreshPrices();refreshEvents();
-setInterval(()=>{if(!document.hidden){refreshPrices();pollOkxMarks();renderPinnedBalance();updateStreamStatus();if(route==='home')renderHome();}},8000);
+setInterval(()=>{if(!document.hidden){refreshPrices();pollOkxMarks();renderPinnedBalance();updateStreamStatus();updateCompanionWork();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
  if(['home','coin'].includes(route))refreshCandles();
  refreshSnapshot();if(route==='paper')historyPage.refresh();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();refreshSim();
