@@ -10,3 +10,4 @@
 {"ts": "2026-11-04T04:20:31Z", "action": "skip", "inst": "AAVE-USDT-SWAP", "dry_run": false, "reason": "stop_too_close_or_crossed", "price": 122.63, "stop": 122.74509452742842}
 {"ts": "2026-11-04T04:20:31Z", "action": "skip", "inst": "SOXS-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-04T05:23:31Z", "action": "skip", "inst": "ADA-USDT-SWAP", "dry_run": false, "reason": "target_already_reached", "price": 0.1986, "target": 0.18925}
+{"ts": "2026-11-04T06:24:51Z", "action": "skip", "inst": "CASHCAT-USDT-SWAP", "dry_run": false, "reason": "no_price"}

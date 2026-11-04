@@ -97,3 +97,7 @@
 {"ts": "2026-11-04T05:00:00Z", "type": "skip", "inst": "SKHYNIX-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
 {"ts": "2026-11-04T05:00:00Z", "type": "skip", "inst": "SPCX-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
 {"ts": "2026-11-04T05:00:00Z", "type": "skip", "inst": "TRUMP-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T05:00:00Z", "type": "trade_closed", "inst": "ADA-USDT-SWAP", "strategy": "mean_reversion", "side": 1, "price": 0.18925, "pnl": 0.839677, "reason": "target"}
+{"ts": "2026-11-04T05:00:00Z", "type": "trade_closed", "inst": "SOXS-USDT-SWAP", "strategy": "breakout_long", "side": 1, "price": 54.75974976, "pnl": -3.242254, "reason": "stop"}
+{"ts": "2026-11-04T05:00:00Z", "type": "signal", "inst": "CASHCAT-USDT-SWAP", "strategy": "breakout_long", "side": 1}
+{"ts": "2026-11-04T06:00:00Z", "type": "trade_opened", "inst": "CASHCAT-USDT-SWAP", "strategy": "breakout_long", "side": 1, "price": 0.11549309, "stop": 0.11087337, "target": null, "leverage": 5}
