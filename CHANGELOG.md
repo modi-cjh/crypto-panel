@@ -191,6 +191,18 @@
 - 点右上角连接状态打开“连接诊断”：版本、浏览器、行情 REST / 两个 WebSocket 的状态与最近事件、脚本报错；“测试连接”分别直连 REST、模拟盘 REST、真实盘 WS、模拟盘 WS 并显示结果，可复制。不含密钥或账户信息。
 - 新增 `tests/okx_rest_browser.cjs`：WebSocket 全部失败时按模拟盘 REST 标记价计算（用 OKX App 截图数值验证：1.2703 → -17.06 USDT）、诊断面板可用。
 
+### 直接推送到 master 的更新（2026-11-04，未经 PR，此处补记）
+- `22b5a6e` 24 小时增量测试（`tools/volume_test.py`）：风险 2%、10 币、RSI 30/70、小时突破 24 小时，到期自动恢复。
+- `a9e4038` / `24d7c44` 一次性小额 BTC 模拟成交测试（`tools/okx_demo_smoke.py`、`okx-demo-smoke.yml`），看板显示为“模拟成交测试”；新增只读 `snapshot` 动作。
+- `7ee53ee` “全部平仓并停止”：看板按钮只打开 GitHub `stop-demo.yml` 任务页，需登录后手动 Run workflow；`tools/stop_demo.py` 先暂停、再平仓、读交易所确认后发布回执。浏览器不保存密钥或 token。
+- `3883fad` 伙伴状态与最近一次已确认开 / 平仓保持一致。
+- `cc14b35` 激进档（11/04 05:20–11/05 05:20 UTC+7）：风险 3%、同向上限 6%、前 100 成交额扫描（15 个基础币）、RSI 35/65、趋势 3%、小时突破 12 小时；`start-aggressive-demo.yml` 启动。日亏 8%、10 倍杠杆上限、交易所止损保留。
+- `5723b7c` 可选常驻运行环境 `runtime/`（FastAPI + systemd + Caddy 示例，见 `deploy/README.md`）：PBKDF2 管理员密码、httpOnly + SameSite=strict 会话、CSRF、Origin 校验、登录限速、幂等控制命令；密钥只在服务器环境变量，`admin configure` 用 getpass 读取。启动前确认 GitHub 交易工作流已停用，避免两处同时下单。伙伴新增“异动 / 决策”页。
+- `4d3570f` / `90f05ba` / `2b3ab10` 模拟盘行情连接与交易权限、快照时间分开显示；WebSocket 卡住时自动恢复；改用标准端口 `wss://wspap.okx.com`（已加入 CSP），失败时用校验过的 REST 备用；新增 `quote-connection-check.yml` 诊断。
+
+### PR #35 同步上述更新
+- `tests/mascot_browser.cjs` 跟随新增的“异动 / 决策”标签（位于“团队”与“动态”之间）。复核：JS 83 项、Python 124 项（含 `runtime` 测试，需 `pip install -r runtime/requirements-test.txt`）、4 个浏览器验收全部通过。
+
 ---
 
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
@@ -210,7 +222,7 @@
 ## 测试命令
 
 ```bash
-npm test                                             # JS 单元测试（73 项）
+npm test                                             # JS 单元测试（83 项）
 python3 -m unittest discover -s tests -p 'test_*.py' # Python 单元测试
 python3 -m http.server 8008 --bind 127.0.0.1 &      # 浏览器验收前启动本地服务
 PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs
