@@ -13,3 +13,5 @@
 {"ts": "2026-11-04T06:24:51Z", "action": "skip", "inst": "CASHCAT-USDT-SWAP", "dry_run": false, "reason": "no_price"}
 {"ts": "2026-11-04T07:46:46Z", "action": "skip", "inst": "CASHCAT-USDT-SWAP", "dry_run": false, "reason": "no_price"}
 {"ts": "2026-11-04T07:46:46Z", "action": "skip", "inst": "UNITREE-USDT-SWAP", "dry_run": false, "reason": "no_price"}
+{"ts": "2026-11-04T08:42:25Z", "action": "skip", "inst": "CASHCAT-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
+{"ts": "2026-11-04T08:42:25Z", "action": "skip", "inst": "UNITREE-USDT-SWAP", "dry_run": false, "reason": "no_price"}

@@ -109,3 +109,5 @@
 {"ts": "2026-11-04T07:00:00Z", "type": "skip", "inst": "UNI-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
 {"ts": "2026-11-04T07:00:00Z", "type": "trade_opened", "inst": "UNITREE-USDT-SWAP", "strategy": "mean_reversion", "side": -1, "price": 96.410714, "stop": 98.51518228, "target": 94.332, "leverage": 5}
 {"ts": "2026-11-04T07:00:00Z", "type": "skip", "inst": "ZRO-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
+{"ts": "2026-11-04T07:00:00Z", "type": "signal", "inst": "UNI-USDT-SWAP", "strategy": "breakout_long", "side": 1}
+{"ts": "2026-11-04T08:00:00Z", "type": "skip", "inst": "UNI-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
