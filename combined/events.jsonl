@@ -111,3 +111,18 @@
 {"ts": "2026-11-04T07:00:00Z", "type": "skip", "inst": "ZRO-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
 {"ts": "2026-11-04T07:00:00Z", "type": "signal", "inst": "UNI-USDT-SWAP", "strategy": "breakout_long", "side": 1}
 {"ts": "2026-11-04T08:00:00Z", "type": "skip", "inst": "UNI-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
+{"ts": "2026-11-04T08:00:00Z", "type": "trade_closed", "inst": "CASHCAT-USDT-SWAP", "strategy": "breakout_long", "side": 1, "price": 0.11087337, "pnl": -3.258715, "reason": "stop"}
+{"ts": "2026-11-04T08:00:00Z", "type": "signal", "inst": "UNI-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T08:00:00Z", "type": "signal", "inst": "HYPE-USDT-SWAP", "strategy": "breakout_long", "side": 1}
+{"ts": "2026-11-04T08:00:00Z", "type": "signal", "inst": "PEPE-USDT-SWAP", "strategy": "breakout_long", "side": 1}
+{"ts": "2026-11-04T09:00:00Z", "type": "trade_opened", "inst": "HYPE-USDT-SWAP", "strategy": "breakout_long", "side": 1, "price": 86.7583482, "stop": 84.18098986, "target": null, "leverage": 10}
+{"ts": "2026-11-04T09:00:00Z", "type": "skip", "inst": "PEPE-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
+{"ts": "2026-11-04T09:00:00Z", "type": "skip", "inst": "UNI-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T09:00:00Z", "type": "signal", "inst": "AVAX-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T09:00:00Z", "type": "signal", "inst": "PENGU-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T09:00:00Z", "type": "signal", "inst": "SUI-USDT-SWAP", "strategy": "mean_reversion", "side": -1}
+{"ts": "2026-11-04T09:00:00Z", "type": "signal", "inst": "BE-USDT-SWAP", "strategy": "breakout_long", "side": 1}
+{"ts": "2026-11-04T10:00:00Z", "type": "skip", "inst": "AVAX-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T10:00:00Z", "type": "skip", "inst": "BE-USDT-SWAP", "strategy": "breakout_long", "reason": "same_side_risk"}
+{"ts": "2026-11-04T10:00:00Z", "type": "skip", "inst": "PENGU-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}
+{"ts": "2026-11-04T10:00:00Z", "type": "skip", "inst": "SUI-USDT-SWAP", "strategy": "mean_reversion", "reason": "same_side_risk"}

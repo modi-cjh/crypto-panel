@@ -70,6 +70,10 @@
   [
    1793781745740,
    5281.18
+  ],
+  [
+   1793789463881,
+   5299.92
   ]
  ],
  "mirrored": {
@@ -99,6 +103,13 @@
    "inst": "CASHCAT-USDT-SWAP",
    "status": "skipped",
    "side": 1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "UNITREE-USDT-SWAP|1793775600000": {
+   "inst": "UNITREE-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
    "posSide": "net",
    "reason": "too_old"
   }
