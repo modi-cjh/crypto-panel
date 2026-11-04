@@ -56,6 +56,9 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   await page.locator('#companion-tab-status').focus(); await page.keyboard.press('ArrowRight');
   assert.equal(await page.locator('#companion-tab-team').getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('#mascot-report-list').innerText(), '暂无报告');
+  await page.keyboard.press('ArrowRight');                          // 异动 / 决策 tab sits between 团队 and 动态
+  assert.equal(await page.locator('#companion-tab-decisions').getAttribute('aria-selected'), 'true');
+  assert.equal(await visible(page, '#companion-panel-decisions'), true);
   await page.keyboard.press('ArrowRight');
   assert.equal(await visible(page, '#companion-panel-feed'), true);
   await page.keyboard.press('Escape');
