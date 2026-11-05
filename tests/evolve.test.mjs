@@ -43,15 +43,18 @@ test('node detail: genes with bounds, training vs out-of-sample metrics, parents
   for (const p of child.parents) assert.match(html, new RegExp(`data-node="${p}"`));
   assert.match(html, /止损 ×ATR/); assert.match(html, /evo-gbar/);
   assert.match(html, child.qualified ? /样本外合格/ : /样本外不合格/);
-  assert.match(detailMarkup(d, d.champion.id), /冠军 · 纸面交易中/);
+  assert.match(detailMarkup(d, d.champion.id), /冠军组合领头 · 纸面交易中/);
+  assert.match(detailMarkup(d, d.team[1].id), /冠军组合成员 · 纸面交易中/);
   assert.match(detailMarkup(d, 'nope'), /点击基因池/);
 });
 
 test('paper account, home card and data caption', () => {
-  assert.match(paperMarkup(d), /纸面权益/); assert.match(paperMarkup(d), new RegExp(`当前冠军 · ${d.champion.id}`));
+  assert.match(paperMarkup(d), /纸面权益/); assert.match(paperMarkup(d), /<h4>冠军组合<\/h4>/);
+  for (const t of d.team) assert.match(paperMarkup(d), new RegExp(`data-node="${t.id}"`));
   assert.match(paperMarkup({ ...d, champion: null }), /还没有样本外合格的策略/);
   const pm = paperMarkup(d);
-  assert.match(pm, /最短任期 24 小时/); assert.match(pm, /连续 3 次样本外合格/); assert.match(pm, /首位冠军/);
+  assert.match(pm, /最短任期 24 小时/); assert.match(pm, /连续 3 次样本外合格/); assert.match(pm, /补入空位/); assert.match(pm, /席位 1 ·/);
+  assert.match(pm, /同一物种最多 2 个/); assert.match(homeCardMarkup(d), /冠军组合 5 个/);
   assert.match(pm, /挑战者[\s\S]*连续合格 <b>\d+<\/b> \/ 3/);
   assert.match(homeCardMarkup(d), new RegExp(`第 ${d.generation} 代`));
   assert.match(dataCaption(d), /训练集[\s\S]*70%[\s\S]*样本外[\s\S]*30%/); assert.match(dataCaption(d), /交易 ≥ 8 次/);

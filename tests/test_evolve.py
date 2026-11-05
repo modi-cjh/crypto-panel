@@ -165,42 +165,68 @@ class EvolutionTests(unittest.TestCase):
         st['hall'] = []; E.update_hall(st)
         return st, ids
 
-    def test_first_champion_is_the_best_qualified(self):
-        st, ids = self._setup([(2.0, True, 3, 10), (2.01, True, 2, 10), (3.0, False, -1, 10)])
-        self.assertEqual(st['hall'][0], ids[1])                     # the unqualified 3.0 is not eligible
-        self.assertEqual(E.choose_champion(st, T0), (ids[1], True, 'first'))
-        self.assertEqual(st['champion_since'], T0)
+    def test_team_fills_with_the_best_qualified_and_caps_each_species(self):
+        st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10), (2.0, True, 3, 10), (1.5, True, 3, 10), (1.0, True, 3, 10), (9.0, False, -1, 10)])
+        nodes = st['nodes']
+        for nid in ids: nodes[nid]['species'] = 'trend'
+        nodes[ids[3]]['species'] = 'momentum'; nodes[ids[5]]['species'] = 'mean_revert'
+        E.update_hall(st)
+        changes = E.choose_team(st, T0)
+        team = [m['id'] for m in st['team']]
+        self.assertEqual(team[:4], [ids[0], ids[1], ids[3], ids[5]])       # cap first: 2 trend, then the other species; 9.0 (unqualified) never joins
+        self.assertEqual(team[4], ids[2])                                  # the 5th seat then goes to the next best (cap gives way)
+        self.assertEqual([c[3] for c in changes], ['first'] * 5)
+        self.assertEqual(st['champion'], ids[0])
+        self.assertEqual(E.choose_team(st, T0 + 3600_000), [])             # nothing changes on the next run
+        # with only one species qualified, the cap gives way rather than leaving seats empty
+        st2, ids2 = self._setup([(5.0 - k * .5, True, 3, 10) for k in range(6)])
+        for nid in ids2: st2['nodes'][nid]['species'] = 'trend'
+        E.update_hall(st2); E.choose_team(st2, T0)
+        self.assertEqual([m['id'] for m in st2['team']], ids2[:5])
 
-    def test_tenure_and_streak_stop_flip_flopping(self):
-        st, ids = self._setup([(2.0, True, 3, 10), (2.5, True, 2, 10)])
-        st['champion'], st['champion_since'] = ids[0], T0
+    def test_tenure_streak_and_one_swap_per_run_against_the_weakest(self):
+        st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10), (2.0, True, 3, 10), (1.0, True, 3, 10), (6.0, False, 3, 10), (7.0, False, 3, 10)])
+        for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % 4]
+        E.update_hall(st); E.choose_team(st, T0)
+        self.assertEqual(len(st['team']), 5)
         h = 3600_000
-        # A better, qualified challenger cannot take over within 24 h ...
-        for k in range(1, 5):
-            self.assertEqual(E.choose_champion(st, T0 + k * h), (ids[0], False, None))
-        # ... and after 24 h only once it has qualified in 3 consecutive runs (its streak was reset when it dropped out).
-        st['nodes'][ids[1]]['qualified'] = False; E.update_hall(st); E.choose_champion(st, T0 + 5 * h)
-        st['nodes'][ids[1]]['qualified'] = True; E.update_hall(st)
-        self.assertEqual(E.choose_champion(st, T0 + 25 * h), (ids[0], False, None))     # streak 1
-        self.assertEqual(E.choose_champion(st, T0 + 26 * h), (ids[0], False, None))     # streak 2
-        self.assertEqual(E.choose_champion(st, T0 + 27 * h), (ids[1], True, 'challenger'))
-        self.assertEqual(st['champion_since'], T0 + 27 * h)
+        for nid in ids[5:]: st['nodes'][nid]['qualified'] = True
+        E.update_hall(st)
+        for k in range(1, 4):                                              # streaks build up, but tenure has not passed
+            self.assertEqual(E.choose_team(st, T0 + k * h), [])
+        changes = E.choose_team(st, T0 + 25 * h)                           # one swap only, against the weakest (1.0)
+        self.assertEqual(len(changes), 1); self.assertEqual(changes[0][1], ids[4]); self.assertEqual(changes[0][3], 'challenger')
+        self.assertIn(changes[0][2], ids[5:])
+        changes = E.choose_team(st, T0 + 26 * h)                           # next run: the next-weakest seasoned member (2.0)
+        self.assertEqual(len(changes), 1); self.assertEqual(changes[0][1], ids[3])
 
-    def test_challenger_needs_the_fitness_margin(self):
-        st, ids = self._setup([(2.0, True, 3, 10), (2.03, True, 2, 10)])
-        st['champion'], st['champion_since'] = ids[0], T0
-        for k in range(4):
-            self.assertEqual(E.choose_champion(st, T0 + (30 + k) * 3600_000)[1], False)  # within 2 %: never switches
-
-    def test_champion_slipping_below_the_entry_gate_keeps_its_seat_but_a_breakdown_replaces_it(self):
-        st, ids = self._setup([(2.0, True, 3, 10), (1.5, True, 2, 10)])
-        st['champion'], st['champion_since'] = ids[0], T0
-        st['nodes'][ids[0]].update(qualified=False, test=dict(st['nodes'][ids[0]]['test'], ret=-1.0, max_dd=12)); E.update_hall(st)
-        self.assertEqual(E.choose_champion(st, T0 + 3600_000), (ids[0], False, None))   # -1 % is inside the retain gate
-        st['nodes'][ids[0]]['test']['ret'] = -2.5
-        self.assertEqual(E.choose_champion(st, T0 + 7200_000), (ids[1], True, 'breakdown'))
+    def test_breakdown_replaces_a_member_at_once_and_migration_keeps_the_old_champion(self):
+        st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10)])
+        for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k]
+        E.update_hall(st)
+        st['champion'], st['champion_since'] = ids[1], T0 - 5
+        st.pop('team', None)
+        E.choose_team(st, T0)
+        self.assertEqual(st['team'][0], dict(id=ids[1], since=T0 - 5))        # migrated with its tenure
+        st['nodes'][ids[1]]['test'].update(ret=-3.0); st['nodes'][ids[1]]['qualified'] = False; E.update_hall(st)
+        st['nodes'][st['population'][3]].update(fitness=2.0, qualified=True, species='trend'); E.update_hall(st)
+        changes = E.choose_team(st, T0 + 3600_000)
+        self.assertIn((0, ids[1], st['population'][3], 'breakdown'), changes)
         self.assertFalse(E.breaks_retain(dict(test=dict(ret=0, max_dd=29))))
         self.assertTrue(E.breaks_retain(dict(test=dict(ret=5, max_dd=31))))
+
+    def test_team_paper_slots_sum_and_mirror_signals_do_not_collide(self):
+        st = E.init_state(5, self.sr, self.split)
+        E.choose_team(st, self.sr['BTC-USDT-SWAP'].ts[500])
+        changes = [(i, None, m['id'], 'first') for i, m in enumerate(st['team'])]
+        # start the slots some bars back so they have something to trade
+        view, signals = P.update(st, {k: v for k, v in self.sr.items()}, changes)
+        self.assertEqual(len(st['paper']['slots']), E.TEAM_SIZE)
+        self.assertAlmostEqual(view['equity'], sum(m['equity'] for m in view['members']) + 2000 * (E.TEAM_SIZE - len(view['members'])), places=1)
+        self.assertEqual(len(signals), len({p['inst'] for p in view['positions']} | {p['inst'] for p in view['pending']}))
+        for inst, sig in signals.items(): self.assertIn(sig['champion'], [m['id'] for m in st['team']])
+        seg = st['paper']['slots'][0]['segments'][-1]                      # each slot is the backtest engine on live bars
+        self.assertEqual(P.run_segment(seg, seg['genes'], self.sr)['equity'], view['members'][[m['slot'] for m in view['members']].index(0)]['equity'])
 
     def test_prune_keeps_champion_ancestry(self):
         st = E.init_state(3, self.sr, self.split)

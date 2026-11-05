@@ -22,6 +22,9 @@ SWITCH_MARGIN = 1.02                                   # a challenger must beat 
 MIN_TENURE = 24 * 3600_000
 STREAK = 3
 RETAIN = dict(min_ret=-2.0, max_dd=30.0)
+# The paper account is run by a team: the top TEAM_SIZE qualified strategies (at most TEAM_SPECIES_CAP per species), each
+# with an equal share of capital, so one quiet strategy does not leave the whole account idle.
+TEAM_SIZE, TEAM_SPECIES_CAP = 5, 2
 
 
 def downsample(curve, n=CURVE_POINTS):
@@ -176,44 +179,63 @@ def protect_species(state, elites, children, pop, gen, rng, obs, series, split):
     return children
 
 
-def choose_champion(state, now_ms):
-    """Decide who paper-trades. Returns (champion_id, switched, reason).
+def choose_team(state, now_ms):
+    """Maintain the paper-trading team. Returns the changes made this run as [(slot, old_id, new_id, reason)].
 
-    - No champion yet: the best qualified strategy takes over.
-    - The champion is replaced early only if it breaks the looser RETAIN gate (clear breakdown on unseen data).
-    - Otherwise, after MIN_TENURE, a challenger that has qualified for STREAK consecutive runs and beats the champion's
-      training fitness by SWITCH_MARGIN takes over.
+    Each slot keeps its member for MIN_TENURE unless the member breaks the RETAIN gate. Empty slots are filled at once
+    with the best qualified strategies. After tenure, a challenger that has qualified for STREAK consecutive runs and
+    beats the weakest member's training fitness by SWITCH_MARGIN replaces it (at most one such swap per run).
+    Seats prefer at most TEAM_SPECIES_CAP per species (only exceeded rather than leave a seat empty).
+    state['champion'] is the team leader (best training fitness).
     """
-    nodes, cur, streaks = state['nodes'], state['champion'], update_streaks(state)
+    nodes, streaks = state['nodes'], update_streaks(state)
+    if 'team' not in state:                                    # migrate from the single-champion layout
+        cur = state.get('champion')
+        state['team'] = [dict(id=cur, since=state.get('champion_since', now_ms))] if cur in nodes else []
+    team = [m for m in state['team'] if m['id'] in nodes]
+    changes = []
+
+    def species_ok(nid, replacing=None):
+        sp = nodes[nid]['species']
+        return sum(1 for m in team if m['id'] != replacing and nodes[m['id']]['species'] == sp) < TEAM_SPECIES_CAP
+
+    def candidates(pool, replacing=None):
+        ids = {m['id'] for m in team}
+        return [nid for nid in pool if nid not in ids and nid in nodes and species_ok(nid, replacing)]
+
     ready = [nid for nid in state['hall'] if streaks.get(nid, 0) >= STREAK]
-    if cur is None or cur not in nodes:
-        if not state['hall']:
-            return cur, False, None
-        state['champion'], state['champion_since'] = state['hall'][0], now_ms
-        return state['champion'], True, 'first'
-    state.setdefault('champion_since', now_ms)
-    champ = nodes[cur]
-    if breaks_retain(champ):
-        pick = (ready or state['hall'] or [None])[0]
-        if pick and pick != cur:
-            state['champion'], state['champion_since'] = pick, now_ms
-            return pick, True, 'breakdown'
-        return cur, False, None
-    if now_ms - state['champion_since'] < MIN_TENURE:
-        return cur, False, None
-    for nid in ready:
-        if nid != cur and nodes[nid]['fitness'] > max(champ['fitness'] * SWITCH_MARGIN, champ['fitness'] + .01):
-            state['champion'], state['champion_since'] = nid, now_ms
-            return nid, True, 'challenger'
-    return cur, False, None
+    for slot, m in enumerate(team):                            # clear breakdowns are replaced at once
+        if breaks_retain(nodes[m['id']]):
+            pick = (candidates(ready, m['id']) or candidates(state['hall'], m['id']) or [None])[0]
+            if pick:
+                changes.append((slot, m['id'], pick, 'breakdown')); team[slot] = dict(id=pick, since=now_ms)
+    while len(team) < TEAM_SIZE:                               # empty seats are filled with the best qualified;
+        ids = {m['id'] for m in team}                           # the species cap is a preference, not a reason to leave a seat empty
+        pick = (candidates(state['hall']) or [nid for nid in state['hall'] if nid not in ids and nid in nodes] or [None])[0]
+        if not pick:
+            break
+        team.append(dict(id=pick, since=now_ms)); changes.append((len(team) - 1, None, pick, 'first'))
+    seasoned = [i for i, m in enumerate(team) if now_ms - m['since'] >= MIN_TENURE]
+    if seasoned:                                               # one challenger swap per run, against the weakest member
+        slot = min(seasoned, key=lambda i: nodes[team[i]['id']]['fitness'])
+        weakest = nodes[team[slot]['id']]
+        for nid in candidates(ready, weakest['id']):
+            if nodes[nid]['fitness'] > max(weakest['fitness'] * SWITCH_MARGIN, weakest['fitness'] + .01):
+                changes.append((slot, weakest['id'], nid, 'challenger')); team[slot] = dict(id=nid, since=now_ms)
+                break
+    state['team'] = team
+    leader = max(team, key=lambda m: nodes[m['id']]['fitness'], default=None)
+    state['champion'] = leader['id'] if leader else None
+    state['champion_since'] = leader['since'] if leader else None
+    return changes
 
 
 def prune(state):
-    """Keep recent generations, the living population, the hall of fame and the champion's ancestry."""
+    """Keep recent generations, the living population, the hall of fame and the team's ancestry."""
     nodes, gen = state['nodes'], state['generation']
     keep = set(state['population']) | set(state['hall'])
-    seen, stack = set(), [state['champion']] if state['champion'] else []
-    while stack:                       # the champion and all its ancestors
+    seen, stack = set(), [m['id'] for m in state.get('team', [])] + ([state['champion']] if state['champion'] else [])
+    while stack:                       # the team and all its ancestors
         nid = stack.pop()
         if nid in seen or nid not in nodes:
             continue
