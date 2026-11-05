@@ -118,14 +118,41 @@ class EvolutionTests(unittest.TestCase):
     def test_generation_keeps_size_carries_elites_and_records_lineage(self):
         st = E.init_state(1, self.sr, self.split)
         self.assertEqual(len(st['population']), E.POPULATION)
-        before = sorted((st['nodes'][i] for i in st['population']), key=lambda n: n['fitness'], reverse=True)[:E.ELITES]
+        pop = [st['nodes'][i] for i in st['population']]
+        best = max(pop, key=lambda n: n['fitness'])
+        species_best = {sp: max((n for n in pop if n['species'] == sp), key=lambda n: n['fitness']) for sp in G.SPECIES}
         row = E.generation(st, self.sr, self.split, self.obs)
         self.assertEqual(len(st['population']), E.POPULATION)
-        for n in before: self.assertIn(n['id'], st['population'])
-        self.assertEqual(row['born'], E.POPULATION - E.ELITES); self.assertEqual(row['killed'], E.POPULATION - E.ELITES)
+        self.assertIn(best['id'], st['population'])                              # the overall best always survives
+        for n in species_best.values(): self.assertIn(n['id'], st['population'])  # and the best of every species
         kids = [st['nodes'][i] for i in st['population'] if st['nodes'][i]['born'] == 1]
+        self.assertEqual(row['born'], len(kids)); self.assertEqual(row['killed'], len(kids))
         self.assertTrue(any(k['how'] == 'crossover' and len(k['parents']) == 2 for k in kids))
         self.assertEqual(sum(1 for k in kids if k['how'] == 'immigrant'), E.IMMIGRANTS)
+        for sp in G.SPECIES: self.assertGreaterEqual(row['species'][sp], E.MIN_PER_SPECIES)
+
+    def test_collapsed_population_is_repaired_and_crowded_species_are_discounted(self):
+        st = E.init_state(4, self.sr, self.split)
+        nodes = st['nodes']
+        for i, nid in enumerate(st['population']):                               # 37 'trend', 1 each of the others
+            sp = G.SPECIES[i] if i < 3 and G.SPECIES[i] != 'trend' else 'trend'
+            nodes[nid]['genes']['species'] = nodes[nid]['species'] = sp
+        nodes[st['population'][0]]['species'] = 'momentum'
+        row = E.generation(st, self.sr, self.split, self.obs)
+        for sp in G.SPECIES: self.assertGreaterEqual(row['species'][sp], E.MIN_PER_SPECIES, sp)
+        # The floor itself, directly: children that are all 'trend' get topped up with niche members of the others.
+        rng = random.Random(9); pop = [st['nodes'][i] for i in st['population']]
+        elites = [n for n in pop if n['species'] == 'trend'][:2]
+        kids = [E.new_node(st, G.random_genome(rng, 'trend'), [], 99, 'mutation', self.sr, self.split) for _ in range(20)]
+        fixed = E.protect_species(st, elites, kids, pop, 99, rng, self.obs, self.sr, self.split)
+        self.assertEqual(len(fixed), 20)
+        for sp in G.SPECIES: self.assertGreaterEqual(sum(1 for n in elites + fixed if n['species'] == sp), E.MIN_PER_SPECIES, sp)
+        self.assertEqual(sum(1 for n in fixed if n['how'] == 'niche'), 9)
+        self.assertEqual(len(st['population']), E.POPULATION)
+        counts = {'trend': 36, 'momentum': 1}
+        a, b = dict(species='trend', fitness=4.0), dict(species='momentum', fitness=1.0)
+        self.assertGreater(E.shared_fitness(b, counts), E.shared_fitness(a, counts))   # 4/6 < 1/1
+        self.assertLess(E.shared_fitness(dict(species='trend', fitness=-1.0), counts), -1.0)
 
     def _setup(self, fits):
         """Population where the first len(fits) strategies have the given (fitness, qualified, test_ret, test_dd)."""

@@ -781,12 +781,15 @@ function renderEvolve(){
  setText($('evolve-updated'),`第 ${d.generation} 代 · 更新 ${time(d.updated_at)} UTC+7`);
  setHTML($('evolve-loop'),loopSVG(d));setHTML($('evolve-stats'),statsMarkup(d));setHTML($('evolve-fitness'),fitnessSVG(d.history));
  setHTML($('evolve-graph'),graphSVG(d,evolveSel));setHTML($('evolve-detail'),detailMarkup(d,evolveSel));
+ // On narrow screens the gene pool scrolls sideways: start at the newest generation unless the viewer has scrolled.
+ {const box=$('evolve-graph');if(!box.dataset.userScrolled && box.scrollWidth>box.clientWidth){box.dataset.auto='1';box.scrollLeft=box.scrollWidth;}}
  setHTML($('evolve-paper'),paperMarkup(d));setText($('evolve-caption'),dataCaption(d));
 }
 function selectEvolveNode(id,focus=false){
  if(!evolveData || !id)return;evolveSel=id;renderEvolve();
  if(focus)$('evolve-detail').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
+$('evolve-graph').addEventListener('scroll',e=>{const box=e.currentTarget;if(box.dataset.auto){delete box.dataset.auto;return;}box.dataset.userScrolled='1';},{passive:true});
 $('evolve-page').addEventListener('click',e=>{const n=e.target.closest('[data-node]');if(n)selectEvolveNode(n.dataset.node,n.closest('#evolve-detail')===null && innerWidth<900);});
 $('evolve-page').addEventListener('keydown',e=>{const n=e.target.closest('[data-node]');if(n && (e.key==='Enter' || e.key===' ')){e.preventDefault();selectEvolveNode(n.dataset.node,true);}});
 

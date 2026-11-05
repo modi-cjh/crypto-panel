@@ -15,7 +15,7 @@ const coin = inst => String(inst).split('-')[0];
 const GENE_NAMES = { species: '物种', direction: '方向', lookback: '回看窗口', threshold: '偏离阈值 σ', expand: '振幅倍数', fast: '快线 EMA', slow: '慢线 EMA',
   stop_atr: '止损 ×ATR', target_rr: '止盈 R', max_hold: '最长持有 h', risk: '单笔风险', vol_min: '波动下限', vol_max: '波动上限' };
 const USED = { momentum: ['lookback'], mean_revert: ['lookback', 'threshold'], vol_breakout: ['expand'], trend: ['fast', 'slow'] };
-const HOW = { seed: '初始随机', immigrant: '随机移民', crossover: '交叉', mutation: '突变' };
+const HOW = { seed: '初始随机', immigrant: '随机移民', crossover: '交叉', mutation: '突变', niche: '物种保护' };
 const REASON = { stop: '止损', target: '止盈', time: '到期', switch: '换冠军平仓' };
 const SWITCH_WHY = { first: '首位冠军', challenger: '挑战者接替', breakdown: '原冠军样本外失守' };
 
@@ -47,7 +47,8 @@ export function statsMarkup(d) {
     ['种群', `${d.stats.population}`], ['每代新生', `${d.stats.offspring}`], ['精英保留', `${d.stats.elites}`],
     ['累计出生', `${fmt(d.stats.born, 0)}`], ['累计淘汰', `${fmt(d.stats.killed, 0)}`], ['本代样本外合格', `${last ? last.qualified : '—'} / ${d.stats.population}`],
     ['最佳适应度', last ? fmt(last.best, 3) : '—'], ['近 10 代适应度变化', delta === null ? '—' : `${signed(delta, 1)}%`, tone(delta)],
-    ['市场波动', `${esc(v.label || '—')} · ${fmt(v.market, 2)}×`], ['变异率', finite(v.mutation_rate) ? `${Math.round(v.mutation_rate * 100)}%` : '—']]
+    ['市场波动', `${esc(v.label || '—')} · ${fmt(v.market, 2)}×`], ['变异率', finite(v.mutation_rate) ? `${Math.round(v.mutation_rate * 100)}%` : '—'],
+    ['物种分布', last?.species ? SPECIES_ORDER.map(sp => `${esc(speciesName(d, sp).slice(0, 2))} ${last.species[sp] ?? 0}`).join(' · ') : '—']]
     .map(([k, val, c = '']) => `<div><span>${k}</span><strong class="${c}">${val}</strong></div>`).join('')}</div>`;
 }
 
@@ -69,12 +70,15 @@ export function fitnessSVG(history) {
 // ---- gene pool: x = generation born, y = species band (+ stable jitter), edges = parent → child
 const hash = s => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0) / 4294967295; };
 export function graphLayout(d, W = 1000, H = 520) {
-  const nodes = d.nodes, gens = nodes.map(n => n.born), g0 = Math.min(...gens), g1 = Math.max(...gens, g0 + 1);
+  // x: evenly spaced by the generations that have strategies (an old champion from generation 0 no longer stretches the
+  // axis and pushes the recent generations into a thin strip on the right).
+  const nodes = d.nodes, cols = [...new Set(nodes.map(n => n.born))].sort((a, b) => a - b);
+  const col = Object.fromEntries(cols.map((g, i) => [g, cols.length > 1 ? i / (cols.length - 1) : .5]));
   const band = (H - 60) / SPECIES_ORDER.length, pos = {};
   const fits = nodes.map(n => n.fitness).sort((a, b) => a - b), rank = f => fits.length > 1 ? fits.indexOf(f) / (fits.length - 1) : .5;
   for (const n of nodes) {
     const b = SPECIES_ORDER.indexOf(n.species);
-    pos[n.id] = { x: 50 + (n.born - g0) / (g1 - g0) * (W - 90) + (hash(n.id + 'x') - .5) * 14, y: 40 + b * band + 12 + hash(n.id) * (band - 24), r: 4 + rank(n.fitness) * 8 };
+    pos[n.id] = { x: 50 + col[n.born] * (W - 90) + (hash(n.id + 'x') - .5) * Math.min(14, (W - 90) / Math.max(1, cols.length) * .6), y: 40 + b * band + 12 + hash(n.id) * (band - 24), r: 4 + rank(n.fitness) * 8 };
   }
   return pos;
 }
