@@ -62,7 +62,7 @@ def dashboard(state, series, split, obs, paper_view, timing):
         hall=state['hall'], champion=node_view(nodes[champ], curves=True) if champ in nodes else None,
         champion_since=iso(state['champion_since']) if state.get('champion_since') else None,
         champion_rules=dict(min_tenure_hours=E.MIN_TENURE // 3600_000, streak=E.STREAK, retain=E.RETAIN, margin=E.SWITCH_MARGIN,
-                            team_size=E.TEAM_SIZE, species_cap=E.TEAM_SPECIES_CAP),
+                            team_size=E.TEAM_SIZE, species_cap=E.TEAM_SPECIES_CAP, direction_cap=E.TEAM_DIRECTION_CAP),
         team=[dict(node_view(nodes[m['id']]), since=iso(m['since'])) for m in state.get('team', []) if m['id'] in nodes],
         challengers=[dict(id=nid, species=nodes[nid]['species'], fitness=nodes[nid]['fitness'], test=nodes[nid]['test'], streak=state.get('streaks', {}).get(nid, 0))
                      for nid in state['hall'] if nid not in {m['id'] for m in state.get('team', [])} and nid in nodes][:5],

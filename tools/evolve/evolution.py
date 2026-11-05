@@ -14,6 +14,7 @@ import data as D
 POPULATION, ELITES, TOURNAMENT, CROSSOVER, IMMIGRANTS = 40, 4, 3, .7, 2
 MIN_PER_SPECIES = 3     # diversity floor: every species keeps at least this many members each generation
 HALL_SIZE, KEEP_GENERATIONS, CURVE_POINTS = 20, 12, 40
+HALL_PER_DIRECTION = 3   # besides the top HALL_SIZE, the hall keeps the best qualified long-only / short-only / both
 GATE = dict(min_ret=0.0, max_dd=25.0, min_trades=8)   # out-of-sample requirements
 SWITCH_MARGIN = 1.02                                   # a challenger must beat the champion's fitness by 2 %
 # Champion stability: the out-of-sample window moves one bar per hour, so strategies near the gate flip between
@@ -25,6 +26,10 @@ RETAIN = dict(min_ret=-2.0, max_dd=30.0)
 # The paper account is run by a team: the top TEAM_SIZE qualified strategies (at most TEAM_SPECIES_CAP per species), each
 # with an equal share of capital, so one quiet strategy does not leave the whole account idle.
 TEAM_SIZE, TEAM_SPECIES_CAP = 5, 2
+# Direction quota: at most this many seats for long-only or for short-only strategies ('both' is not limited). The
+# training window can be one long trend (2025-11 → 2026-07 fell 31–56 %), which breeds a population of short sellers;
+# the quota keeps seats for qualified strategies of the other direction, so a trend reversal does not hit every seat.
+TEAM_DIRECTION_CAP = 3
 
 
 def downsample(curve, n=CURVE_POINTS):
@@ -64,7 +69,8 @@ def init_state(seed, series, split):
 
 def refresh(state, series, split):
     """The data window rolls forward every run: re-score the living population and the hall of fame on it."""
-    for nid in set(state['population']) | set(state['hall']) | ({state['champion']} if state['champion'] else set()):
+    team = {m['id'] for m in state.get('team', [])}
+    for nid in set(state['population']) | set(state['hall']) | team | ({state['champion']} if state['champion'] else set()):
         if nid in state['nodes']:
             state['nodes'][nid].update(evaluate(state['nodes'][nid]['genes'], series, split))
     update_hall(state)
@@ -100,7 +106,11 @@ def pick_elites(pop):
 def update_hall(state):
     nodes = state['nodes']
     cand = {nid for nid in set(state['hall']) | set(state['population']) if nid in nodes and nodes[nid]['qualified']}
-    state['hall'] = sorted(cand, key=lambda nid: nodes[nid]['fitness'], reverse=True)[:HALL_SIZE]
+    ranked = sorted(cand, key=lambda nid: nodes[nid]['fitness'], reverse=True)
+    hall = ranked[:HALL_SIZE]
+    for d in ('long', 'short', 'both'):    # the best of each direction stay candidates for the team's direction quota
+        hall += [nid for nid in ranked if nodes[nid]['genes'].get('direction', 'both') == d and nid not in hall][:HALL_PER_DIRECTION]
+    state['hall'] = sorted(hall, key=lambda nid: nodes[nid]['fitness'], reverse=True)
 
 
 def generation(state, series, split, obs):
@@ -185,7 +195,9 @@ def choose_team(state, now_ms):
     Each slot keeps its member for MIN_TENURE unless the member breaks the RETAIN gate. Empty slots are filled at once
     with the best qualified strategies. After tenure, a challenger that has qualified for STREAK consecutive runs and
     beats the weakest member's training fitness by SWITCH_MARGIN replaces it (at most one such swap per run).
-    Seats prefer at most TEAM_SPECIES_CAP per species (only exceeded rather than leave a seat empty).
+    Seats prefer at most TEAM_SPECIES_CAP per species and at most TEAM_DIRECTION_CAP long-only / short-only members
+    (only exceeded rather than leave a seat empty). When the team is over the direction quota and a qualified strategy of
+    another direction exists, the weakest seasoned over-quota member is replaced ('balance'); that is this run's one swap.
     state['champion'] is the team leader (best training fitness).
     """
     nodes, streaks = state['nodes'], update_streaks(state)
@@ -199,9 +211,18 @@ def choose_team(state, now_ms):
         sp = nodes[nid]['species']
         return sum(1 for m in team if m['id'] != replacing and nodes[m['id']]['species'] == sp) < TEAM_SPECIES_CAP
 
+    direction = lambda nid: nodes[nid]['genes'].get('direction', 'both')
+
+    def direction_count(d, replacing=None):
+        return sum(1 for m in team if m['id'] != replacing and direction(m['id']) == d)
+
+    def direction_ok(nid, replacing=None):
+        d = direction(nid)
+        return d == 'both' or direction_count(d, replacing) < TEAM_DIRECTION_CAP
+
     def candidates(pool, replacing=None):
         ids = {m['id'] for m in team}
-        return [nid for nid in pool if nid not in ids and nid in nodes and species_ok(nid, replacing)]
+        return [nid for nid in pool if nid not in ids and nid in nodes and species_ok(nid, replacing) and direction_ok(nid, replacing)]
 
     ready = [nid for nid in state['hall'] if streaks.get(nid, 0) >= STREAK]
     for slot, m in enumerate(team):                            # clear breakdowns are replaced at once
@@ -211,15 +232,27 @@ def choose_team(state, now_ms):
                 changes.append((slot, m['id'], pick, 'breakdown')); team[slot] = dict(id=pick, since=now_ms)
     while len(team) < TEAM_SIZE:                               # empty seats are filled with the best qualified;
         ids = {m['id'] for m in team}                           # the species cap is a preference, not a reason to leave a seat empty
-        pick = (candidates(state['hall']) or [nid for nid in state['hall'] if nid not in ids and nid in nodes] or [None])[0]
+        pick = (candidates(state['hall']) or [nid for nid in state['hall'] if nid not in ids and nid in nodes and direction_ok(nid)]
+                or [nid for nid in state['hall'] if nid not in ids and nid in nodes] or [None])[0]
         if not pick:
             break
         team.append(dict(id=pick, since=now_ms)); changes.append((len(team) - 1, None, pick, 'first'))
     seasoned = [i for i, m in enumerate(team) if now_ms - m['since'] >= MIN_TENURE]
+    over = [d for d in ('long', 'short') if direction_count(d) > TEAM_DIRECTION_CAP]
+    if over and seasoned:                                      # over the direction quota: hand one seat to another direction
+        slots = [i for i in seasoned if direction(team[i]['id']) == over[0]]
+        if slots:
+            slot = min(slots, key=lambda i: nodes[team[i]['id']]['fitness'])
+            old = team[slot]['id']
+            others = lambda pool: [nid for nid in candidates(pool, old) if direction(nid) != over[0]]
+            pick = (others(ready) or others(state['hall']) or [None])[0]
+            if pick:
+                changes.append((slot, old, pick, 'balance')); team[slot] = dict(id=pick, since=now_ms)
+                seasoned = []                                  # that was this run's one swap
     if seasoned:                                               # one challenger swap per run, against the weakest member
         slot = min(seasoned, key=lambda i: nodes[team[i]['id']]['fitness'])
         weakest = nodes[team[slot]['id']]
-        for nid in candidates(ready, weakest['id']):
+        for nid in candidates(ready, weakest['id']):   # direction_ok keeps a challenger from re-filling the quota
             if nodes[nid]['fitness'] > max(weakest['fitness'] * SWITCH_MARGIN, weakest['fitness'] + .01):
                 changes.append((slot, weakest['id'], nid, 'challenger')); team[slot] = dict(id=nid, since=now_ms)
                 break

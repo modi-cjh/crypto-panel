@@ -19,7 +19,8 @@ const GENE_NAMES = { species: '物种', direction: '方向', lookback: '回看�
 const USED = { momentum: ['lookback'], mean_revert: ['lookback', 'threshold'], vol_breakout: ['expand'], trend: ['fast', 'slow'] };
 const HOW = { seed: '初始随机', immigrant: '随机移民', crossover: '交叉', mutation: '突变', niche: '物种保护' };
 const REASON = { stop: '止损', target: '止盈', time: '到期', switch: '换冠军平仓' };
-const SWITCH_WHY = { first: '补入空位', challenger: '挑战者接替', breakdown: '原成员样本外失守', carry: '沿用原冠军' };
+const SWITCH_WHY = { first: '补入空位', challenger: '挑战者接替', breakdown: '原成员样本外失守', carry: '沿用原冠军', balance: '方向配额调整' };
+const DIRECTION = { both: '多空', long: '只做多', short: '只做空' };
 // Team members (the paper-trading champions); older dashboards only have a single champion.
 export const teamIds = d => (d.team && d.team.length ? d.team.map(m => m.id) : d.champion ? [d.champion.id] : []);
 
@@ -165,7 +166,7 @@ export function detailMarkup(d, id, details = null, detailsFailed = false) {
   const bounds = d.gene_bounds || {};
   const genes = Object.keys(GENE_NAMES).filter(k => n.genes && k in n.genes).map(k => {
     const v = n.genes[k], b = bounds[k];
-    const shown = k === 'species' ? speciesName(d, v) : k === 'direction' ? { both: '多空', long: '只做多', short: '只做空' }[v] : k === 'risk' ? `${fmt(v * 100, 2)}%` : k === 'target_rr' && !v ? '无' : esc(v);
+    const shown = k === 'species' ? speciesName(d, v) : k === 'direction' ? DIRECTION[v] : k === 'risk' ? `${fmt(v * 100, 2)}%` : k === 'target_rr' && !v ? '无' : esc(v);
     const bar = Array.isArray(b) && b.length === 2 && finite(b[0]) ? `<i class="evo-gbar"><b style="width:${Math.max(2, Math.min(100, (v - b[0]) / (b[1] - b[0]) * 100)).toFixed(0)}%"></b></i>` : '';
     return `<tr class="${used.has(k) ? '' : 'inert'}"><th>${GENE_NAMES[k]}</th><td>${shown}</td><td>${bar}</td></tr>`;
   }).join('');
@@ -191,9 +192,9 @@ export function paperMarkup(d) {
   const r = d.champion_rules, now = Date.parse(d.updated_at);
   const byId = Object.fromEntries((d.team || []).map(t => [t.id, t]));
   const members = (p.members || []).map(m => { const t = byId[m.id], held = finite(Date.parse(m.since)) ? (now - Date.parse(m.since)) / 3600000 : null;
-    return `<tr data-node="${esc(m.id)}" class="evo-member"><td>${m.rank === 1 ? '领头' : `#${m.rank}`}</td><td><i class="evo-dot" style="background:${SPECIES_COLORS[m.species]}"></i>${esc(m.id)} · ${esc(speciesName(d, m.species))}</td>` +
+    return `<tr data-node="${esc(m.id)}" class="evo-member"><td>${m.rank === 1 ? '领头' : `#${m.rank}`}</td><td><i class="evo-dot" style="background:${SPECIES_COLORS[m.species]}"></i>${esc(m.id)} · ${esc(speciesName(d, m.species))}${t?.genes?.direction ? ` · <span class="${t.genes.direction === 'long' ? 'up' : t.genes.direction === 'short' ? 'down' : ''}">${DIRECTION[t.genes.direction] || esc(t.genes.direction)}</span>` : ''}</td>` +
       `<td>${t ? `${signed(t.test.ret, 1)}% / ${t.test.trades} 笔` : '—'}</td><td>${fmt(m.equity)}</td><td class="${tone(m.ret)}">${signed(m.ret, 2)}%</td><td>${m.positions}</td><td>${held === null ? '—' : fmt(held, 1) + 'h'}</td></tr>`; }).join('');
-  const rules = r ? `<p class="muted evo-rules">样本外合格的策略中训练适应度最高的 ${r.team_size || 5} 个组成冠军组合（同一物种最多 ${r.species_cap || 2} 个），各分 1/${r.team_size || 5} 资金独立交易。每个成员最短任期 ${r.min_tenure_hours} 小时；期满后，连续 ${r.streak} 次样本外合格、训练适应度高出最弱成员 ${Math.round((r.margin - 1) * 100)}% 的挑战者替换它（每次运行最多换一个）；成员样本外亏损超过 ${-r.retain.min_ret}% 或回撤超过 ${r.retain.max_dd}% 时立即换下。OKX 模拟盘同一币种只跟排名靠前的成员。</p>` : '';
+  const rules = r ? `<p class="muted evo-rules">样本外合格的策略中训练适应度最高的 ${r.team_size || 5} 个组成冠军组合（同一物种最多 ${r.species_cap || 2} 个${r.direction_cap ? `，只做多、只做空各最多 ${r.direction_cap} 个` : ''}），各分 1/${r.team_size || 5} 资金独立交易。每个成员最短任期 ${r.min_tenure_hours} 小时；期满后，连续 ${r.streak} 次样本外合格、训练适应度高出最弱成员 ${Math.round((r.margin - 1) * 100)}% 的挑战者替换它（每次运行最多换一个）；成员样本外亏损超过 ${-r.retain.min_ret}% 或回撤超过 ${r.retain.max_dd}% 时立即换下。OKX 模拟盘同一币种只跟排名靠前的成员。</p>` : '';
   const chal = (d.challengers || []).map(x => `<li><span>${esc(x.id)} · ${esc(speciesName(d, x.species))} · 适应度 ${fmt(x.fitness, 2)}</span><span>连续合格 <b>${x.streak}</b> / ${r ? r.streak : 3}</span></li>`).join('');
   return `<div class="history-metrics evo-stats">${[['纸面权益 USDT', fmt(p.equity)], ['收益', `${signed(p.ret, 2)}%`, tone(p.ret)], ['组合成员', `${(p.members || []).length}`], ['持仓', `${(p.positions || []).length}`], ['已平仓', `${(p.trades || []).length}`]]
       .map(([k, v, cl = '']) => `<div><span>${k}</span><strong class="${cl}">${v}</strong></div>`).join('')}</div>` +

@@ -123,3 +123,10 @@ test('compat output: schema 1 with genes on every node still passes the pre-node
   assert.match(detail(compat, other.id, null), /正在读取基因与回测曲线/);
   assert.match(detail(compat, other.id, details), /<h4>基因<\/h4>/);
 });
+
+test('team table shows each member\'s direction and the rules mention the direction quota', () => {
+  const html = paperMarkup(d);
+  assert.match(html, /<tr data-node="[^"]+" class="evo-member">[\s\S]*(只做多|只做空|多空)/);
+  assert.match(paperMarkup({ ...d, champion_rules: { ...d.champion_rules, direction_cap: 3 } }), /只做多、只做空各最多 3 个/);
+  assert.match(paperMarkup({ ...d, paper: { ...d.paper, segments: [{ slot: 4, champion: 's1', species: 'trend', reason: 'balance', from_ts: Date.parse(d.updated_at), to_ts: null }] } }), /方向配额调整/);
+});

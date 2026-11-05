@@ -162,6 +162,8 @@ class EvolutionTests(unittest.TestCase):
             nodes[nid].update(fitness=fit, qualified=ok, test=dict(nodes[nid]['test'], ret=ret, max_dd=dd))
         for nid in st['population'][len(fits):]:
             nodes[nid].update(fitness=0.0, qualified=False)
+        for nid in st['population']:
+            nodes[nid]['genes']['direction'] = 'both'           # direction quota is tested on its own
         st['hall'] = []; E.update_hall(st)
         return st, ids
 
@@ -199,6 +201,42 @@ class EvolutionTests(unittest.TestCase):
         self.assertIn(changes[0][2], ids[5:])
         changes = E.choose_team(st, T0 + 26 * h)                           # next run: the next-weakest seasoned member (2.0)
         self.assertEqual(len(changes), 1); self.assertEqual(changes[0][1], ids[3])
+
+    def test_direction_quota_keeps_seats_for_the_other_direction_and_rebalances_after_tenure(self):
+        st, ids = self._setup([(9 - k, True, 3, 10) for k in range(7)])
+        nodes, h = st['nodes'], 3600_000
+        for k, nid in enumerate(ids): nodes[nid]['species'] = G.SPECIES[k % 4]
+        for nid in ids[:6]: nodes[nid]['genes']['direction'] = 'short'
+        nodes[ids[6]]['genes']['direction'] = 'long'                          # the weakest qualified strategy is long-only
+        E.update_hall(st); E.choose_team(st, T0)
+        team = [m['id'] for m in st['team']]
+        self.assertIn(ids[6], team)                                           # the quota seats the long strategy (weakest of all)
+        self.assertEqual(team[:3], ids[:3])                                   # 3 shorts, then the long, then the 5th seat
+        self.assertEqual(sum(nodes[i]['genes']['direction'] == 'short' for i in team), 4)   # goes to a short rather than stay empty
+        # A team over the quota (e.g. from before the quota existed) is rebalanced once tenure has passed.
+        st['team'] = [dict(id=i, since=T0) for i in ids[:5]]
+        self.assertEqual(E.choose_team(st, T0 + h), [])                       # tenure first
+        changes = E.choose_team(st, T0 + 25 * h)
+        self.assertEqual(len(changes), 1); self.assertEqual(changes[0][3], 'balance')
+        self.assertEqual(changes[0][1], ids[4]); self.assertEqual(changes[0][2], ids[6])   # weakest short → the long
+        self.assertEqual(E.choose_team(st, T0 + 26 * h), [])                  # no other long / both qualified: stays at 4 shorts
+        nodes[st['population'][7]].update(fitness=.5, qualified=True, species='trend'); nodes[st['population'][7]]['genes']['direction'] = 'both'
+        E.update_hall(st)
+        changes = E.choose_team(st, T0 + 27 * h)                              # a 'both' strategy qualifies: one more seat moves
+        self.assertEqual([(c[2], c[3]) for c in changes], [(st['population'][7], 'balance')])
+        self.assertEqual(sum(nodes[m['id']]['genes']['direction'] == 'short' for m in st['team']), 3)
+        self.assertEqual(E.choose_team(st, T0 + 28 * h), [])
+        # The hall keeps the best qualified of each direction even when the top HALL_SIZE are all short.
+        st3, ids3 = self._setup([(30 - k, True, 3, 10) for k in range(25)] + [(-1.0, True, 3, 10), (-2.0, True, 3, 10)])
+        for nid in ids3[:25]: st3['nodes'][nid]['genes']['direction'] = 'short'
+        for nid in ids3[25:]: st3['nodes'][nid]['genes']['direction'] = 'long'
+        st3['hall'] = []; E.update_hall(st3)
+        self.assertEqual(st3['hall'][:E.HALL_SIZE], ids3[:E.HALL_SIZE]); self.assertEqual(st3['hall'][-2:], ids3[25:])
+        # With no qualified strategy of another direction, shorts keep every seat rather than leave one empty.
+        st2, ids2 = self._setup([(9 - k, True, 3, 10) for k in range(5)])
+        for nid in ids2: st2['nodes'][nid]['genes']['direction'] = 'short'
+        E.update_hall(st2); E.choose_team(st2, T0)
+        self.assertEqual(len(st2['team']), 5); self.assertEqual(E.choose_team(st2, T0 + 25 * h), [])
 
     def test_breakdown_replaces_a_member_at_once_and_migration_keeps_the_old_champion(self):
         st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10)])
