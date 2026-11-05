@@ -1,5 +1,7 @@
 // 策略进化 page: renders paper-data/evolve/dashboard.json written by tools/evolve/run.py. Pure functions (unit-tested).
 export const EVOLVE_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/evolve/dashboard.json';
+// Schema 2 keeps lineage nodes slim; genes, summary and curves of every node are in nodes.json, loaded when a node is opened.
+export const EVOLVE_NODES_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/evolve/nodes.json';
 export const SPECIES_COLORS = { momentum: '#2f6fb0', mean_revert: '#7b4bd1', vol_breakout: '#d98200', trend: '#1f9d63' };
 const SPECIES_ORDER = ['momentum', 'mean_revert', 'vol_breakout', 'trend'];
 const finite = Number.isFinite;
@@ -22,9 +24,21 @@ const SWITCH_WHY = { first: '补入空位', challenger: '挑战者接替', break
 export const teamIds = d => (d.team && d.team.length ? d.team.map(m => m.id) : d.champion ? [d.champion.id] : []);
 
 export function validEvolve(d) {
-  return Boolean(d) && typeof d === 'object' && d.schema === 1 && finite(d.generation) && Array.isArray(d.nodes) && Array.isArray(d.history) &&
-    d.nodes.every(n => n && typeof n.id === 'string' && SPECIES_ORDER.includes(n.species) && n.genes && n.train && n.test);
+  return Boolean(d) && typeof d === 'object' && (d.schema === 1 || d.schema === 2) && finite(d.generation) && Array.isArray(d.nodes) && Array.isArray(d.history) &&
+    d.nodes.every(n => n && typeof n.id === 'string' && SPECIES_ORDER.includes(n.species) && (n.genes || d.schema === 2) && n.train && n.test);
 }
+export function validNodeDetails(x) {
+  return Boolean(x) && typeof x === 'object' && x.schema === 1 && finite(x.generation) && x.nodes && typeof x.nodes === 'object' &&
+    Object.values(x.nodes).every(v => v && typeof v.genes === 'object' && v.genes);
+}
+// A node with its details merged in (slim lineage node + nodes.json entry); seated members already carry everything.
+export function fullNode(d, id, details) {
+  const n = d.nodes.find(x => x.id === id) || (d.champion?.id === id ? d.champion : null);
+  if (!n || n.genes) return n;
+  const extra = details?.nodes?.[id];
+  return extra ? { ...extra, ...n } : n;
+}
+export const needsDetails = (d, id, details) => { const n = fullNode(d, id, details); return Boolean(n && !n.genes); };
 export const speciesName = (d, sp) => d?.species_names?.[sp] || sp;
 
 // ---- evolution loop: observe → breed → test → out-of-sample gate → select → deploy
@@ -139,15 +153,15 @@ export function miniCurve(curves) {
 
 const metricRow = (label, m) => `<tr><th>${label}</th><td class="${tone(m.ret)}">${signed(m.ret, 2)}%</td><td>${fmt(m.max_dd, 2)}%</td><td>${m.trades}</td><td>${fmt(m.win_rate, 1)}%</td><td>${m.profit_factor == null ? '—' : fmt(m.profit_factor, 2)}</td></tr>`;
 
-export function detailMarkup(d, id) {
-  const n = d.nodes.find(x => x.id === id) || (d.champion?.id === id ? d.champion : null);
+export function detailMarkup(d, id, details = null, detailsFailed = false) {
+  const n = fullNode(d, id, details);
   if (!n) return '<p class="empty">点击基因池里的任意节点，查看它的基因与回测</p>';
   const pop = new Set(d.population || []), champ = d.champion?.id === n.id, seat = teamIds(d).indexOf(n.id);
   const status = champ ? '<span class="pill okx-pill up">冠军组合领头 · 纸面交易中</span>' : seat >= 0 ? '<span class="pill okx-pill up">冠军组合成员 · 纸面交易中</span>' : pop.has(n.id) ? '<span class="pill">存活</span>' : `<span class="pill muted">第 ${n.died ?? '—'} 代淘汰</span>`;
   const gate = n.qualified ? '<span class="pill okx-pill up">样本外合格</span>' : '<span class="pill okx-pill down">样本外不合格</span>';
   const used = new Set(['species', 'direction', 'stop_atr', 'target_rr', 'max_hold', 'risk', 'vol_min', 'vol_max', ...(USED[n.species] || [])]);
   const bounds = d.gene_bounds || {};
-  const genes = Object.keys(GENE_NAMES).filter(k => k in n.genes).map(k => {
+  const genes = Object.keys(GENE_NAMES).filter(k => n.genes && k in n.genes).map(k => {
     const v = n.genes[k], b = bounds[k];
     const shown = k === 'species' ? speciesName(d, v) : k === 'direction' ? { both: '多空', long: '只做多', short: '只做空' }[v] : k === 'risk' ? `${fmt(v * 100, 2)}%` : k === 'target_rr' && !v ? '无' : esc(v);
     const bar = Array.isArray(b) && b.length === 2 && finite(b[0]) ? `<i class="evo-gbar"><b style="width:${Math.max(2, Math.min(100, (v - b[0]) / (b[1] - b[0]) * 100)).toFixed(0)}%"></b></i>` : '';
@@ -159,8 +173,9 @@ export function detailMarkup(d, id) {
     `<p class="evo-summary">${esc(n.summary || '')}</p>` +
     `<p class="muted evo-origin">第 ${n.born} 代出生 · ${HOW[n.how] || esc(n.how)} · 父代 ${parents} · 训练适应度 <b>${fmt(n.fitness, 3)}</b></p>` +
     `<div class="table-scroll"><table class="evo-metrics"><thead><tr><th></th><th>收益</th><th>最大回撤</th><th>交易次数</th><th>胜率</th><th>盈亏比</th></tr></thead><tbody>${metricRow('训练集 70%', n.train)}${metricRow('样本外 30%', n.test)}</tbody></table></div>` +
-    `${miniCurve(curves)}<div class="sim-legend">${curves.map(c => `<span><i class="${c.cls}"></i>${c.label}</span>`).join('')}</div>` +
-    `<h4>基因</h4><table class="evo-genes"><tbody>${genes}</tbody></table><p class="muted evo-note">灰色基因当前物种用不到，但会遗传给后代。</p>`;
+    (n.genes ? `${miniCurve(curves)}<div class="sim-legend">${curves.map(c => `<span><i class="${c.cls}"></i>${c.label}</span>`).join('')}</div>` +
+      `<h4>基因</h4><table class="evo-genes"><tbody>${genes}</tbody></table><p class="muted evo-note">灰色基因当前物种用不到，但会遗传给后代。</p>`
+      : `<p class="muted evo-loading" role="status">${detailsFailed ? '基因与回测曲线暂时读取失败，稍后自动重试' : '正在读取基因与回测曲线…'}</p>`);
 }
 
 export function paperMarkup(d) {

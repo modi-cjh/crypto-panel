@@ -10,7 +10,7 @@ import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } fro
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261104-quotes443';
 import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
 import { workState, pnlMood, tradeBurst, positionReport, pnlComment } from './robot-work.mjs';
-import { EVOLVE_URL, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays } from './evolve.mjs';
+import { EVOLVE_URL, EVOLVE_NODES_URL, validNodeDetails, needsDetails, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays } from './evolve.mjs';
 import { GeneFx } from './evolve-fx.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
@@ -771,6 +771,16 @@ async function refreshEvolve(){
  }catch(e){if(route==='evolve' && !evolveData){$('evolve-error').hidden=false;$('evolve-error').textContent=e.message==='尚未生成'?'进化系统还没有运行过：第一次运行后（约 3 分钟）这里会出现第一代策略。':'进化数据暂时读取失败，稍后自动重试。';}}
  finally{evolveBusy=false;}
 }
+// Per-node genes and curves (nodes.json), fetched only when a node without them is opened; once per generation.
+const evolveDetails={data:null,tried:null,busy:false,failed:false};
+async function loadEvolveDetails(){
+ const gen=evolveData?.generation;if(evolveDetails.busy || evolveDetails.tried===gen)return;
+ evolveDetails.busy=true;evolveDetails.tried=gen;
+ try{const r=await fetch(`${EVOLVE_NODES_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(20000)});
+  const x=r.ok?await r.json():null;if(!validNodeDetails(x))throw new Error('bad');evolveDetails.data=x;evolveDetails.failed=false;}
+ catch{evolveDetails.failed=true;setTimeout(()=>{if(evolveDetails.tried===gen)evolveDetails.tried=null;renderEvolve();},60000);}
+ finally{evolveDetails.busy=false;renderEvolve();}
+}
 function renderEvolve(){
  const d=evolveData;
  $('home-evolve').hidden=!d;if(d)setHTML($('home-evolve'),homeCardMarkup(d));
@@ -778,7 +788,8 @@ function renderEvolve(){
  if(!evolveSel || !d.nodes.some(n=>n.id===evolveSel))evolveSel=d.champion?.id || d.nodes[0]?.id || null;
  setText($('evolve-updated'),`第 ${d.generation} 代 · 更新 ${time(d.updated_at)} UTC+7`);
  setHTML($('evolve-loop'),loopSVG(d));setHTML($('evolve-stats'),statsMarkup(d));setHTML($('evolve-fitness'),fitnessSVG(d.history));
- setHTML($('evolve-graph'),graphSVG(d,evolveSel));geneFx.refresh();setHTML($('evolve-detail'),detailMarkup(d,evolveSel));
+ setHTML($('evolve-graph'),graphSVG(d,evolveSel));geneFx.refresh();setHTML($('evolve-detail'),detailMarkup(d,evolveSel,evolveDetails.data,evolveDetails.failed));
+ if(needsDetails(d,evolveSel,evolveDetails.data))loadEvolveDetails();
  // On narrow screens the gene pool scrolls sideways: start at the newest generation unless the viewer has scrolled.
  {const box=$('evolve-graph');if(!box.dataset.userScrolled && box.scrollWidth>box.clientWidth){box.dataset.auto='1';box.scrollLeft=box.scrollWidth;}}
  setHTML($('evolve-paper'),paperMarkup(d));setText($('evolve-caption'),dataCaption(d));
