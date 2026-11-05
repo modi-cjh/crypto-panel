@@ -1,12 +1,51 @@
 {
- "updated_at": "2026-11-05T15:52:21Z",
- "equity": 5594.1081576191,
- "available": 2806.889382525,
+ "updated_at": "2026-11-05T16:56:43Z",
+ "equity": 5504.200882123051,
+ "available": 2805.740563192,
  "day_start": 5943.649773315413,
  "paused": false,
  "halted": false,
  "dry_run": false,
  "positions": [
+  {
+   "inst": "XRP-USDT-SWAP",
+   "side": "short",
+   "contracts": "8.3",
+   "avgPx": "1.2715",
+   "markPx": "1.2822",
+   "upl": "-8.880999999999943",
+   "uplRatio": "-0.0841525756979933",
+   "lever": "10",
+   "margin": "97.6580075",
+   "ctVal": 100.0,
+   "ours": true
+  },
+  {
+   "inst": "SOL-USDT-SWAP",
+   "side": "short",
+   "contracts": "6.54",
+   "avgPx": "89.67",
+   "markPx": "95.43",
+   "upl": "-37.670400000000036",
+   "uplRatio": "-0.5138842422214793",
+   "lever": "8",
+   "margin": "73.36414386",
+   "ctVal": 1.0,
+   "ours": true
+  },
+  {
+   "inst": "DOGE-USDT-SWAP",
+   "side": "short",
+   "contracts": "9.8",
+   "avgPx": "0.0721068026530613",
+   "markPx": "0.0759359",
+   "upl": "-37.5251539999993",
+   "uplRatio": "-0.5310313598790728",
+   "lever": "10",
+   "margin": "71.303579757760639",
+   "ctVal": 1000.0,
+   "ours": true
+  },
   {
    "inst": "ETH-USDT-SWAP",
    "side": "long",
@@ -16,7 +55,7 @@
    "upl": "332.18044",
    "uplRatio": "0.4912513570175947",
    "lever": "10",
-   "margin": "677.6085790402933386",
+   "margin": "681.2976933354817957",
    "ctVal": 0.1,
    "ours": false
   },
@@ -29,7 +68,7 @@
    "upl": "342.7755060000008",
    "uplRatio": "0.2883162931096761",
    "lever": "10",
-   "margin": "1185.1244610538063009",
+   "margin": "1183.9575024778063009",
    "ctVal": 0.01,
    "ours": false
   }
@@ -48,7 +87,7 @@
   ],
   "scan_limit": 5,
   "risk": 0.01,
-  "same_side_cap": 0.05
+  "same_side_cap": 0.03
  },
  "open_mirrors": [
   {
@@ -297,6 +336,10 @@
   [
    1793893941275,
    5594.11
+  ],
+  [
+   1793897803882,
+   5504.2
   ]
  ],
  "closed_trades": 3,
