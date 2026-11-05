@@ -32,7 +32,7 @@ class VolumeTest(unittest.TestCase):
         self.assertEqual((pt.RISK, odt.RISK, len(pt.INSTRUMENTS)), (.01, .01, 5))
         self.assertEqual(pt.STRATEGIES['mean_reversion']['rsi'], 25)
         self.assertEqual(pt.STRATEGIES['breakout_long']['lookback'], 48)
-        self.assertEqual((pt.SAME_SIDE_CAP, pt.DAILY_HALT, odt.DAILY_HALT, odt.MAX_LEVERAGE), (.05, .08, .08, 10))
+        self.assertEqual((pt.SAME_SIDE_CAP, pt.DAILY_HALT, odt.DAILY_HALT, odt.MAX_LEVERAGE), (.05, .08, .10, 10))
 
     def test_demo_order_size_doubles_and_stop_is_preserved(self):
         baseline = FakeOKX(); run(baseline, paper(**{'BTC-USDT-SWAP': long_btc()}))
@@ -88,7 +88,7 @@ class VolumeTest(unittest.TestCase):
         self.assertEqual((pt.RISK,odt.RISK,pt.SAME_SIDE_CAP,odt.SAME_SIDE_CAP),(.03,.03,.06,.06))
         self.assertEqual((pt.STRATEGIES['mean_reversion']['rsi'],pt.STRATEGIES['mean_reversion']['trend']), (35,.03))
         self.assertEqual(pt.STRATEGIES['breakout_long']['lookback'],12)
-        self.assertEqual((pt.DAILY_HALT,odt.DAILY_HALT,odt.MAX_LEVERAGE),(.08,.08,10))
+        self.assertEqual((pt.DAILY_HALT,odt.DAILY_HALT,odt.MAX_LEVERAGE),(.08,.10,10))
         self.assertEqual(profile(TEST_UNTIL)['mode'], 'aggressive')
         self.assertEqual(profile(AGGRESSIVE_UNTIL)['mode'], 'standard')
 

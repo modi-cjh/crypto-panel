@@ -36,7 +36,7 @@ from runtime_guard import entries_allowed, atomic_json
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
-RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .08
+RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # daily loss halt: 10 % below the day's starting equity
 SAME_SIDE_CAP = .05
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes

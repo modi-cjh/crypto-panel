@@ -112,6 +112,15 @@ class MirrorTests(unittest.TestCase):
         fake.posts.clear(); run(fake, paper(**{'BTC-USDT-SWAP': long_btc(stop=69000.0)}), state)   # never loosened
         self.assertEqual(fake.posts, [])
 
+    def test_daily_loss_halt_is_ten_percent(self):
+        fake = FakeOKX(); _, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3.57')]; fake.equity = 4550; fake.posts.clear()   # -9 %
+        run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), state)
+        self.assertFalse(state['halted']); self.assertEqual(fake.posts, [])
+        fake.equity = 4499                                                                                                   # just over -10 %
+        m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}), state)
+        self.assertTrue(state['halted']); self.assertIn('daily_halt', [a['action'] for a in m.actions])
+
     def test_daily_loss_halt_flattens_and_blocks_entries_until_next_day(self):
         fake = FakeOKX(); _, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
         fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3.57')]; fake.equity = 4500; fake.posts.clear()
