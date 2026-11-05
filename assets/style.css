@@ -332,3 +332,4 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
 @media(max-width:360px){.header nav{gap:8px}.header nav>a{font-size:13px}.header nav .connection{font-size:11px;gap:4px}}
 @media(max-width:340px){.header nav .connection #connection-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.header nav .connection{padding:6px 2px}}
 @media(max-width:360px){.header nav{gap:6px}.header nav>a{font-size:12.5px;letter-spacing:-.2px}}
+.evo-rules{font-size:12px;line-height:1.7;margin:4px 0 0}

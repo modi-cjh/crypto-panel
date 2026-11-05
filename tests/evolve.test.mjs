@@ -50,6 +50,9 @@ test('node detail: genes with bounds, training vs out-of-sample metrics, parents
 test('paper account, home card and data caption', () => {
   assert.match(paperMarkup(d), /纸面权益/); assert.match(paperMarkup(d), new RegExp(`当前冠军 · ${d.champion.id}`));
   assert.match(paperMarkup({ ...d, champion: null }), /还没有样本外合格的策略/);
+  const pm = paperMarkup(d);
+  assert.match(pm, /最短任期 24 小时/); assert.match(pm, /连续 3 次样本外合格/); assert.match(pm, /首位冠军/);
+  assert.match(pm, /挑战者[\s\S]*连续合格 <b>\d+<\/b> \/ 3/);
   assert.match(homeCardMarkup(d), new RegExp(`第 ${d.generation} 代`));
   assert.match(dataCaption(d), /训练集[\s\S]*70%[\s\S]*样本外[\s\S]*30%/); assert.match(dataCaption(d), /交易 ≥ 8 次/);
   assert.match(miniCurve([{ pts: [[1, 100], [2, 110]], cls: 'evo-test', label: '样本外' }]), /样本外 \+10\.0%/);

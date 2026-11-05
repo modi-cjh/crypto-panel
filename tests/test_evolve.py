@@ -127,22 +127,53 @@ class EvolutionTests(unittest.TestCase):
         self.assertTrue(any(k['how'] == 'crossover' and len(k['parents']) == 2 for k in kids))
         self.assertEqual(sum(1 for k in kids if k['how'] == 'immigrant'), E.IMMIGRANTS)
 
-    def test_gate_and_champion_switch_with_hysteresis(self):
+    def _setup(self, fits):
+        """Population where the first len(fits) strategies have the given (fitness, qualified, test_ret, test_dd)."""
         st = E.init_state(2, self.sr, self.split)
-        nodes = st['nodes']
-        ids = st['population'][:3]
-        for nid, fit, ok in zip(ids, (2.0, 2.01, 3.0), (True, True, False)):
-            nodes[nid].update(fitness=fit, qualified=ok)
-        for nid in st['population'][3:]:
+        nodes, ids = st['nodes'], st['population'][:len(fits)]
+        for nid, (fit, ok, ret, dd) in zip(ids, fits):
+            nodes[nid].update(fitness=fit, qualified=ok, test=dict(nodes[nid]['test'], ret=ret, max_dd=dd))
+        for nid in st['population'][len(fits):]:
             nodes[nid].update(fitness=0.0, qualified=False)
         st['hall'] = []; E.update_hall(st)
+        return st, ids
+
+    def test_first_champion_is_the_best_qualified(self):
+        st, ids = self._setup([(2.0, True, 3, 10), (2.01, True, 2, 10), (3.0, False, -1, 10)])
         self.assertEqual(st['hall'][0], ids[1])                     # the unqualified 3.0 is not eligible
-        champ, switched = E.choose_champion(st)
-        self.assertEqual((champ, switched), (ids[1], True))
-        nodes[ids[0]]['fitness'] = 2.03; E.update_hall(st)         # better, but within the 2 % margin
-        self.assertEqual(E.choose_champion(st), (ids[1], False))
-        nodes[ids[0]]['fitness'] = 2.5; E.update_hall(st)
-        self.assertEqual(E.choose_champion(st), (ids[0], True))
+        self.assertEqual(E.choose_champion(st, T0), (ids[1], True, 'first'))
+        self.assertEqual(st['champion_since'], T0)
+
+    def test_tenure_and_streak_stop_flip_flopping(self):
+        st, ids = self._setup([(2.0, True, 3, 10), (2.5, True, 2, 10)])
+        st['champion'], st['champion_since'] = ids[0], T0
+        h = 3600_000
+        # A better, qualified challenger cannot take over within 24 h ...
+        for k in range(1, 5):
+            self.assertEqual(E.choose_champion(st, T0 + k * h), (ids[0], False, None))
+        # ... and after 24 h only once it has qualified in 3 consecutive runs (its streak was reset when it dropped out).
+        st['nodes'][ids[1]]['qualified'] = False; E.update_hall(st); E.choose_champion(st, T0 + 5 * h)
+        st['nodes'][ids[1]]['qualified'] = True; E.update_hall(st)
+        self.assertEqual(E.choose_champion(st, T0 + 25 * h), (ids[0], False, None))     # streak 1
+        self.assertEqual(E.choose_champion(st, T0 + 26 * h), (ids[0], False, None))     # streak 2
+        self.assertEqual(E.choose_champion(st, T0 + 27 * h), (ids[1], True, 'challenger'))
+        self.assertEqual(st['champion_since'], T0 + 27 * h)
+
+    def test_challenger_needs_the_fitness_margin(self):
+        st, ids = self._setup([(2.0, True, 3, 10), (2.03, True, 2, 10)])
+        st['champion'], st['champion_since'] = ids[0], T0
+        for k in range(4):
+            self.assertEqual(E.choose_champion(st, T0 + (30 + k) * 3600_000)[1], False)  # within 2 %: never switches
+
+    def test_champion_slipping_below_the_entry_gate_keeps_its_seat_but_a_breakdown_replaces_it(self):
+        st, ids = self._setup([(2.0, True, 3, 10), (1.5, True, 2, 10)])
+        st['champion'], st['champion_since'] = ids[0], T0
+        st['nodes'][ids[0]].update(qualified=False, test=dict(st['nodes'][ids[0]]['test'], ret=-1.0, max_dd=12)); E.update_hall(st)
+        self.assertEqual(E.choose_champion(st, T0 + 3600_000), (ids[0], False, None))   # -1 % is inside the retain gate
+        st['nodes'][ids[0]]['test']['ret'] = -2.5
+        self.assertEqual(E.choose_champion(st, T0 + 7200_000), (ids[1], True, 'breakdown'))
+        self.assertFalse(E.breaks_retain(dict(test=dict(ret=0, max_dd=29))))
+        self.assertTrue(E.breaks_retain(dict(test=dict(ret=5, max_dd=31))))
 
     def test_prune_keeps_champion_ancestry(self):
         st = E.init_state(3, self.sr, self.split)

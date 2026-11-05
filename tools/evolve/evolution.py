@@ -15,6 +15,12 @@ POPULATION, ELITES, TOURNAMENT, CROSSOVER, IMMIGRANTS = 40, 4, 3, .7, 2
 HALL_SIZE, KEEP_GENERATIONS, CURVE_POINTS = 20, 12, 40
 GATE = dict(min_ret=0.0, max_dd=25.0, min_trades=8)   # out-of-sample requirements
 SWITCH_MARGIN = 1.02                                   # a challenger must beat the champion's fitness by 2 %
+# Champion stability: the out-of-sample window moves one bar per hour, so strategies near the gate flip between
+# qualified and not. The champion therefore keeps its seat for MIN_TENURE unless it clearly breaks down (RETAIN gate,
+# looser than the entry GATE), and a challenger must have qualified in STREAK consecutive runs before it can take over.
+MIN_TENURE = 24 * 3600_000
+STREAK = 3
+RETAIN = dict(min_ret=-2.0, max_dd=30.0)
 
 
 def downsample(curve, n=CURVE_POINTS):
@@ -107,20 +113,48 @@ def generation(state, series, split, obs):
     return row
 
 
-def choose_champion(state):
-    """Among strategies that passed the out-of-sample gate, the best training fitness takes over paper trading.
-    Returns (champion_id, switched)."""
-    nodes, cur = state['nodes'], state['champion']
-    if not state['hall']:
-        return cur, False
-    best = state['hall'][0]
-    if cur is None or cur not in nodes or not nodes[cur]['qualified']:
-        state['champion'] = best
-        return best, best != cur
-    if best != cur and nodes[best]['fitness'] > max(nodes[cur]['fitness'] * SWITCH_MARGIN, nodes[cur]['fitness'] + .01):
-        state['champion'] = best
-        return best, True
-    return cur, False
+def update_streaks(state):
+    """Consecutive runs each hall-of-fame strategy has been out-of-sample qualified (call once per run)."""
+    old = state.get('streaks', {})
+    state['streaks'] = {nid: old.get(nid, 0) + 1 for nid in state['hall']}
+    return state['streaks']
+
+
+def breaks_retain(node):
+    t = node['test']
+    return t['ret'] < RETAIN['min_ret'] or t['max_dd'] > RETAIN['max_dd']
+
+
+def choose_champion(state, now_ms):
+    """Decide who paper-trades. Returns (champion_id, switched, reason).
+
+    - No champion yet: the best qualified strategy takes over.
+    - The champion is replaced early only if it breaks the looser RETAIN gate (clear breakdown on unseen data).
+    - Otherwise, after MIN_TENURE, a challenger that has qualified for STREAK consecutive runs and beats the champion's
+      training fitness by SWITCH_MARGIN takes over.
+    """
+    nodes, cur, streaks = state['nodes'], state['champion'], update_streaks(state)
+    ready = [nid for nid in state['hall'] if streaks.get(nid, 0) >= STREAK]
+    if cur is None or cur not in nodes:
+        if not state['hall']:
+            return cur, False, None
+        state['champion'], state['champion_since'] = state['hall'][0], now_ms
+        return state['champion'], True, 'first'
+    state.setdefault('champion_since', now_ms)
+    champ = nodes[cur]
+    if breaks_retain(champ):
+        pick = (ready or state['hall'] or [None])[0]
+        if pick and pick != cur:
+            state['champion'], state['champion_since'] = pick, now_ms
+            return pick, True, 'breakdown'
+        return cur, False, None
+    if now_ms - state['champion_since'] < MIN_TENURE:
+        return cur, False, None
+    for nid in ready:
+        if nid != cur and nodes[nid]['fitness'] > max(champ['fitness'] * SWITCH_MARGIN, champ['fitness'] + .01):
+            state['champion'], state['champion_since'] = nid, now_ms
+            return nid, True, 'challenger'
+    return cur, False, None
 
 
 def prune(state):
