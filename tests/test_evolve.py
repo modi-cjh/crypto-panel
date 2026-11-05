@@ -224,7 +224,7 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(len(st['paper']['slots']), E.TEAM_SIZE)
         self.assertAlmostEqual(view['equity'], sum(m['equity'] for m in view['members']) + 2000 * (E.TEAM_SIZE - len(view['members'])), places=1)
         self.assertEqual(len(signals), len({p['inst'] for p in view['positions']} | {p['inst'] for p in view['pending']}))
-        for inst, sig in signals.items(): self.assertIn(sig['champion'], [m['id'] for m in st['team']])
+        for inst, sig in signals.items(): self.assertIn(sig['champion'], [m['id'] for m in st['team']]); self.assertIn(sig['rank'], range(1, len(st['team']) + 1))
         seg = st['paper']['slots'][0]['segments'][-1]                      # each slot is the backtest engine on live bars
         self.assertEqual(P.run_segment(seg, seg['genes'], self.sr)['equity'], view['members'][[m['slot'] for m in view['members']].index(0)]['equity'])
 

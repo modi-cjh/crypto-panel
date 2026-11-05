@@ -8,7 +8,9 @@ import okx_demo_trader as odt
 
 NOW = datetime(2026, 11, 4, 1, 30, tzinfo=timezone.utc)
 NOW_MS = int(NOW.timestamp() * 1000)
-SPECS = {'BTC-USDT-SWAP': dict(ctVal='0.01', lotSz='0.01', minSz='0.01', tickSz='0.1'), 'XRP-USDT-SWAP': dict(ctVal='100', lotSz='1', minSz='1', tickSz='0.0001')}
+SPECS = {'BTC-USDT-SWAP': dict(ctVal='0.01', lotSz='0.01', minSz='0.01', tickSz='0.1'), 'XRP-USDT-SWAP': dict(ctVal='100', lotSz='1', minSz='1', tickSz='0.0001'),
+         'ETH-USDT-SWAP': dict(ctVal='0.1', lotSz='0.01', minSz='0.01', tickSz='0.01'), 'SOL-USDT-SWAP': dict(ctVal='1', lotSz='0.01', minSz='0.01', tickSz='0.001'),
+         'DOGE-USDT-SWAP': dict(ctVal='1000', lotSz='0.01', minSz='0.01', tickSz='0.00001')}
 
 
 class FakeOKX:
@@ -209,13 +211,36 @@ class MirrorTests(unittest.TestCase):
     def test_following_the_evolution_champion_uses_standard_risk_on_its_coins(self):
         try:
             p = odt.configure_evolved()
-            self.assertEqual((p['mode'], odt.RISK, odt.SAME_SIDE_CAP), ('evolved', .01, .05))
+            self.assertEqual((p['mode'], odt.RISK, odt.SAME_SIDE_CAP), ('evolved', .01, .03))
             self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
             fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved')}))
             self.assertTrue(fake.posts[-1][1]['clOrdId'].startswith('evbtc'))
             self.assertEqual(m.summary()['execution_profile']['mode'], 'evolved')
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
+    def test_five_same_side_signals_open_at_most_three_percent_of_risk(self):
+        try:
+            odt.configure_evolved()
+            px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
+            sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2) for k, v in px.items()}
+            sig['DOGE-USDT-SWAP']['rank'] = 1                                                    # the leader's signal goes first
+            fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
+            orders = [b['instId'] for p, b in fake.posts if p == '/api/v5/trade/order']
+            self.assertEqual(orders, ['DOGE-USDT-SWAP', 'BTC-USDT-SWAP', 'ETH-USDT-SWAP'])        # rank, then coin-list order
+            self.assertEqual([a['inst'] for a in m.actions if a.get('reason') == 'same_side_risk'], ['SOL-USDT-SWAP', 'XRP-USDT-SWAP'])
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
+    def test_positions_opened_this_run_are_in_the_summary_right_away(self):
+        fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        self.assertEqual(m.summary()['positions'], [])                                   # snapshot read before the order
+        fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3', avgPx='70000', markPx='70000', upl='0', lever='10')]
+        m.settle()
+        self.assertEqual([(p['inst'], p['ours']) for p in m.summary()['positions']], [('BTC-USDT-SWAP', True)])
+        quiet = FakeOKX(); q, _ = run(quiet, paper()); calls = []
+        quiet.request = lambda *a, **k: calls.append(a) or {}
+        q.settle(); self.assertEqual(calls, [])                                           # nothing traded: no extra requests
 
     def test_summary_carries_equity_curve_start_equity_and_contract_value(self):
         fake = FakeOKX(positions=[dict(instId='BTC-USDT-SWAP', posSide='long', pos='3', avgPx='70000', markPx='70100', upl='3', lever='5')])
