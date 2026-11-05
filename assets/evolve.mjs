@@ -17,7 +17,9 @@ const GENE_NAMES = { species: '物种', direction: '方向', lookback: '回看�
 const USED = { momentum: ['lookback'], mean_revert: ['lookback', 'threshold'], vol_breakout: ['expand'], trend: ['fast', 'slow'] };
 const HOW = { seed: '初始随机', immigrant: '随机移民', crossover: '交叉', mutation: '突变', niche: '物种保护' };
 const REASON = { stop: '止损', target: '止盈', time: '到期', switch: '换冠军平仓' };
-const SWITCH_WHY = { first: '首位冠军', challenger: '挑战者接替', breakdown: '原冠军样本外失守' };
+const SWITCH_WHY = { first: '补入空位', challenger: '挑战者接替', breakdown: '原成员样本外失守', carry: '沿用原冠军' };
+// Team members (the paper-trading champions); older dashboards only have a single champion.
+export const teamIds = d => (d.team && d.team.length ? d.team.map(m => m.id) : d.champion ? [d.champion.id] : []);
 
 export function validEvolve(d) {
   return Boolean(d) && typeof d === 'object' && d.schema === 1 && finite(d.generation) && Array.isArray(d.nodes) && Array.isArray(d.history) &&
@@ -83,7 +85,7 @@ export function graphLayout(d, W = 1000, H = 520) {
   return pos;
 }
 export function graphSVG(d, selected) {
-  const W = 1000, H = 520, pos = graphLayout(d, W, H), pop = new Set(d.population || []), hall = new Set(d.hall || []), champ = d.champion?.id;
+  const W = 1000, H = 520, pos = graphLayout(d, W, H), pop = new Set(d.population || []), hall = new Set(d.hall || []), champ = d.champion?.id, team = new Set(teamIds(d));
   const byId = Object.fromEntries(d.nodes.map(n => [n.id, n]));
   const edges = d.nodes.flatMap(n => n.parents.filter(p => pos[p]).map(p => {
     const a = pos[p], b = pos[n.id], hot = selected && (n.id === selected || p === selected);
@@ -93,10 +95,10 @@ export function graphSVG(d, selected) {
     return `<text x="8" y="${(y + 14).toFixed(1)}" class="evo-band" fill="${SPECIES_COLORS[sp]}">${esc(speciesName(d, sp))} · ${d.nodes.filter(n => n.species === sp && pop.has(n.id)).length}</text>`; }).join('');
   const order = [...d.nodes].sort((a, b) => (pop.has(a.id) - pop.has(b.id)) || a.fitness - b.fitness);
   const dots = order.map(n => {
-    const p = pos[n.id], cls = ['evo-node', pop.has(n.id) ? 'alive' : 'dead', n.qualified ? 'ok' : '', hall.has(n.id) ? 'hall' : '', n.id === champ ? 'champ' : '', n.id === selected ? 'sel' : ''].filter(Boolean).join(' ');
+    const p = pos[n.id], cls = ['evo-node', pop.has(n.id) ? 'alive' : 'dead', n.qualified ? 'ok' : '', hall.has(n.id) ? 'hall' : '', n.id === champ ? 'champ' : '', team.has(n.id) ? 'team' : '', n.id === selected ? 'sel' : ''].filter(Boolean).join(' ');
     const label = `${speciesName(d, n.species)} ${n.id} · 第 ${n.born} 代 · 适应度 ${fmt(n.fitness, 2)} · 样本外 ${signed(n.test.ret, 1)}%${n.qualified ? ' · 合格' : ''}${pop.has(n.id) ? '' : ` · 第 ${n.died ?? '—'} 代淘汰`}`;
     return `<g class="${cls}" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(label)}"><circle class="hit" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 9).toFixed(1)}"/>` +
-      `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.r.toFixed(1)}" fill="${SPECIES_COLORS[n.species]}"/>${n.id === champ ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 5).toFixed(1)}" class="champ-ring"/>` : ''}<title>${esc(label)}</title></g>`;
+      `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.r.toFixed(1)}" fill="${SPECIES_COLORS[n.species]}"/>${team.has(n.id) ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 5).toFixed(1)}" class="${n.id === champ ? 'champ-ring' : 'team-ring'}"/>` : ''}<title>${esc(label)}</title></g>`;
   }).join('');
   const g0 = Math.min(...d.nodes.map(n => n.born)), g1 = Math.max(...d.nodes.map(n => n.born));
   return `<svg viewBox="0 0 ${W} ${H}" class="evo-graph" role="group" aria-label="基因池：每个点是一个策略，点击查看基因与回测">${bands}<g>${edges}</g><g>${dots}</g>` +
@@ -121,8 +123,8 @@ const metricRow = (label, m) => `<tr><th>${label}</th><td class="${tone(m.ret)}"
 export function detailMarkup(d, id) {
   const n = d.nodes.find(x => x.id === id) || (d.champion?.id === id ? d.champion : null);
   if (!n) return '<p class="empty">点击基因池里的任意节点，查看它的基因与回测</p>';
-  const pop = new Set(d.population || []), champ = d.champion?.id === n.id;
-  const status = champ ? '<span class="pill okx-pill up">冠军 · 纸面交易中</span>' : pop.has(n.id) ? '<span class="pill">存活</span>' : `<span class="pill muted">第 ${n.died ?? '—'} 代淘汰</span>`;
+  const pop = new Set(d.population || []), champ = d.champion?.id === n.id, seat = teamIds(d).indexOf(n.id);
+  const status = champ ? '<span class="pill okx-pill up">冠军组合领头 · 纸面交易中</span>' : seat >= 0 ? '<span class="pill okx-pill up">冠军组合成员 · 纸面交易中</span>' : pop.has(n.id) ? '<span class="pill">存活</span>' : `<span class="pill muted">第 ${n.died ?? '—'} 代淘汰</span>`;
   const gate = n.qualified ? '<span class="pill okx-pill up">样本外合格</span>' : '<span class="pill okx-pill down">样本外不合格</span>';
   const used = new Set(['species', 'direction', 'stop_atr', 'target_rr', 'max_hold', 'risk', 'vol_min', 'vol_max', ...(USED[n.species] || [])]);
   const bounds = d.gene_bounds || {};
@@ -145,26 +147,33 @@ export function detailMarkup(d, id) {
 export function paperMarkup(d) {
   const p = d.paper, c = d.champion;
   if (!p || !c) return '<p class="empty">还没有样本外合格的策略，纸面交易等待冠军出现</p>';
-  const pos = (p.positions || []).map(x => `<li><b class="${x.side === 1 ? 'up' : 'down'}">${x.side === 1 ? '多' : '空'}</b> ${esc(coin(x.inst))} @ ${fmt(x.entry, 4)} · 止损 ${fmt(x.stop, 4)}${x.target ? ` · 止盈 ${fmt(x.target, 4)}` : ''}<time>${time(x.opened)}</time></li>`).join('');
-  const pend = (p.pending || []).map(x => `<li><b class="${x.side === 1 ? 'up' : 'down'}">${x.side === 1 ? '多' : '空'}</b> ${esc(coin(x.inst))} · 下一根 K 线开盘成交</li>`).join('');
-  const trades = (p.trades || []).slice(0, 12).map(t => `<li><span><b class="${t.side === 1 ? 'up' : 'down'}">${t.side === 1 ? '多' : '空'}</b> ${esc(coin(t.inst))} · ${REASON[t.reason] || esc(t.reason)}</span><span class="${tone(t.pnl)}">${signed(t.pnl)} U</span><time>${time(t.closed)}</time></li>`).join('');
-  const segs = (p.segments || []).slice().reverse().slice(0, 6).map(s => `<li><span>${esc(s.champion)} · ${esc(speciesName(d, s.species))}${SWITCH_WHY[s.reason] ? ` · ${SWITCH_WHY[s.reason]}` : ''}</span><span>${time(s.from_ts)} 起${s.to_ts ? ` · ${time(s.to_ts)} 止` : ' · 当前'}</span></li>`).join('');
-  const r = d.champion_rules, since = Date.parse(d.champion_since), held = finite(since) ? (Date.parse(d.updated_at) - since) / 3600000 : null;
-  const tenure = r ? `<p class="muted evo-rules">上任 ${time(d.champion_since)} · 已任 ${held === null ? '—' : fmt(held, 1)} 小时（最短任期 ${r.min_tenure_hours} 小时）。期满后，连续 ${r.streak} 次样本外合格、且训练适应度高出 ${Math.round((r.margin - 1) * 100)}% 的挑战者才能接替；冠军样本外亏损超过 ${-r.retain.min_ret}% 或回撤超过 ${r.retain.max_dd}% 时提前更换。</p>` : '';
+  const who = x => x.champion ? ` <small class="muted">${esc(x.champion)}</small>` : '';
+  const pos = (p.positions || []).map(x => `<li><span><b class="${x.side === 1 ? 'up' : 'down'}">${x.side === 1 ? '多' : '空'}</b> ${esc(coin(x.inst))} @ ${fmt(x.entry, 4)} · 止损 ${fmt(x.stop, 4)}${x.target ? ` · 止盈 ${fmt(x.target, 4)}` : ''}${who(x)}</span><time>${time(x.opened)}</time></li>`).join('');
+  const pend = (p.pending || []).map(x => `<li><span><b class="${x.side === 1 ? 'up' : 'down'}">${x.side === 1 ? '多' : '空'}</b> ${esc(coin(x.inst))} · 下一根 K 线开盘成交${who(x)}</span></li>`).join('');
+  const trades = (p.trades || []).slice(0, 15).map(t => `<li><span><b class="${t.side === 1 ? 'up' : 'down'}">${t.side === 1 ? '多' : '空'}</b> ${esc(coin(t.inst))} · ${REASON[t.reason] || esc(t.reason)}${who(t)}</span><span class="${tone(t.pnl)}">${signed(t.pnl)} U</span><time>${time(t.closed)}</time></li>`).join('');
+  const segs = (p.segments || []).slice(0, 8).map(s => `<li><span>${Number.isInteger(s.slot) ? `席位 ${s.slot + 1} · ` : ''}${esc(s.champion)} · ${esc(speciesName(d, s.species))}${SWITCH_WHY[s.reason] ? ` · ${SWITCH_WHY[s.reason]}` : ''}</span><span>${time(s.from_ts)} 起${s.to_ts ? ` · ${time(s.to_ts)} 止` : ' · 当前'}</span></li>`).join('');
+  const r = d.champion_rules, now = Date.parse(d.updated_at);
+  const byId = Object.fromEntries((d.team || []).map(t => [t.id, t]));
+  const members = (p.members || []).map(m => { const t = byId[m.id], held = finite(Date.parse(m.since)) ? (now - Date.parse(m.since)) / 3600000 : null;
+    return `<tr data-node="${esc(m.id)}" class="evo-member"><td>${m.rank === 1 ? '领头' : `#${m.rank}`}</td><td><i class="evo-dot" style="background:${SPECIES_COLORS[m.species]}"></i>${esc(m.id)} · ${esc(speciesName(d, m.species))}</td>` +
+      `<td>${t ? `${signed(t.test.ret, 1)}% / ${t.test.trades} 笔` : '—'}</td><td>${fmt(m.equity)}</td><td class="${tone(m.ret)}">${signed(m.ret, 2)}%</td><td>${m.positions}</td><td>${held === null ? '—' : fmt(held, 1) + 'h'}</td></tr>`; }).join('');
+  const rules = r ? `<p class="muted evo-rules">样本外合格的策略中训练适应度最高的 ${r.team_size || 5} 个组成冠军组合（同一物种最多 ${r.species_cap || 2} 个），各分 1/${r.team_size || 5} 资金独立交易。每个成员最短任期 ${r.min_tenure_hours} 小时；期满后，连续 ${r.streak} 次样本外合格、训练适应度高出最弱成员 ${Math.round((r.margin - 1) * 100)}% 的挑战者替换它（每次运行最多换一个）；成员样本外亏损超过 ${-r.retain.min_ret}% 或回撤超过 ${r.retain.max_dd}% 时立即换下。OKX 模拟盘同一币种只跟排名靠前的成员。</p>` : '';
   const chal = (d.challengers || []).map(x => `<li><span>${esc(x.id)} · ${esc(speciesName(d, x.species))} · 适应度 ${fmt(x.fitness, 2)}</span><span>连续合格 <b>${x.streak}</b> / ${r ? r.streak : 3}</span></li>`).join('');
-  return `<div class="history-metrics evo-stats">${[['纸面权益 USDT', fmt(p.equity)], ['收益', `${signed(p.ret, 2)}%`, tone(p.ret)], ['持仓', `${(p.positions || []).length}`], ['已平仓', `${(p.trades || []).length}`]]
+  return `<div class="history-metrics evo-stats">${[['纸面权益 USDT', fmt(p.equity)], ['收益', `${signed(p.ret, 2)}%`, tone(p.ret)], ['组合成员', `${(p.members || []).length}`], ['持仓', `${(p.positions || []).length}`], ['已平仓', `${(p.trades || []).length}`]]
       .map(([k, v, cl = '']) => `<div><span>${k}</span><strong class="${cl}">${v}</strong></div>`).join('')}</div>` +
     `${miniCurve([{ pts: p.curve, cls: 'evo-test', label: '纸面' }])}` +
-    `<h4>当前冠军 · ${esc(c.id)}</h4><p class="evo-summary">${esc(c.summary)}</p>${tenure}` +
-    `<h4>持仓</h4><ul class="evo-list">${pos + pend || '<li class="empty">空仓，等待冠军的信号</li>'}</ul>` +
+    (members ? `<h4>冠军组合</h4><div class="table-scroll"><table class="evo-metrics evo-team"><thead><tr><th></th><th>策略</th><th>样本外</th><th>权益</th><th>收益</th><th>持仓</th><th>任期</th></tr></thead><tbody>${members}</tbody></table></div>` :
+      `<h4>当前冠军 · ${esc(c.id)}</h4><p class="evo-summary">${esc(c.summary)}</p>`) + rules +
+    `<h4>持仓</h4><ul class="evo-list">${pos + pend || '<li class="empty">空仓，等待组合成员的信号</li>'}</ul>` +
     `<h4>纸面成交</h4><ul class="evo-list">${trades || '<li class="empty">还没有平仓</li>'}</ul>` +
-    `<h4>冠军更替</h4><ul class="evo-list">${segs}</ul>` +
+    `<h4>席位变动</h4><ul class="evo-list">${segs}</ul>` +
     (chal ? `<h4>挑战者</h4><ul class="evo-list">${chal}</ul>` : '');
 }
 
 export function homeCardMarkup(d) {
   const c = d.champion, last = d.history.at(-1);
-  return `<span class="evo-home-gen">第 ${d.generation} 代</span><span class="evo-home-main">${c ? `冠军 ${esc(speciesName(d, c.species))} · 样本外 <b class="${tone(c.test.ret)}">${signed(c.test.ret, 1)}%</b> · 回撤 ${fmt(c.test.max_dd, 1)}%` : '等待第一个样本外合格的策略'}</span>` +
+  const n = teamIds(d).length;
+  return `<span class="evo-home-gen">第 ${d.generation} 代</span><span class="evo-home-main">${c ? `冠军组合 ${n} 个 · 领头 ${esc(speciesName(d, c.species))} · 样本外 <b class="${tone(c.test.ret)}">${signed(c.test.ret, 1)}%</b>` : '等待第一个样本外合格的策略'}</span>` +
     `<span class="muted">本代合格 ${last ? last.qualified : '—'} / ${d.stats.population} · 纸面 ${d.paper ? signed(d.paper.ret, 2) + '%' : '—'} · 查看进化 →</span>`;
 }
 

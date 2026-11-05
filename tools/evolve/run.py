@@ -48,9 +48,11 @@ def dashboard(state, series, split, obs, paper_view, timing):
         nodes=[node_view(n, curves=n['id'] == champ) for n in nodes.values()],
         hall=state['hall'], champion=node_view(nodes[champ], curves=True) if champ in nodes else None,
         champion_since=iso(state['champion_since']) if state.get('champion_since') else None,
-        champion_rules=dict(min_tenure_hours=E.MIN_TENURE // 3600_000, streak=E.STREAK, retain=E.RETAIN, margin=E.SWITCH_MARGIN),
+        champion_rules=dict(min_tenure_hours=E.MIN_TENURE // 3600_000, streak=E.STREAK, retain=E.RETAIN, margin=E.SWITCH_MARGIN,
+                            team_size=E.TEAM_SIZE, species_cap=E.TEAM_SPECIES_CAP),
+        team=[dict(node_view(nodes[m['id']]), since=iso(m['since'])) for m in state.get('team', []) if m['id'] in nodes],
         challengers=[dict(id=nid, species=nodes[nid]['species'], fitness=nodes[nid]['fitness'], test=nodes[nid]['test'], streak=state.get('streaks', {}).get(nid, 0))
-                     for nid in state['hall'] if nid != champ and nid in nodes][:5],
+                     for nid in state['hall'] if nid not in {m['id'] for m in state.get('team', [])} and nid in nodes][:5],
         paper=paper_view)
 
 
@@ -78,16 +80,19 @@ def main(argv=None):
         if time.time() - t0 > args.budget:
             break
     obs = obs or D.observe_volatility(series)
-    champion, switched, reason = E.choose_champion(state, now)
-    paper_view, signals = P.update(state, series, champion, switched, reason)
+    changes = E.choose_team(state, now)
+    champion, switched = state['champion'], bool(changes)
+    paper_view, signals = P.update(state, series, changes)
     E.prune(state)
-    timing = dict(seconds=round(time.time() - t0, 1), generations=len(rows), switched=switched)
+    timing = dict(seconds=round(time.time() - t0, 1), generations=len(rows), switched=switched, changes=[dict(slot=c[0], old=c[1], new=c[2], reason=c[3]) for c in changes])
     state_path.write_text(json.dumps(state, separators=(',', ':')))
     (out / 'dashboard.json').write_text(json.dumps(dashboard(state, series, split, obs, paper_view, timing), ensure_ascii=False, separators=(',', ':')))
-    (out / 'signals.json').write_text(json.dumps(dict(updated_at=iso(now), champion=champion, positions=signals), indent=1))
+    (out / 'signals.json').write_text(json.dumps(dict(updated_at=iso(now), champion=champion, team=[m['id'] for m in state.get('team', [])], positions=signals), indent=1))
     for r in rows:
         print(f"第 {r['gen']} 代 · 波动 {r['regime']} ({r['vol']}) · 最佳适应度 {r['best']} · 平均 {r['mean']} · 合格 {r['qualified']} · 新生 {r['born']} · 淘汰 {r['killed']}")
-    print(f"冠军 {champion}{f'（新 · {reason}）' if switched else ''} · 纸面权益 {paper_view['equity']} · 用时 {timing['seconds']}s")
+    for c in changes:
+        print(f"席位 {c[0] + 1}: {c[1] or '空'} → {c[2]}（{c[3]}）")
+    print(f"冠军组合 {[m['id'] for m in state.get('team', [])]} · 领头 {champion} · 纸面权益 {paper_view['equity']} · 用时 {timing['seconds']}s")
 
 
 if __name__ == '__main__':
