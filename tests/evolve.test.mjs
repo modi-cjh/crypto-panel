@@ -7,7 +7,7 @@ const d = JSON.parse(fs.readFileSync(new URL('./fixtures/evolve-dashboard.json',
 
 test('dashboard from the engine is accepted; broken ones are rejected', () => {
   assert.ok(validEvolve(d));
-  assert.equal(validEvolve({ ...d, schema: 2 }), false);
+  assert.equal(validEvolve({ ...d, schema: 3 }), false);
   assert.equal(validEvolve({ ...d, nodes: [{ id: 'x', species: 'alien', genes: {}, train: {}, test: {} }] }), false);
   assert.equal(validEvolve(null), false);
 });
@@ -91,4 +91,21 @@ test('ambient motion: sparks travel parent → child then rest, halos breathe, r
   assert.ok(breath(0, 6, .25) > .99 && breath(0, 6, .75) < .01);
   assert.equal(seed('s35'), seed('s35')); assert.notEqual(seed('s35'), seed('s36')); assert.ok(seed('x') >= 0 && seed('x') < 1);
   assert.equal(easeInOut(0), 0); assert.equal(easeInOut(1), 1);
+});
+
+test('schema 2: slim lineage nodes, details merged from nodes.json when a node is opened', async () => {
+  const { validEvolve: ok, validNodeDetails, fullNode, needsDetails, detailMarkup: detail, teamIds: seats } = await import('../assets/evolve.mjs');
+  const seated = new Set([...seats(d), d.champion.id]);
+  const slim = { ...d, schema: 2, details: 'nodes.json', nodes: d.nodes.map(n => seated.has(n.id) ? n : Object.fromEntries(Object.entries(n).filter(([k]) => !['genes', 'summary', 'test_curve', 'train_curve'].includes(k)))) };
+  const details = { schema: 1, generation: d.generation, nodes: Object.fromEntries(d.nodes.map(n => [n.id, { genes: n.genes, summary: n.summary, test_curve: n.test_curve }])) };
+  assert.ok(ok(slim)); assert.ok(validNodeDetails(details)); assert.equal(validNodeDetails({ schema: 1, generation: 1, nodes: { a: {} } }), false);
+  assert.equal(ok({ ...slim, schema: 1 }), false);                                  // schema 1 still requires genes on every node
+  const other = slim.nodes.find(n => !seated.has(n.id));
+  assert.ok(needsDetails(slim, other.id, null)); assert.equal(needsDetails(slim, other.id, details), false);
+  assert.equal(needsDetails(slim, d.champion.id, null), false);                     // seated members carry their genes
+  assert.match(detail(slim, other.id, null), /正在读取基因与回测曲线/);
+  assert.match(detail(slim, other.id, null, true), /暂时读取失败/);
+  const html = detail(slim, other.id, details);
+  assert.match(html, /<h4>基因<\/h4>/); assert.equal(fullNode(slim, other.id, details).fitness, other.fitness);
+  assert.ok(JSON.stringify(slim).length < JSON.stringify(d).length * .6);
 });

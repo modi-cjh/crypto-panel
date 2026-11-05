@@ -29,7 +29,7 @@ tools/evolve/              自我进化策略引擎（当前唯一信号来源�
   evolution.py             每代：观察 → 繁殖 → 训练集适应度 → 样本外闸门 → 选择；冠军选择、谱系修剪
   paper.py                 冠军组合纸面交易（5 个席位、每席按段重放 simulate），导出 OKX 跟单信号（同币种取排名高者）
   run.py                   一次运行 = 更新数据 + 进化 5 代 + 换冠军 + 纸面交易
-                           → paper-data/evolve/{state.json, dashboard.json, signals.json}
+                           → paper-data/evolve/{state.json, dashboard.json（精简谱系）, nodes.json（每个节点的基因与曲线，点开时加载）, signals.json}
 tools/okx_demo_trader.py   OKX 模拟盘跟单：跟随 evolve/signals.json（冠军持仓），交易所止损/止盈、每币风险 1%、同方向合计 ≤ 3%（`SAME_SIDE_CAP`，按冠军组合排名优先）、日亏 10% 停手（`DAILY_HALT`）
                            → paper-data/okx_demo/{state.json, actions.jsonl, summary.json}
 tools/paper_trader.py, tools/volume_test.py   已退役的旧三策略引擎与限时档位（仅在没有 evolve/signals.json 时作为后备）

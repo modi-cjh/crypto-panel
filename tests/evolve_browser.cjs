@@ -66,6 +66,26 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
   // Home shows a compact evolution card that links here.
   await page.goto(BASE + '#/'); await page.waitForSelector('#home-evolve:not([hidden])', { timeout: 20000 }).catch(() => {});
   if (await page.locator('#home-sim').isVisible()) assert.match(await page.locator('#home-evolve').innerText(), new RegExp(`第 ${dash.generation} 代`));
+  // Schema 2: the page loads slim lineage nodes, and nodes.json only when a node without details is opened (once).
+  { const seated = new Set([...(dash.team || []).map(m => m.id), dash.champion.id]);
+    const slim = { ...dash, schema: 2, details: 'nodes.json', nodes: dash.nodes.map(n => seated.has(n.id) ? n : Object.fromEntries(Object.entries(n).filter(([k]) => !['genes', 'summary', 'test_curve', 'train_curve'].includes(k)))) };
+    const det = { schema: 1, generation: dash.generation, nodes: Object.fromEntries(dash.nodes.map(n => [n.id, { genes: n.genes, summary: n.summary, test_curve: n.test_curve }])) };
+    const ctx = await browser.newContext({ ...devices['iPhone 13'], reducedMotion: 'reduce' }); let detailHits = 0;
+    await ctx.route(/okx\.com/, r => r.abort());
+    await ctx.route('**/paper-data/evolve/dashboard.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(slim) }));
+    await ctx.route('**/paper-data/evolve/nodes.json*', async r => { detailHits++; await new Promise(x => setTimeout(x, 400)); r.fulfill({ contentType: 'application/json', body: JSON.stringify(det) }); });
+    const sp = await ctx.newPage(); const errs = []; sp.on('pageerror', e => errs.push(String(e)));
+    await sp.goto(BASE + '#/'); await sp.waitForSelector('#home-evolve:not([hidden])'); await sp.waitForTimeout(500);
+    assert.equal(detailHits, 0);                                                     // home card never needs the details
+    await sp.goto(BASE + '#/evolve'); await sp.waitForSelector('#evolve-graph svg');
+    assert.match(await sp.locator('#evolve-detail').innerText(), /基因/); assert.equal(detailHits, 0);   // champion: already complete
+    const other = slim.nodes.find(n => !seated.has(n.id));
+    await sp.locator(`#evolve-graph [data-node="${other.id}"]`).dispatchEvent('click');
+    await sp.waitForSelector('#evolve-detail .evo-loading');
+    await sp.waitForSelector('#evolve-detail .evo-genes');
+    const another = slim.nodes.filter(n => !seated.has(n.id))[1];
+    await sp.locator(`#evolve-graph [data-node="${another.id}"]`).dispatchEvent('click'); await sp.waitForSelector('#evolve-detail .evo-genes');
+    assert.equal(detailHits, 1); assert.deepEqual(errs, []); await ctx.close(); }
   // Reduced motion: no automatic replay.
   { const still = await browser.newContext({ ...devices['iPhone 13'], reducedMotion: 'reduce' });
     await still.route(/okx\.com/, r => r.abort()); await still.route('**/paper-data/evolve/dashboard.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(dash) }));

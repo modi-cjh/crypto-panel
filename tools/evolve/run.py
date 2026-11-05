@@ -3,7 +3,8 @@
 
 Outputs in <data>/evolve/:
   state.json      full engine state (population, lineage, hall of fame, paper account)
-  dashboard.json  what the dashboard's 策略进化 page reads
+  dashboard.json  what the dashboard's 策略进化 page reads (lineage nodes without genes / curves, to stay small on phones)
+  nodes.json      every node's genes, summary and out-of-sample curve; the page loads it when a node is opened
   signals.json    the champion's paper positions, in the format tools/okx_demo_trader.py mirrors to OKX demo
 """
 import argparse
@@ -24,9 +25,14 @@ def iso(ms):
     return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
 
 
-def node_view(n, curves=False):
-    keep = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'fitness', 'qualified', 'train', 'test', 'genes')
-    v = {k: n[k] for k in keep if k in n}
+GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'fitness', 'qualified', 'train', 'test')
+
+
+def node_view(n, curves=False, slim=False):
+    v = {k: n[k] for k in GRAPH_KEYS if k in n}
+    if slim:                                   # enough for the gene-pool graph; details live in nodes.json
+        return v
+    v['genes'] = n['genes']
     v['summary'] = describe(n['genes'])
     v['test_curve'] = n.get('test_curve', [])[:: max(1, len(n.get('test_curve', [])) // 20)]
     if curves:
@@ -34,18 +40,25 @@ def node_view(n, curves=False):
     return v
 
 
+def node_details(state):
+    keep = ('genes', 'summary', 'test_curve')
+    return dict(schema=1, generation=state['generation'], updated_at=iso(int(time.time() * 1000)),
+                nodes={nid: {k: v for k, v in node_view(n).items() if k in keep} for nid, n in state['nodes'].items()})
+
+
 def dashboard(state, series, split, obs, paper_view, timing):
     s = next(iter(series.values()))
     start, cut, end = split
     nodes, champ = state['nodes'], state['champion']
+    seated = {m['id'] for m in state.get('team', [])} | {champ}
     return dict(
-        schema=1, updated_at=iso(int(time.time() * 1000)), generation=state['generation'], population=state['population'],
+        schema=2, details='nodes.json', updated_at=iso(int(time.time() * 1000)), generation=state['generation'], population=state['population'],
         stats=dict(state['stats'], population=len(state['population']), elites=E.ELITES, offspring=E.POPULATION - E.ELITES, hall=len(state['hall'])),
         data=dict(instruments=list(series), bar='1H', bars=s.n, train_from=iso(s.ts[start]), train_to=iso(s.ts[cut - 1]),
                   test_from=iso(s.ts[cut]), test_to=iso(s.ts[end - 1]), train_share=D.TRAIN_SHARE),
         gate=E.GATE, volatility=obs, history=state['history'][-500:], timing=timing,
         species_names=SPECIES_NAMES, gene_bounds={k: [v[1], v[2]] if v[0] != 'choice' else v[1] for k, v in GENES.items()},
-        nodes=[node_view(n, curves=n['id'] == champ) for n in nodes.values()],
+        nodes=[node_view(n, curves=n['id'] == champ, slim=n['id'] not in seated) for n in nodes.values()],
         hall=state['hall'], champion=node_view(nodes[champ], curves=True) if champ in nodes else None,
         champion_since=iso(state['champion_since']) if state.get('champion_since') else None,
         champion_rules=dict(min_tenure_hours=E.MIN_TENURE // 3600_000, streak=E.STREAK, retain=E.RETAIN, margin=E.SWITCH_MARGIN,
@@ -87,6 +100,7 @@ def main(argv=None):
     timing = dict(seconds=round(time.time() - t0, 1), generations=len(rows), switched=switched, changes=[dict(slot=c[0], old=c[1], new=c[2], reason=c[3]) for c in changes])
     state_path.write_text(json.dumps(state, separators=(',', ':')))
     (out / 'dashboard.json').write_text(json.dumps(dashboard(state, series, split, obs, paper_view, timing), ensure_ascii=False, separators=(',', ':')))
+    (out / 'nodes.json').write_text(json.dumps(node_details(state), ensure_ascii=False, separators=(',', ':')))
     (out / 'signals.json').write_text(json.dumps(dict(updated_at=iso(now), champion=champion, team=[m['id'] for m in state.get('team', [])], positions=signals), indent=1))
     for r in rows:
         print(f"第 {r['gen']} 代 · 波动 {r['regime']} ({r['vol']}) · 最佳适应度 {r['best']} · 平均 {r['mean']} · 合格 {r['qualified']} · 新生 {r['born']} · 淘汰 {r['killed']}")
