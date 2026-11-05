@@ -132,3 +132,9 @@ test('a target fill that lost money explains the price, fee and funding parts', 
   assert.match(html, /交易所止盈触发 · XRP/);
   assert.match(html, /已实现 -11\.28 USDT（价差 \+5\.69，手续费 -1\.99，资金费 -14\.98）/);
 });
+
+test('daily halt notice shows the actual loss against the 10 % line', async () => {
+  const { okxActionsMarkup: acts } = await import('../assets/okx.mjs');
+  const html = acts({ recent_actions: [{ ts: '2026-11-05T08:00:00Z', action: 'daily_halt', inst: '-', equity: 4495, day_start: 5000 }] });
+  assert.match(html, /当日亏损 10\.1%达到停手线（10%）/);
+});
