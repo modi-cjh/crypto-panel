@@ -12,6 +12,7 @@ from genome import random_genome, crossover, mutate, SPECIES
 import data as D
 
 POPULATION, ELITES, TOURNAMENT, CROSSOVER, IMMIGRANTS = 40, 4, 3, .7, 2
+MIN_PER_SPECIES = 3     # diversity floor: every species keeps at least this many members each generation
 HALL_SIZE, KEEP_GENERATIONS, CURVE_POINTS = 20, 12, 40
 GATE = dict(min_ret=0.0, max_dd=25.0, min_trades=8)   # out-of-sample requirements
 SWITCH_MARGIN = 1.02                                   # a challenger must beat the champion's fitness by 2 %
@@ -66,8 +67,31 @@ def refresh(state, series, split):
     update_hall(state)
 
 
-def tournament(pop, rng):
-    return max(rng.sample(pop, min(TOURNAMENT, len(pop))), key=lambda n: n['fitness'])
+def shared_fitness(node, counts):
+    """Fitness sharing for parent selection: a crowded species is discounted by √(its size), so one family cannot
+    take over the whole population (premature convergence)."""
+    k = max(1, counts.get(node['species'], 1)) ** .5
+    return node['fitness'] / k if node['fitness'] > 0 else node['fitness'] * k
+
+
+def tournament(pop, rng, counts=None):
+    counts = counts or {}
+    return max(rng.sample(pop, min(TOURNAMENT, len(pop))), key=lambda n: shared_fitness(n, counts))
+
+
+def pick_elites(pop):
+    """Species protection: the best of every species survives, then the remaining elite slots go by fitness."""
+    ranked = sorted(pop, key=lambda n: n['fitness'], reverse=True)
+    elites, seen = [], set()
+    for n in ranked:
+        if n['species'] not in seen:
+            elites.append(n); seen.add(n['species'])
+    for n in ranked:
+        if len(elites) >= ELITES:
+            break
+        if n not in elites:
+            elites.append(n)
+    return sorted(elites, key=lambda n: n['fitness'], reverse=True)[:max(ELITES, len(seen))]
 
 
 def update_hall(state):
@@ -82,20 +106,22 @@ def generation(state, series, split, obs):
     rng = random.Random(f"{state['seed']}-{gen}")
     nodes = state['nodes']
     pop = [nodes[i] for i in state['population']]
-    ranked = sorted(pop, key=lambda n: n['fitness'], reverse=True)
-    elites = ranked[:ELITES]
+    elites = pick_elites(pop)
+    counts = {sp: sum(1 for n in pop if n['species'] == sp) for sp in SPECIES}
     children = []
-    for _ in range(IMMIGRANTS):
-        children.append(new_node(state, random_genome(rng), [], gen, 'immigrant', series, split))
-    while len(children) < POPULATION - ELITES:
-        a = tournament(pop, rng)
+    missing = [sp for sp in SPECIES if not counts[sp]]            # immigrants re-seed extinct species first
+    for k in range(IMMIGRANTS):
+        children.append(new_node(state, random_genome(rng, missing[k] if k < len(missing) else None), [], gen, 'immigrant', series, split))
+    while len(children) < POPULATION - len(elites):
+        a = tournament(pop, rng, counts)
         if rng.random() < CROSSOVER:
-            b = tournament(pop, rng)
+            b = tournament(pop, rng, counts)
             genes, parents, how = crossover(a['genes'], b['genes'], rng), [a['id'], b['id']], 'crossover'
         else:
             genes, parents, how = dict(a['genes']), [a['id']], 'mutation'
         genes = mutate(genes, rng, rate=obs['mutation_rate'])
         children.append(new_node(state, genes, parents, gen, how, series, split))
+    children = protect_species(state, elites, children, pop, gen, rng, obs, series, split)
     new_pop = [n['id'] for n in elites] + [c['id'] for c in children]
     killed = [n['id'] for n in pop if n['id'] not in set(new_pop)]
     for nid in killed:
@@ -123,6 +149,31 @@ def update_streaks(state):
 def breaks_retain(node):
     t = node['test']
     return t['ret'] < RETAIN['min_ret'] or t['max_dd'] > RETAIN['max_dd']
+
+
+def protect_species(state, elites, children, pop, gen, rng, obs, series, split):
+    """Diversity floor: a species below MIN_PER_SPECIES gets mutants of its best member (or fresh random members if it is
+    extinct), replacing the weakest children of species that have more than enough."""
+    nodes = state['nodes']
+    def count(sp):
+        return sum(1 for n in elites + children if n['species'] == sp)
+    for sp in SPECIES:
+        while count(sp) < MIN_PER_SPECIES:
+            crowded = [c for c in children if count(c['species']) > MIN_PER_SPECIES]
+            if not crowded:
+                break
+            weakest = min(crowded, key=lambda c: c['fitness'])
+            children.remove(weakest)
+            nodes.pop(weakest['id'], None); state['stats']['born'] -= 1     # never part of the generation
+            kin = [n for n in pop + elites if n['species'] == sp]
+            if kin:
+                parent = max(kin, key=lambda n: n['fitness'])
+                genes = mutate(dict(parent['genes'], species=sp), rng, rate=max(obs['mutation_rate'], .3))
+                genes['species'] = sp
+                children.append(new_node(state, genes, [parent['id']], gen, 'niche', series, split))
+            else:
+                children.append(new_node(state, random_genome(rng, sp), [], gen, 'niche', series, split))
+    return children
 
 
 def choose_champion(state, now_ms):
