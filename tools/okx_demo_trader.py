@@ -52,7 +52,8 @@ ACTIVE_PROFILE = None
 def configure_evolved():
     """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply."""
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE
-    INSTRUMENTS, RISK, SAME_SIDE_CAP = list(EVOLVED_INSTRUMENTS), .01, .05
+    # 1 % per coin, at most 3 % in one direction: the five coins move together, so five same-side signals are one bet.
+    INSTRUMENTS, RISK, SAME_SIDE_CAP = list(EVOLVED_INSTRUMENTS), .01, .03
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, same_side_cap=SAME_SIDE_CAP)
     return ACTIVE_PROFILE
 
@@ -305,7 +306,7 @@ class Mirror:
             if avg <= 0 or not m.get('stop'):
                 return self.log('skip', inst, reason='existing_risk_unknown')
             same_risk += max((avg - float(m['stop'])) * side, 0) * abs(float(held['pos'])) * self.spec(m['inst'])['ctVal']
-        if same_risk + risk > SAME_SIDE_CAP * self.equity:
+        if same_risk + risk > SAME_SIDE_CAP * self.equity * (1 + 1e-9):
             return self.log('skip', inst, reason='same_side_risk')
         contracts = quantize(risk / (px * dist) / sp['ctVal'], sp['lotSz'])
         if float(contracts) < sp['minSz'] or contracts <= 0:
@@ -442,7 +443,9 @@ class Mirror:
         # New entries (a dry run previews them as if resumed).
         if (self.s['paused'] and not self.dry) or self.s['halted']:
             return
-        for inst, p in sorted(paper_positions.items()):
+        # Priority when the same-side cap fills up: the higher-ranked team member first (rank 1 = leader), then the coin list order.
+        order = lambda kv: (kv[1].get('rank', 99), INSTRUMENTS.index(kv[0]) if kv[0] in INSTRUMENTS else 99, kv[0])
+        for inst, p in sorted(paper_positions.items(), key=order):
             key = f"{inst}|{int(p['opened'])}"
             if key in self.s['mirrored'] or inst not in INSTRUMENTS:
                 continue
@@ -454,6 +457,12 @@ class Mirror:
                 self.log('skip', inst, reason='paper_entry_too_old')
                 continue
             self.open(key, inst, p)
+
+    def settle(self):
+        """load() ran before this run's orders: read the account again so the summary already lists new / closed positions
+        (otherwise they only appear after the next scheduled run, 40–60 minutes later)."""
+        if not self.dry and any(a['action'] in ('open', 'close', 'amend_stop', 'flatten', 'daily_halt') for a in self.actions):
+            self.load()
 
     def summary(self):
         pos = [dict(inst=p['instId'], side=p.get('posSide', 'net'), contracts=p.get('pos'), avgPx=p.get('avgPx'), markPx=p.get('markPx'),
@@ -517,6 +526,7 @@ def main():
             mirror.load()  # Read-only exchange refresh: no order, leverage or stop mutations.
         else:
             mirror.run('run' if dry else args.action)
+            mirror.settle()
     except OKXError as exc:
         error = str(exc); mirror.log('error', '-', step='run', detail=error)
     for a in mirror.actions:
