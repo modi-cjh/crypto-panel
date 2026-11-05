@@ -337,22 +337,27 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
 .evo-team tr.evo-member{cursor:pointer}.evo-team td:nth-child(2){text-align:left;white-space:nowrap}.evo-team .evo-dot{margin-right:5px;vertical-align:0}
 
 /* ---- Gene pool animation: replay generation by generation, breathing survivors, genes flowing to living children ---- */
-.evo-controls{display:flex;align-items:center;gap:10px;padding:0 16px 10px}
-.evo-controls .pill{cursor:pointer;font:inherit;font-size:13px;flex:none}
-.evo-controls input[type=range]{flex:1;min-width:0;accent-color:#06727d}
-#evolve-genlabel{flex:none;font-size:12px;font-variant-numeric:tabular-nums;min-width:56px;text-align:right}
-.evo-graph .evo-node,.evo-graph .evo-edge{transition:opacity .35s ease}
+.evo-graph .evo-node,.evo-graph .evo-edge{transition:opacity .7s ease}
 .evo-graph circle{transform-box:fill-box;transform-origin:center}
-.evo-graph .evo-node.alive>circle:nth-of-type(2){animation:evo-breathe 3.2s ease-in-out infinite;animation-delay:var(--d,0s)}
-@keyframes evo-breathe{50%{transform:scale(1.14)}}
-.evo-graph .evo-edge.flow{stroke:#06727d;opacity:.42;stroke-dasharray:3 9;animation:evo-flow 1.6s linear infinite;animation-delay:var(--d,0s)}
-@keyframes evo-flow{to{stroke-dashoffset:-24}}
-.evo-gen-label{font-size:24px;font-weight:700;fill:#06727d;opacity:0;font-variant-numeric:tabular-nums}
-.evo-graph.replay .evo-gen-label{opacity:.9}
+/* living strategies breathe slowly, each on its own period and phase */
+.evo-graph .evo-node.alive>circle:nth-of-type(2){animation:evo-breathe var(--t,6s) ease-in-out infinite;animation-delay:var(--d,0s)}
+@keyframes evo-breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.06);opacity:.86}}
+/* genes flowing into living strategies: a faint tinted line and, now and then, one soft spark travelling parent → child */
+.evo-graph .evo-edge.flow{stroke:#06727d;opacity:.28}
+.evo-spark{stroke:#2fb7c4;stroke-width:2.2;stroke-linecap:round;fill:none;stroke-dasharray:7 200;stroke-dashoffset:7;opacity:0;pointer-events:none;
+  animation:evo-spark var(--t,7s) cubic-bezier(.45,0,.55,1) infinite;animation-delay:var(--d,0s)}
+@keyframes evo-spark{0%{stroke-dashoffset:7;opacity:0}8%{opacity:.85}42%{opacity:.85}50%{stroke-dashoffset:-100;opacity:0}100%{stroke-dashoffset:-100;opacity:0}}
+/* replay: generations fade in one after another, newborns grow in and their lineage lines draw from the parent */
+.evo-gen-label{font-size:22px;font-weight:700;fill:#06727d;opacity:0;font-variant-numeric:tabular-nums;transition:opacity .6s ease}
+.evo-graph.replay .evo-gen-label{opacity:.75}
 .evo-graph.replay .future{opacity:0;pointer-events:none}
-.evo-graph.replay .evo-node.gone circle:not(.hit){opacity:.16}
+.evo-graph.replay .evo-spark{visibility:hidden}
+.evo-graph.replay .evo-node.gone circle:not(.hit){opacity:.2;transition:opacity .9s ease}
 .evo-graph.replay .evo-node.gone>circle:nth-of-type(2){animation:none}
-.evo-graph.replay .evo-node.newborn>circle:nth-of-type(2){animation:evo-pop .55s cubic-bezier(.3,1.6,.5,1)}
-@keyframes evo-pop{from{transform:scale(0)}to{transform:scale(1)}}
-.evo-graph.replay .evo-edge.newborn{stroke:#06727d;opacity:.95;stroke-width:1.6;stroke-dasharray:6 4;animation:evo-flow .7s linear infinite}
+.evo-graph.replay .evo-node.newborn>circle:not(.hit){animation:evo-grow 1.1s cubic-bezier(.22,1,.36,1) both}
+@keyframes evo-grow{from{transform:scale(.25);opacity:0}to{transform:scale(1);opacity:1}}
+.evo-graph.replay .evo-edge.newborn{stroke:#06727d;opacity:.7;stroke-dasharray:100;animation:evo-draw 1s cubic-bezier(.22,1,.36,1) both}
+.evo-graph.replay .evo-edge.newborn.cross{stroke-dasharray:100}
+@keyframes evo-draw{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
 .evo-graph.replay .evo-edge.gone{opacity:.12}
+@media(prefers-reduced-motion:reduce){.evo-spark{display:none}}.reduced-motion .evo-spark{display:none}

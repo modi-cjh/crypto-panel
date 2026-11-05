@@ -74,9 +74,10 @@ test('replay steps through every archived generation; nodes appear when born and
   assert.deepEqual(replayState({ born: '3' }, 3), { future: false, gone: false, newborn: true });
   assert.deepEqual(replayState({ born: '3', died: '5' }, 6), { future: false, gone: true, newborn: false });
   const delays = replayDelays(d, gens, 9000);
-  assert.equal(delays.length, gens.length); assert.ok(delays.every(x => x >= 60 && x <= 900));
+  assert.equal(delays.length, gens.length); assert.ok(delays.every(x => x >= 180 && x <= 1200));
   const svg = graphSVG(d, null);
   assert.equal((svg.match(/<g class="evo-node[^"]*" data-node="[^"]+" data-born="\d+"/g) || []).length, d.nodes.length);
-  assert.ok((svg.match(/class="evo-edge[^"]*\bflow\b/g) || []).length > 0);                       // genes flowing into living strategies
+  const flows = (svg.match(/class="evo-edge[^"]*\bflow\b/g) || []).length;
+  assert.ok(flows > 0); assert.equal((svg.match(/class="evo-spark"/g) || []).length, flows);   // one spark per edge into a living strategy
   assert.match(svg, /class="evo-gen-label"/);
 });

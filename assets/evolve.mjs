@@ -89,8 +89,11 @@ export function graphSVG(d, selected) {
   const byId = Object.fromEntries(d.nodes.map(n => [n.id, n]));
   const edges = d.nodes.flatMap(n => n.parents.filter(p => pos[p]).map(p => {
     const a = pos[p], b = pos[n.id], hot = selected && (n.id === selected || p === selected);
-    // data-born drives the replay; 'flow' edges (into living strategies) carry a moving dash: genes being passed on.
-    return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" data-born="${n.born}" style="--d:-${(hash(n.id + p) * 1.6).toFixed(2)}s" class="evo-edge${hot ? ' hot' : ''}${n.how === 'crossover' ? ' cross' : ''}${pop.has(n.id) ? ' flow' : ''}"/>`;
+    // data-born drives the replay; edges into living strategies ('flow') carry a soft spark from parent to child now and then:
+    // genes being passed on. Each spark has its own period and phase so they never move in lockstep.
+    const xy = `x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" pathLength="100" data-born="${n.born}"`, h = hash(n.id + p);
+    return `<line ${xy} class="evo-edge${hot ? ' hot' : ''}${n.how === 'crossover' ? ' cross' : ''}${pop.has(n.id) ? ' flow' : ''}"/>` +
+      (pop.has(n.id) ? `<line ${xy} class="evo-spark" style="--t:${(5 + h * 6).toFixed(2)}s;--d:-${(h * 11).toFixed(2)}s"/>` : '');
   })).join('');
   const bands = SPECIES_ORDER.map((sp, i) => { const y = 40 + i * (H - 60) / SPECIES_ORDER.length;
     return `<text x="8" y="${(y + 14).toFixed(1)}" class="evo-band" fill="${SPECIES_COLORS[sp]}">${esc(speciesName(d, sp))} · ${d.nodes.filter(n => n.species === sp && pop.has(n.id)).length}</text>`; }).join('');
@@ -98,7 +101,7 @@ export function graphSVG(d, selected) {
   const dots = order.map(n => {
     const p = pos[n.id], cls = ['evo-node', pop.has(n.id) ? 'alive' : 'dead', n.qualified ? 'ok' : '', hall.has(n.id) ? 'hall' : '', n.id === champ ? 'champ' : '', team.has(n.id) ? 'team' : '', n.id === selected ? 'sel' : ''].filter(Boolean).join(' ');
     const label = `${speciesName(d, n.species)} ${n.id} · 第 ${n.born} 代 · 适应度 ${fmt(n.fitness, 2)} · 样本外 ${signed(n.test.ret, 1)}%${n.qualified ? ' · 合格' : ''}${pop.has(n.id) ? '' : ` · 第 ${n.died ?? '—'} 代淘汰`}`;
-    return `<g class="${cls}" data-node="${esc(n.id)}" data-born="${n.born}"${n.died == null ? '' : ` data-died="${n.died}"`} style="--d:-${(hash(n.id) * 3.2).toFixed(2)}s" tabindex="0" role="button" aria-label="${esc(label)}"><circle class="hit" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 9).toFixed(1)}"/>` +
+    return `<g class="${cls}" data-node="${esc(n.id)}" data-born="${n.born}"${n.died == null ? '' : ` data-died="${n.died}"`} style="--t:${(4.5 + hash(n.id + "t") * 3).toFixed(2)}s;--d:-${(hash(n.id) * 7.5).toFixed(2)}s" tabindex="0" role="button" aria-label="${esc(label)}"><circle class="hit" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 9).toFixed(1)}"/>` +
       `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.r.toFixed(1)}" fill="${SPECIES_COLORS[n.species]}"/>${team.has(n.id) ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 5).toFixed(1)}" class="${n.id === champ ? 'champ-ring' : 'team-ring'}"/>` : ''}<title>${esc(label)}</title></g>`;
   }).join('');
   const g0 = Math.min(...d.nodes.map(n => n.born)), g1 = Math.max(...d.nodes.map(n => n.born));
@@ -116,7 +119,7 @@ export function replayGenerations(d) {
 export function replayDelays(d, gens, total = 9000) {
   const count = {}; for (const n of d.nodes) count[n.born] = (count[n.born] || 0) + 1;
   const w = gens.map(g => 1 + (count[g] || 0) / 6), sum = w.reduce((a, b) => a + b, 0) || 1;
-  return w.map(x => Math.max(60, Math.min(900, Math.round(x / sum * total))));
+  return w.map(x => Math.max(180, Math.min(1200, Math.round(x / sum * total))));
 }
 // Replay state at generation g: which nodes / edges exist yet, which have been eliminated, which were just born.
 export function replayState(el, g) {
