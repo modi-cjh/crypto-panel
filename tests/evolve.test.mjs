@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { validEvolve, loopSVG, statsMarkup, fitnessSVG, graphLayout, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, miniCurve } from '../assets/evolve.mjs';
+import { replayGenerations, replayState, replayDelays, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphLayout, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, miniCurve } from '../assets/evolve.mjs';
 
 const d = JSON.parse(fs.readFileSync(new URL('./fixtures/evolve-dashboard.json', import.meta.url), 'utf8'));
 
@@ -64,4 +64,19 @@ test('paper account, home card and data caption', () => {
 test('text from the data is escaped', () => {
   const evil = structuredClone(d); evil.nodes[0].summary = '<img src=x onerror=alert(1)>';
   assert.doesNotMatch(detailMarkup(evil, evil.nodes[0].id), /<img/);
+});
+
+test('replay steps through every archived generation; nodes appear when born and fade when eliminated', () => {
+  const gens = replayGenerations(d);
+  assert.deepEqual(gens, [...gens].sort((a, b) => a - b)); assert.equal(new Set(gens).size, gens.length);
+  assert.equal(gens.at(-1), Math.max(...d.nodes.map(n => n.born)));
+  assert.deepEqual(replayState({ born: '3' }, 2), { future: true, gone: false, newborn: false });
+  assert.deepEqual(replayState({ born: '3' }, 3), { future: false, gone: false, newborn: true });
+  assert.deepEqual(replayState({ born: '3', died: '5' }, 6), { future: false, gone: true, newborn: false });
+  const delays = replayDelays(d, gens, 9000);
+  assert.equal(delays.length, gens.length); assert.ok(delays.every(x => x >= 60 && x <= 900));
+  const svg = graphSVG(d, null);
+  assert.equal((svg.match(/<g class="evo-node[^"]*" data-node="[^"]+" data-born="\d+"/g) || []).length, d.nodes.length);
+  assert.ok((svg.match(/class="evo-edge[^"]*\bflow\b/g) || []).length > 0);                       // genes flowing into living strategies
+  assert.match(svg, /class="evo-gen-label"/);
 });

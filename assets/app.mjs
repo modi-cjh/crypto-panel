@@ -10,7 +10,7 @@ import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } fro
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261104-quotes443';
 import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
 import { workState, pnlMood, tradeBurst, positionReport, pnlComment } from './robot-work.mjs';
-import { EVOLVE_URL, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption } from './evolve.mjs';
+import { EVOLVE_URL, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays } from './evolve.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
 import config from '../config.js';
@@ -784,13 +784,60 @@ function renderEvolve(){
  // On narrow screens the gene pool scrolls sideways: start at the newest generation unless the viewer has scrolled.
  {const box=$('evolve-graph');if(!box.dataset.userScrolled && box.scrollWidth>box.clientWidth){box.dataset.auto='1';box.scrollLeft=box.scrollWidth;}}
  setHTML($('evolve-paper'),paperMarkup(d));setText($('evolve-caption'),dataCaption(d));
+ // Replay: the whole history on first view, only the new generations when fresh data arrives.
+ const gens=replayGenerations(d);$('evolve-scrub').max=String(Math.max(0,gens.length-1));
+ if(evoReplay.timer)evoApply(gens[evoReplay.i-1] ?? gens[0]);
+ else if(evoReplay.seen===null){evoReplay.seen=d.generation;if(!evoStill())evoPlay(gens[0]);else evoShowAll();}
+ else if(d.generation>evoReplay.seen){const from=evoReplay.seen+1;evoReplay.seen=d.generation;if(!evoStill())evoPlay(from);}
+ else if(!evoReplay.timer)evoShowAll();
 }
+// ---- gene pool replay (generation by generation) ----
+const evoReplay={timer:0,gens:[],i:0,seen:null};
+const evoStill=()=>matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('reduced-motion');
+function evoApply(g){
+ const svg=$('evolve-graph').querySelector('svg');if(!svg || g===undefined)return;
+ svg.classList.add('replay');
+ svg.querySelectorAll('[data-born]').forEach(el=>{const st=replayState(el.dataset,g);el.classList.toggle('future',st.future);el.classList.toggle('gone',st.gone);el.classList.toggle('newborn',st.newborn);});
+ const label=svg.querySelector('.evo-gen-label');if(label)label.textContent=`第 ${g} 代`;
+ const gens=evoReplay.gens.length?evoReplay.gens:replayGenerations(evolveData);
+ $('evolve-scrub').value=String(Math.max(0,gens.indexOf(g)));setText($('evolve-genlabel'),`第 ${g} 代`);
+}
+function evoShowAll(){
+ const svg=$('evolve-graph').querySelector('svg');if(svg){svg.classList.remove('replay');svg.querySelectorAll('.future,.gone,.newborn').forEach(el=>el.classList.remove('future','gone','newborn'));}
+ const gens=replayGenerations(evolveData);$('evolve-scrub').value=String(Math.max(0,gens.length-1));
+ setText($('evolve-genlabel'),evolveData?`第 ${evolveData.generation} 代`:'');
+}
+function evoStop(showAll=true){
+ clearTimeout(evoReplay.timer);evoReplay.timer=0;setText($('evolve-play'),'▶ 回放进化');if(showAll)evoShowAll();
+}
+function evoPlay(fromGen){
+ if(!evolveData)return;
+ clearTimeout(evoReplay.timer);
+ evoReplay.gens=replayGenerations(evolveData);
+ evoReplay.i=Math.max(0,evoReplay.gens.findIndex(g=>g>=fromGen));
+ const delays=replayDelays(evolveData,evoReplay.gens,fromGen>evoReplay.gens[0]?4000:9000);   // full history ≈ 9 s, new generations ≈ 4 s
+ setText($('evolve-play'),'❚❚ 暂停');
+ const tick=()=>{if(route!=='evolve' || document.hidden){evoStop();return;}
+  if(evoReplay.i>=evoReplay.gens.length){evoStop();return;}
+  const k=evoReplay.i;evoApply(evoReplay.gens[k]);evoReplay.i++;evoReplay.timer=setTimeout(tick,delays[k]);};
+ evoReplay.timer=1;tick();
+}
+$('evolve-play').addEventListener('click',()=>{
+ if(evoReplay.timer){evoStop(false);return;}
+ const gens=replayGenerations(evolveData||{nodes:[]}),at=Number($('evolve-scrub').value);
+ evoPlay(at>=gens.length-1?gens[0]:gens[at]);   // resume from the scrubber, or restart at the end
+});
+$('evolve-scrub').addEventListener('input',e=>{
+ clearTimeout(evoReplay.timer);evoReplay.timer=0;setText($('evolve-play'),'▶ 回放进化');
+ const gens=replayGenerations(evolveData||{nodes:[]}),k=Number(e.target.value);
+ if(k>=gens.length-1)evoShowAll();else{evoReplay.gens=gens;evoApply(gens[k]);}
+});
 function selectEvolveNode(id,focus=false){
  if(!evolveData || !id)return;evolveSel=id;renderEvolve();
  if(focus)$('evolve-detail').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 $('evolve-graph').addEventListener('scroll',e=>{const box=e.currentTarget;if(box.dataset.auto){delete box.dataset.auto;return;}box.dataset.userScrolled='1';},{passive:true});
-$('evolve-page').addEventListener('click',e=>{const n=e.target.closest('[data-node]');if(n)selectEvolveNode(n.dataset.node,n.closest('#evolve-detail')===null && innerWidth<900);});
+$('evolve-page').addEventListener('click',e=>{const n=e.target.closest('[data-node]');if(n && evoReplay.timer)evoStop();if(n)selectEvolveNode(n.dataset.node,n.closest('#evolve-detail')===null && innerWidth<900);});
 $('evolve-page').addEventListener('keydown',e=>{const n=e.target.closest('[data-node]');if(n && (e.key==='Enter' || e.key===' ')){e.preventDefault();selectEvolveNode(n.dataset.node,true);}});
 
 // Write only when content changed: identical rewrites still rebuild nodes (SVG, lists) and read as flicker.
