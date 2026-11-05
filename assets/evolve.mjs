@@ -32,13 +32,15 @@ export function validNodeDetails(x) {
     Object.values(x.nodes).every(v => v && typeof v.genes === 'object' && v.genes);
 }
 // A node with its details merged in (slim lineage node + nodes.json entry); seated members already carry everything.
+// A node is slim when it lacks genes (schema 2) or, with d.details set, lacks its summary (genes kept for older pages).
+const isSlim = (d, n) => !n.genes || (Boolean(d.details) && n.summary === undefined);
 export function fullNode(d, id, details) {
   const n = d.nodes.find(x => x.id === id) || (d.champion?.id === id ? d.champion : null);
-  if (!n || n.genes) return n;
+  if (!n || !isSlim(d, n)) return n;
   const extra = details?.nodes?.[id];
   return extra ? { ...extra, ...n } : n;
 }
-export const needsDetails = (d, id, details) => { const n = fullNode(d, id, details); return Boolean(n && !n.genes); };
+export const needsDetails = (d, id, details) => { const n = fullNode(d, id, details); return Boolean(n && isSlim(d, n)); };
 export const speciesName = (d, sp) => d?.species_names?.[sp] || sp;
 
 // ---- evolution loop: observe → breed → test → out-of-sample gate → select → deploy
@@ -173,7 +175,7 @@ export function detailMarkup(d, id, details = null, detailsFailed = false) {
     `<p class="evo-summary">${esc(n.summary || '')}</p>` +
     `<p class="muted evo-origin">第 ${n.born} 代出生 · ${HOW[n.how] || esc(n.how)} · 父代 ${parents} · 训练适应度 <b>${fmt(n.fitness, 3)}</b></p>` +
     `<div class="table-scroll"><table class="evo-metrics"><thead><tr><th></th><th>收益</th><th>最大回撤</th><th>交易次数</th><th>胜率</th><th>盈亏比</th></tr></thead><tbody>${metricRow('训练集 70%', n.train)}${metricRow('样本外 30%', n.test)}</tbody></table></div>` +
-    (n.genes ? `${miniCurve(curves)}<div class="sim-legend">${curves.map(c => `<span><i class="${c.cls}"></i>${c.label}</span>`).join('')}</div>` +
+    (!isSlim(d, n) ? `${miniCurve(curves)}<div class="sim-legend">${curves.map(c => `<span><i class="${c.cls}"></i>${c.label}</span>`).join('')}</div>` +
       `<h4>基因</h4><table class="evo-genes"><tbody>${genes}</tbody></table><p class="muted evo-note">灰色基因当前物种用不到，但会遗传给后代。</p>`
       : `<p class="muted evo-loading" role="status">${detailsFailed ? '基因与回测曲线暂时读取失败，稍后自动重试' : '正在读取基因与回测曲线…'}</p>`);
 }

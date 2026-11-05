@@ -109,3 +109,17 @@ test('schema 2: slim lineage nodes, details merged from nodes.json when a node i
   assert.match(html, /<h4>基因<\/h4>/); assert.equal(fullNode(slim, other.id, details).fitness, other.fitness);
   assert.ok(JSON.stringify(slim).length < JSON.stringify(d).length * .6);
 });
+
+test('compat output: schema 1 with genes on every node still passes the pre-nodes.json page check, details load lazily', async () => {
+  const { validEvolve: ok, needsDetails, detailMarkup: detail, teamIds: seats } = await import('../assets/evolve.mjs');
+  const oldPageCheck = x => x.schema === 1 && x.nodes.every(n => n.genes && n.train && n.test);     // validEvolve before PR #58
+  const seated = new Set([...seats(d), d.champion.id]);
+  const compat = { ...d, details: 'nodes.json', nodes: d.nodes.map(n => seated.has(n.id) ? n : Object.fromEntries(Object.entries(n).filter(([k]) => !['summary', 'test_curve', 'train_curve'].includes(k)))) };
+  const details = { schema: 1, generation: d.generation, nodes: Object.fromEntries(d.nodes.map(n => [n.id, { genes: n.genes, summary: n.summary, test_curve: n.test_curve }])) };
+  assert.ok(oldPageCheck(compat)); assert.ok(ok(compat));
+  const other = compat.nodes.find(n => !seated.has(n.id));
+  assert.ok(needsDetails(compat, other.id, null)); assert.equal(needsDetails(compat, other.id, details), false);
+  assert.equal(needsDetails(d, other.id, null), false);                               // plain schema 1 (no details file): nothing to load
+  assert.match(detail(compat, other.id, null), /正在读取基因与回测曲线/);
+  assert.match(detail(compat, other.id, details), /<h4>基因<\/h4>/);
+});

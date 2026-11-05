@@ -30,9 +30,9 @@ GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'fitness
 
 def node_view(n, curves=False, slim=False):
     v = {k: n[k] for k in GRAPH_KEYS if k in n}
-    if slim:                                   # enough for the gene-pool graph; details live in nodes.json
+    v['genes'] = n['genes']                    # kept even when slim: pages from before nodes.json require genes on every node
+    if slim:                                   # summary and curves live in nodes.json
         return v
-    v['genes'] = n['genes']
     v['summary'] = describe(n['genes'])
     v['test_curve'] = n.get('test_curve', [])[:: max(1, len(n.get('test_curve', [])) // 20)]
     if curves:
@@ -52,7 +52,7 @@ def dashboard(state, series, split, obs, paper_view, timing):
     nodes, champ = state['nodes'], state['champion']
     seated = {m['id'] for m in state.get('team', [])} | {champ}
     return dict(
-        schema=2, details='nodes.json', updated_at=iso(int(time.time() * 1000)), generation=state['generation'], population=state['population'],
+        schema=1, details='nodes.json', updated_at=iso(int(time.time() * 1000)), generation=state['generation'], population=state['population'],
         stats=dict(state['stats'], population=len(state['population']), elites=E.ELITES, offspring=E.POPULATION - E.ELITES, hall=len(state['hall'])),
         data=dict(instruments=list(series), bar='1H', bars=s.n, train_from=iso(s.ts[start]), train_to=iso(s.ts[cut - 1]),
                   test_from=iso(s.ts[cut]), test_to=iso(s.ts[end - 1]), train_share=D.TRAIN_SHARE),

@@ -66,9 +66,10 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
   // Home shows a compact evolution card that links here.
   await page.goto(BASE + '#/'); await page.waitForSelector('#home-evolve:not([hidden])', { timeout: 20000 }).catch(() => {});
   if (await page.locator('#home-sim').isVisible()) assert.match(await page.locator('#home-evolve').innerText(), new RegExp(`第 ${dash.generation} 代`));
-  // Schema 2: the page loads slim lineage nodes, and nodes.json only when a node without details is opened (once).
+  // Slim lineage nodes: the page loads and nodes.json only when a node without details is opened (once).
   { const seated = new Set([...(dash.team || []).map(m => m.id), dash.champion.id]);
-    const slim = { ...dash, schema: 2, details: 'nodes.json', nodes: dash.nodes.map(n => seated.has(n.id) ? n : Object.fromEntries(Object.entries(n).filter(([k]) => !['genes', 'summary', 'test_curve', 'train_curve'].includes(k)))) };
+    // What the engine writes now: schema 1 (older pages keep working) with genes on every node, summaries / curves in nodes.json.
+    const slim = { ...dash, details: 'nodes.json', nodes: dash.nodes.map(n => seated.has(n.id) ? n : Object.fromEntries(Object.entries(n).filter(([k]) => !['summary', 'test_curve', 'train_curve'].includes(k)))) };
     const det = { schema: 1, generation: dash.generation, nodes: Object.fromEntries(dash.nodes.map(n => [n.id, { genes: n.genes, summary: n.summary, test_curve: n.test_curve }])) };
     const ctx = await browser.newContext({ ...devices['iPhone 13'], reducedMotion: 'reduce' }); let detailHits = 0;
     await ctx.route(/okx\.com/, r => r.abort());

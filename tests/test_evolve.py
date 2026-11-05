@@ -301,8 +301,8 @@ class RunTests(unittest.TestCase):
                 self.assertTrue(dash['nodes']); self.assertEqual(dash['data']['train_share'], .7)
                 # Lineage nodes are slim; seated members keep their genes; every node's details are in nodes.json.
                 seated = {m['id'] for m in dash['team']} | {dash['champion']['id']}
-                self.assertEqual(dash['schema'], 2); self.assertEqual(dash['details'], 'nodes.json')
-                for n in dash['nodes']: self.assertEqual('genes' in n, n['id'] in seated); self.assertIn('train', n)
+                self.assertEqual(dash['schema'], 1); self.assertEqual(dash['details'], 'nodes.json')   # schema 1: pages from before nodes.json still read it
+                for n in dash['nodes']: self.assertIn('genes', n); self.assertEqual('summary' in n, n['id'] in seated); self.assertIn('train', n)
                 det = json.loads((out / 'nodes.json').read_text())
                 self.assertEqual(det['generation'], 2); self.assertEqual(set(det['nodes']), {n['id'] for n in dash['nodes']})
                 self.assertTrue(all({'genes', 'summary', 'test_curve'} <= set(v) for v in det['nodes'].values()))
