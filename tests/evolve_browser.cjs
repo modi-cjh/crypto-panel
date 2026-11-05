@@ -17,6 +17,23 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(BASE + '#/evolve');
   await page.waitForSelector('#evolve-graph svg');
+  // The gene pool replays its history on first view, generation by generation, then rests on the current state.
+  await page.waitForSelector('#evolve-graph svg.replay', { timeout: 10000 });
+  assert.match(await page.locator('#evolve-play').innerText(), /暂停/);
+  await page.waitForFunction(() => !document.querySelector('#evolve-graph svg.replay'), null, { timeout: 15000 });
+  assert.equal(await page.locator('#evolve-graph .future').count(), 0);
+  assert.match(await page.locator('#evolve-genlabel').innerText(), new RegExp(`第 ${dash.generation} 代`));
+  // Scrubbing to the first generation hides everything born later; the end of the slider shows everything again.
+  await page.locator('#evolve-scrub').fill('0');
+  assert.ok(await page.locator('#evolve-graph .future').count() > 0);
+  const last = await page.locator('#evolve-scrub').getAttribute('max');
+  await page.locator('#evolve-scrub').fill(last);
+  assert.equal(await page.locator('#evolve-graph svg.replay').count(), 0);
+  // Play, then click a node: the replay stops and the full pool is shown with that node selected.
+  await page.locator('#evolve-play').click(); await page.waitForSelector('#evolve-graph svg.replay');
+  await page.locator(`#evolve-graph [data-node="${dash.champion.id}"]`).dispatchEvent('click');
+  await page.waitForFunction(() => !document.querySelector('#evolve-graph svg.replay'));
+  assert.match(await page.locator('#evolve-play').innerText(), /回放进化/);
   assert.equal(await page.locator('[data-nav="evolve"]').getAttribute('aria-current'), 'page');
   assert.match(await page.title(), /策略进化/);
   assert.match(await page.locator('#evolve-loop').innerText(), new RegExp(`${dash.generation}[\\s\\S]*观察波动|观察波动[\\s\\S]*${dash.generation}`));
@@ -51,6 +68,11 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
   // Home shows a compact evolution card that links here.
   await page.goto(BASE + '#/'); await page.waitForSelector('#home-evolve:not([hidden])', { timeout: 20000 }).catch(() => {});
   if (await page.locator('#home-sim').isVisible()) assert.match(await page.locator('#home-evolve').innerText(), new RegExp(`第 ${dash.generation} 代`));
+  // Reduced motion: no automatic replay.
+  { const still = await browser.newContext({ ...devices['iPhone 13'], reducedMotion: 'reduce' });
+    await still.route(/okx\.com/, r => r.abort()); await still.route('**/paper-data/evolve/dashboard.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(dash) }));
+    const sp = await still.newPage(); await sp.goto(BASE + '#/evolve'); await sp.waitForSelector('#evolve-graph svg'); await sp.waitForTimeout(800);
+    assert.equal(await sp.locator('#evolve-graph svg.replay').count(), 0); await still.close(); }
   // Before the first run the page explains what will appear.
   mode = 'missing'; const fresh = await context.newPage(); await fresh.goto(BASE + '#/evolve');
   await fresh.waitForSelector('#evolve-error:not([hidden])');

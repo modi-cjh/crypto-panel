@@ -335,3 +335,24 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
 .evo-rules{font-size:12px;line-height:1.7;margin:4px 0 0}
 .evo-node .team-ring{fill:none;stroke:#06727d;stroke-width:2.5}
 .evo-team tr.evo-member{cursor:pointer}.evo-team td:nth-child(2){text-align:left;white-space:nowrap}.evo-team .evo-dot{margin-right:5px;vertical-align:0}
+
+/* ---- Gene pool animation: replay generation by generation, breathing survivors, genes flowing to living children ---- */
+.evo-controls{display:flex;align-items:center;gap:10px;padding:0 16px 10px}
+.evo-controls .pill{cursor:pointer;font:inherit;font-size:13px;flex:none}
+.evo-controls input[type=range]{flex:1;min-width:0;accent-color:#06727d}
+#evolve-genlabel{flex:none;font-size:12px;font-variant-numeric:tabular-nums;min-width:56px;text-align:right}
+.evo-graph .evo-node,.evo-graph .evo-edge{transition:opacity .35s ease}
+.evo-graph circle{transform-box:fill-box;transform-origin:center}
+.evo-graph .evo-node.alive>circle:nth-of-type(2){animation:evo-breathe 3.2s ease-in-out infinite;animation-delay:var(--d,0s)}
+@keyframes evo-breathe{50%{transform:scale(1.14)}}
+.evo-graph .evo-edge.flow{stroke:#06727d;opacity:.42;stroke-dasharray:3 9;animation:evo-flow 1.6s linear infinite;animation-delay:var(--d,0s)}
+@keyframes evo-flow{to{stroke-dashoffset:-24}}
+.evo-gen-label{font-size:24px;font-weight:700;fill:#06727d;opacity:0;font-variant-numeric:tabular-nums}
+.evo-graph.replay .evo-gen-label{opacity:.9}
+.evo-graph.replay .future{opacity:0;pointer-events:none}
+.evo-graph.replay .evo-node.gone circle:not(.hit){opacity:.16}
+.evo-graph.replay .evo-node.gone>circle:nth-of-type(2){animation:none}
+.evo-graph.replay .evo-node.newborn>circle:nth-of-type(2){animation:evo-pop .55s cubic-bezier(.3,1.6,.5,1)}
+@keyframes evo-pop{from{transform:scale(0)}to{transform:scale(1)}}
+.evo-graph.replay .evo-edge.newborn{stroke:#06727d;opacity:.95;stroke-width:1.6;stroke-dasharray:6 4;animation:evo-flow .7s linear infinite}
+.evo-graph.replay .evo-edge.gone{opacity:.12}
