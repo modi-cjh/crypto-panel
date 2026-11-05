@@ -23,7 +23,11 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
   assert.match(await page.locator('#evolve-graph .evo-gen-label').textContent(), /第 \d+ 代/);
   await page.waitForFunction(() => !document.querySelector('#evolve-graph svg.replay'), null, { timeout: 20000 });
   assert.equal(await page.locator('#evolve-graph .future').count(), 0);
-  assert.ok(await page.locator('#evolve-graph .evo-spark').count() > 0);
+  // After the replay the canvas overlay animates: halos and sparks are drawn (non-empty pixels that change over time).
+  const ink = () => page.evaluate(() => { const c = document.querySelector('#evolve-graph canvas.evo-fx'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let n = 0, h = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) { n++; h = (h * 31 + i + d[i]) % 1e9; } return [n, h]; });
+  await page.locator('#evolve-graph').scrollIntoViewIfNeeded(); await page.waitForTimeout(300); const f1 = await ink(); await page.waitForTimeout(700); const f2 = await ink();
+  assert.ok(f1[0] > 0 && f2[0] > 0); assert.notEqual(f1[1], f2[1]);
   // Reload and click a node mid-replay: the replay stops and the full pool is shown with that node selected.
   await page.reload(); await page.waitForSelector('#evolve-graph svg.replay', { timeout: 10000 });
   await page.locator(`#evolve-graph [data-node="${dash.champion.id}"]`).dispatchEvent('click');

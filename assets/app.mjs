@@ -11,6 +11,7 @@ import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=202611
 import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
 import { workState, pnlMood, tradeBurst, positionReport, pnlComment } from './robot-work.mjs';
 import { EVOLVE_URL, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays } from './evolve.mjs';
+import { GeneFx } from './evolve-fx.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
 import config from '../config.js';
@@ -443,6 +444,7 @@ function navigate() {
     if (route === 'home') { syncHomeCoin(); refreshTeam(); refreshScan(); renderHome(); if (snapshot) renderEquity(); }
   } else { renderMarket(); refreshSlow(); }
   if (route === 'home') refreshSnapshot();
+  if(route==='evolve')queueMicrotask(()=>geneFx.kick());   // resume the gene-pool motion (geneFx is created later in this module)
   document.documentElement.dataset.route=route;renderPinnedBalance();renderSim();refreshSim();refreshEvolve();
   refreshPublicAccount();syncStreams();
 }
@@ -776,7 +778,7 @@ function renderEvolve(){
  if(!evolveSel || !d.nodes.some(n=>n.id===evolveSel))evolveSel=d.champion?.id || d.nodes[0]?.id || null;
  setText($('evolve-updated'),`第 ${d.generation} 代 · 更新 ${time(d.updated_at)} UTC+7`);
  setHTML($('evolve-loop'),loopSVG(d));setHTML($('evolve-stats'),statsMarkup(d));setHTML($('evolve-fitness'),fitnessSVG(d.history));
- setHTML($('evolve-graph'),graphSVG(d,evolveSel));setHTML($('evolve-detail'),detailMarkup(d,evolveSel));
+ setHTML($('evolve-graph'),graphSVG(d,evolveSel));geneFx.refresh();setHTML($('evolve-detail'),detailMarkup(d,evolveSel));
  // On narrow screens the gene pool scrolls sideways: start at the newest generation unless the viewer has scrolled.
  {const box=$('evolve-graph');if(!box.dataset.userScrolled && box.scrollWidth>box.clientWidth){box.dataset.auto='1';box.scrollLeft=box.scrollWidth;}}
  setHTML($('evolve-paper'),paperMarkup(d));setText($('evolve-caption'),dataCaption(d));
@@ -790,6 +792,7 @@ function renderEvolve(){
 // ---- gene pool replay (generation by generation) ----
 const evoReplay={timer:0,gens:[],i:0,seen:null};
 const evoStill=()=>matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('reduced-motion');
+const geneFx=new GeneFx($('evolve-graph'),{still:evoStill,active:()=>route==='evolve'});
 function evoApply(g){
  const svg=$('evolve-graph').querySelector('svg');if(!svg || g===undefined)return;
  svg.classList.add('replay');

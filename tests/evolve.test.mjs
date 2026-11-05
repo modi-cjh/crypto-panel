@@ -77,7 +77,18 @@ test('replay steps through every archived generation; nodes appear when born and
   assert.equal(delays.length, gens.length); assert.ok(delays.every(x => x >= 180 && x <= 1200));
   const svg = graphSVG(d, null);
   assert.equal((svg.match(/<g class="evo-node[^"]*" data-node="[^"]+" data-born="\d+"/g) || []).length, d.nodes.length);
-  const flows = (svg.match(/class="evo-edge[^"]*\bflow\b/g) || []).length;
-  assert.ok(flows > 0); assert.equal((svg.match(/class="evo-spark"/g) || []).length, flows);   // one spark per edge into a living strategy
+  assert.ok((svg.match(/class="evo-edge[^"]*\bflow\b/g) || []).length > 0);   // lines into living strategies carry sparks
+  assert.match(svg, /<canvas class="evo-fx"/);                                  // ambient motion layer over the static SVG
   assert.match(svg, /class="evo-gen-label"/);
+});
+
+test('ambient motion: sparks travel parent → child then rest, halos breathe, rhythms are stable per item', async () => {
+  const { sparkAt, breath, seed, easeInOut } = await import('../assets/evolve-fx.mjs');
+  assert.equal(sparkAt(0, 10, 0).u, 0); assert.equal(sparkAt(0, 10, 0).a, 0);
+  const mid = sparkAt(1.9, 10, 0); assert.ok(Math.abs(mid.u - .5) < .01); assert.ok(mid.a > .99);
+  assert.equal(sparkAt(5, 10, 0), null);                                    // resting for the rest of the period
+  let prev = -1; for (let t = 0; t < 3.8; t += .1) { const p = sparkAt(t, 10, 0); assert.ok(p.u >= prev); prev = p.u; }   // never runs backwards
+  assert.ok(breath(0, 6, .25) > .99 && breath(0, 6, .75) < .01);
+  assert.equal(seed('s35'), seed('s35')); assert.notEqual(seed('s35'), seed('s36')); assert.ok(seed('x') >= 0 && seed('x') < 1);
+  assert.equal(easeInOut(0), 0); assert.equal(easeInOut(1), 1);
 });
