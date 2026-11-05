@@ -89,11 +89,8 @@ export function graphSVG(d, selected) {
   const byId = Object.fromEntries(d.nodes.map(n => [n.id, n]));
   const edges = d.nodes.flatMap(n => n.parents.filter(p => pos[p]).map(p => {
     const a = pos[p], b = pos[n.id], hot = selected && (n.id === selected || p === selected);
-    // data-born drives the replay; edges into living strategies ('flow') carry a soft spark from parent to child now and then:
-    // genes being passed on. Each spark has its own period and phase so they never move in lockstep.
-    const xy = `x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" pathLength="100" data-born="${n.born}"`, h = hash(n.id + p);
-    return `<line ${xy} class="evo-edge${hot ? ' hot' : ''}${n.how === 'crossover' ? ' cross' : ''}${pop.has(n.id) ? ' flow' : ''}"/>` +
-      (pop.has(n.id) ? `<line ${xy} class="evo-spark" style="--t:${(5 + h * 6).toFixed(2)}s;--d:-${(h * 11).toFixed(2)}s"/>` : '');
+    // data-born drives the replay; edges into living strategies ('flow') get a travelling spark drawn by evolve-fx.mjs.
+    return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" pathLength="100" data-born="${n.born}" class="evo-edge${hot ? ' hot' : ''}${n.how === 'crossover' ? ' cross' : ''}${pop.has(n.id) ? ' flow' : ''}"/>`;
   })).join('');
   const bands = SPECIES_ORDER.map((sp, i) => { const y = 40 + i * (H - 60) / SPECIES_ORDER.length;
     return `<text x="8" y="${(y + 14).toFixed(1)}" class="evo-band" fill="${SPECIES_COLORS[sp]}">${esc(speciesName(d, sp))} · ${d.nodes.filter(n => n.species === sp && pop.has(n.id)).length}</text>`; }).join('');
@@ -101,13 +98,13 @@ export function graphSVG(d, selected) {
   const dots = order.map(n => {
     const p = pos[n.id], cls = ['evo-node', pop.has(n.id) ? 'alive' : 'dead', n.qualified ? 'ok' : '', hall.has(n.id) ? 'hall' : '', n.id === champ ? 'champ' : '', team.has(n.id) ? 'team' : '', n.id === selected ? 'sel' : ''].filter(Boolean).join(' ');
     const label = `${speciesName(d, n.species)} ${n.id} · 第 ${n.born} 代 · 适应度 ${fmt(n.fitness, 2)} · 样本外 ${signed(n.test.ret, 1)}%${n.qualified ? ' · 合格' : ''}${pop.has(n.id) ? '' : ` · 第 ${n.died ?? '—'} 代淘汰`}`;
-    return `<g class="${cls}" data-node="${esc(n.id)}" data-born="${n.born}"${n.died == null ? '' : ` data-died="${n.died}"`} style="--t:${(4.5 + hash(n.id + "t") * 3).toFixed(2)}s;--d:-${(hash(n.id) * 7.5).toFixed(2)}s" tabindex="0" role="button" aria-label="${esc(label)}"><circle class="hit" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 9).toFixed(1)}"/>` +
+    return `<g class="${cls}" data-node="${esc(n.id)}" data-born="${n.born}"${n.died == null ? '' : ` data-died="${n.died}"`} tabindex="0" role="button" aria-label="${esc(label)}"><circle class="hit" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 9).toFixed(1)}"/>` +
       `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.r.toFixed(1)}" fill="${SPECIES_COLORS[n.species]}"/>${team.has(n.id) ? `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${(p.r + 5).toFixed(1)}" class="${n.id === champ ? 'champ-ring' : 'team-ring'}"/>` : ''}<title>${esc(label)}</title></g>`;
   }).join('');
   const g0 = Math.min(...d.nodes.map(n => n.born)), g1 = Math.max(...d.nodes.map(n => n.born));
-  return `<svg viewBox="0 0 ${W} ${H}" class="evo-graph" role="group" aria-label="基因池：每个点是一个策略，点击查看基因与回测">${bands}<g>${edges}</g><g>${dots}</g>` +
+  return `<div class="evo-stage"><svg viewBox="0 0 ${W} ${H}" class="evo-graph" role="group" aria-label="基因池：每个点是一个策略，点击查看基因与回测">${bands}<g>${edges}</g><g>${dots}</g>` +
     `<text x="50" y="${H - 6}" class="evo-axis">第 ${g0} 代</text><text x="${W - 40}" y="${H - 6}" text-anchor="end" class="evo-axis">第 ${g1} 代 →</text>` +
-    `<text x="${W - 16}" y="38" text-anchor="end" class="evo-gen-label" aria-hidden="true"></text></svg>`;
+    `<text x="${W - 16}" y="38" text-anchor="end" class="evo-gen-label" aria-hidden="true"></text></svg><canvas class="evo-fx" aria-hidden="true"></canvas></div>`;
 }
 
 // Generations to step through when replaying the gene pool (every generation that has a strategy in the archive).
