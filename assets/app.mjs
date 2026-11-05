@@ -3,7 +3,7 @@ import { initTradeControls, renderTradeControls } from './control.mjs';
 import { runtimeConfig, refreshRuntimeHealth } from './runtime.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
-import { HistoryPage, riskProgress } from './history.mjs';
+import { riskProgress } from './history.mjs';
 import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-quotes443';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
@@ -20,7 +20,6 @@ import { PublicAPI, normalizeTickers, number } from './api.mjs';
 import { parseCandles, analyze } from './indicators.mjs';
 import { chartAvailable, createCandleCharts } from './charts.mjs';
 
-const historyPage = new HistoryPage();
 let decisionHistory=null,decisionHistoryStatus='loading',decisionHistoryBusy=false;
 const $ = id => document.getElementById(id);
 configureMotion();
@@ -206,7 +205,6 @@ function renderQuote() {
 // FUNDING_FAST refresh every 3 minutes instead of every minute to stay well inside OKX's public rate limit.
 const MARKET_SIZE = 100, FUNDING_FAST = 30;
 async function refreshPrices() {
-  if(route==='paper' && !mainAccounts(publicAccount).some(a=>a.status!=='已停止' && a.positions.length))return;
   if (priceBusy) return;
   priceBusy = true;
   try {
@@ -217,13 +215,12 @@ async function refreshPrices() {
     priceAt = Date.now(); setError('prices', null); updateStreamStatus();
     $('price-updated').textContent = `${time(priceAt)} UTC+7 更新`;
     if (firstLoad) syncHomeCoin();
-    renderMarket(); if (route === 'coin') renderQuote(); if (route === 'home') renderHome(); if (route === 'paper') historyPage.setPrices(tickers); if (route === 'sim' || route === 'home') renderSim(); // live PnL on paper positions
+    renderMarket(); if (route === 'coin') renderQuote(); if (route === 'home') renderHome(); if (route === 'sim' || route === 'home') renderSim(); // live PnL on paper positions
     if (['home', 'market', 'coin'].includes(route)) refreshSlow();
-  } catch (error) { setError('prices', `行情：${description(error)}`); if (!tickers.length) renderMarket();if(route==='paper')historyPage.setPrices([]);if(route==='home')renderPublicHome(); }
+  } catch (error) { setError('prices', `行情：${description(error)}`); if (!tickers.length) renderMarket();if(route==='home')renderPublicHome(); }
   finally { priceBusy = false; refreshHealth(); }
 }
 async function refreshSlow() {
-  if(route==='paper')return;
   if (slowBusy || !top.length) return;
   slowBusy = true;
   const wanted = [...new Set([...(coin ? [coin] : []), ...top.map(r => r.id)])], slowRank = new Set(top.slice(FUNDING_FAST).map(r => r.id));
@@ -338,8 +335,7 @@ async function refreshPublicAccount() {
     if (!validAccount(data)) throw new Error('公开账户快照格式无效');
     const changed=publicAccount?.updated_at !== data.updated_at || publicAccount?.mode !== data.mode;
     const freshFills=fillRecords.update(mainAccounts(data).flatMap(a=>a.fills));
-    publicAccount=data;historyPage.setAccount(data);renderPinnedBalance();
-    if(route==='paper')refreshPrices();
+    publicAccount=data;renderPinnedBalance();
     if(['home','coin'].includes(route)){const cached=candleCache.get(coin+'/'+timeframe);if(cached)renderAnalysis(cached.bars);}
     for(const fill of freshFills){const line=fillLine(fill);notify(line,`新成交 · ${line.text}`);}
     setError('account',null);syncHomeCoin();renderScan();
@@ -418,12 +414,13 @@ function renderDecisions() {
 
 function navigate() {
   routeVersion++;
+  if (location.hash === '#/paper') { location.replace('#/sim'); return; }   // the old bot's history page is gone; the OKX account lives on 模拟交易
   const hash = location.hash || '#/';
   const match = /^#\/coin\/([A-Z0-9]+-USDT-SWAP)$/.exec(hash);
-  route = match ? 'coin' : hash === '#/paper' ? 'paper' : hash === '#/market' ? 'market' : hash === '#/sim' ? 'sim' : hash === '#/evolve' ? 'evolve' : 'home';
+  route = match ? 'coin' : hash === '#/market' ? 'market' : hash === '#/sim' ? 'sim' : hash === '#/evolve' ? 'evolve' : 'home';
   coin = match?.[1] || homeCoin;
   candleCharts?.destroy(); candleCharts = null;
-  for (const page of ['home', 'market', 'coin', 'paper', 'sim', 'evolve']) $(`${page}-page`).hidden = route !== page;
+  for (const page of ['home', 'market', 'coin', 'sim', 'evolve']) $(`${page}-page`).hidden = route !== page;
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === (route === 'coin' ? 'market' : route); a.classList.toggle('active', active); if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $('home-price-slot').append($('price-panel'));
   $('home-analysis-slot').append($('analysis-content'));
@@ -444,9 +441,8 @@ function navigate() {
     const cached = candleCache.get(coin + '/' + timeframe); if (cached) showCandles(cached.bars, cached.at);
     refreshCandles(); refreshSlow();
     if (route === 'home') { syncHomeCoin(); refreshTeam(); refreshScan(); renderHome(); if (snapshot) renderEquity(); }
-  } else if (route === 'paper') { historyPage.refresh(); }
-  else { renderMarket(); refreshSlow(); }
-  if (route === 'home' || route === 'paper') refreshSnapshot();
+  } else { renderMarket(); refreshSlow(); }
+  if (route === 'home') refreshSnapshot();
   document.documentElement.dataset.route=route;renderPinnedBalance();renderSim();refreshSim();refreshEvolve();
   refreshPublicAccount();syncStreams();
 }
@@ -598,12 +594,12 @@ function scheduleLiveRender(){
   if(liveRenderPending)return;liveRenderPending=true;
   requestAnimationFrame(()=>{
     liveRenderPending=false;
-    renderPinnedBalance();if(route==='paper')historyPage.setPrices([...liveQuotes].filter(([,q])=>Date.now()-q.at<45000).map(([id,q])=>({id,last:q.price})));if(route==='home')renderPublicHome();if(route==='coin')renderQuote();
+    renderPinnedBalance();if(route==='home')renderPublicHome();if(route==='coin')renderQuote();
   });
 }
 function syncStreams(){
   if(document.hidden)return;
-  const symbols=[...new Set([...(route==='paper'?[]:[coin]),...pendingOrders(publicAccount,scan).map(p=>p.symbol),...mainAccounts(publicAccount).filter(a=>!['未启动','已停止','暂停'].includes(a.status)).flatMap(a=>a.positions.map(p=>p.symbol))])].filter(Boolean).sort();
+  const symbols=[...new Set([coin,...pendingOrders(publicAccount,scan).map(p=>p.symbol),...mainAccounts(publicAccount).filter(a=>!['未启动','已停止','暂停'].includes(a.status)).flatMap(a=>a.positions.map(p=>p.symbol))])].filter(Boolean).sort();
   const key=symbols.join(',');
   if(key!==quoteStreamKey){
     quoteStream?.stop();quoteStreamKey=key;
@@ -868,15 +864,15 @@ async function refreshDecisionHistory(){
  catch{decisionHistoryStatus='error';}finally{decisionHistoryBusy=false;updateCompanion();}
 }
 document.addEventListener('modi-decisions-open',refreshDecisionHistory);
-document.querySelector('[data-open-decisions]').addEventListener('click',()=>{mascot.select('decisions');mascot.open();});
+
 initTradeControls();refreshRuntimeHealth();navigate();refreshPrices();refreshEvents();
 setInterval(()=>{if(!document.hidden){refreshPrices();pollOkxMarks();renderPinnedBalance();updateStreamStatus();updateCompanionWork();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
  if(['home','coin'].includes(route))refreshCandles();
- refreshSnapshot();if(route==='paper')historyPage.refresh();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();refreshSim();refreshEvolve();
+ refreshSnapshot();refreshPublicAccount();refreshTeam();refreshScan();refreshEvents();refreshSlow();refreshSim();refreshEvolve();
 }},60000);
 setInterval(()=>{if(!document.hidden){refreshHealth();if(route==='home')renderHome();
  for(const stream of [quoteStream,candleStream])if(stream?.state==='实时' && Date.now()-stream.lastData>45000)stream.socket?.close();
  refreshRuntimeHealth();}},10000);
-const updateClock = () => { if(route==='paper')historyPage.renderCountdown(); $('utc-clock').textContent = new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(Date.now()) + ' UTC+7'; $('day-number').textContent = 'DAY ' + dayNumber(config.startDate); };
+const updateClock = () => { $('utc-clock').textContent = new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(Date.now()) + ' UTC+7'; $('day-number').textContent = 'DAY ' + dayNumber(config.startDate); };
 updateClock(); setInterval(updateClock, 1000);
