@@ -25,7 +25,7 @@ def run_segment(seg, genes, series, close_at_end=False):
     return simulate(genes, series, start, s.n, equity=seg['start_equity'], close_at_end=close_at_end, curve_every=1)
 
 
-def update(state, series, champion_id, switched):
+def update(state, series, champion_id, switched, reason=None):
     """Advance the paper account; returns the paper view for the dashboard and the mirror signals."""
     nodes, s = state['nodes'], next(iter(series.values()))
     paper = state.setdefault('paper', dict(start_equity=START_EQUITY, segments=[], closed_trades=[]))
@@ -41,7 +41,7 @@ def update(state, series, champion_id, switched):
         else:
             equity = paper['start_equity']
         node = nodes[champion_id]
-        paper['segments'].append(dict(champion=champion_id, genes=node['genes'], species=node['species'], from_ts=last_ts,
+        paper['segments'].append(dict(champion=champion_id, genes=node['genes'], species=node['species'], from_ts=last_ts, reason=reason,
                                       start_equity=round(equity, 2), to_ts=None, end_equity=None))
     if not paper['segments']:
         return dict(equity=paper['start_equity'], start_equity=paper['start_equity'], curve=[], trades=[], positions=[], segments=[]), {}

@@ -17,6 +17,7 @@ const GENE_NAMES = { species: '物种', direction: '方向', lookback: '回看�
 const USED = { momentum: ['lookback'], mean_revert: ['lookback', 'threshold'], vol_breakout: ['expand'], trend: ['fast', 'slow'] };
 const HOW = { seed: '初始随机', immigrant: '随机移民', crossover: '交叉', mutation: '突变' };
 const REASON = { stop: '止损', target: '止盈', time: '到期', switch: '换冠军平仓' };
+const SWITCH_WHY = { first: '首位冠军', challenger: '挑战者接替', breakdown: '原冠军样本外失守' };
 
 export function validEvolve(d) {
   return Boolean(d) && typeof d === 'object' && d.schema === 1 && finite(d.generation) && Array.isArray(d.nodes) && Array.isArray(d.history) &&
@@ -143,14 +144,18 @@ export function paperMarkup(d) {
   const pos = (p.positions || []).map(x => `<li><b class="${x.side === 1 ? 'up' : 'down'}">${x.side === 1 ? '多' : '空'}</b> ${esc(coin(x.inst))} @ ${fmt(x.entry, 4)} · 止损 ${fmt(x.stop, 4)}${x.target ? ` · 止盈 ${fmt(x.target, 4)}` : ''}<time>${time(x.opened)}</time></li>`).join('');
   const pend = (p.pending || []).map(x => `<li><b class="${x.side === 1 ? 'up' : 'down'}">${x.side === 1 ? '多' : '空'}</b> ${esc(coin(x.inst))} · 下一根 K 线开盘成交</li>`).join('');
   const trades = (p.trades || []).slice(0, 12).map(t => `<li><span><b class="${t.side === 1 ? 'up' : 'down'}">${t.side === 1 ? '多' : '空'}</b> ${esc(coin(t.inst))} · ${REASON[t.reason] || esc(t.reason)}</span><span class="${tone(t.pnl)}">${signed(t.pnl)} U</span><time>${time(t.closed)}</time></li>`).join('');
-  const segs = (p.segments || []).slice().reverse().slice(0, 6).map(s => `<li><span>${esc(s.champion)} · ${esc(speciesName(d, s.species))}</span><span>${time(s.from_ts)} 起${s.to_ts ? ` · ${time(s.to_ts)} 止` : ' · 当前'}</span></li>`).join('');
+  const segs = (p.segments || []).slice().reverse().slice(0, 6).map(s => `<li><span>${esc(s.champion)} · ${esc(speciesName(d, s.species))}${SWITCH_WHY[s.reason] ? ` · ${SWITCH_WHY[s.reason]}` : ''}</span><span>${time(s.from_ts)} 起${s.to_ts ? ` · ${time(s.to_ts)} 止` : ' · 当前'}</span></li>`).join('');
+  const r = d.champion_rules, since = Date.parse(d.champion_since), held = finite(since) ? (Date.parse(d.updated_at) - since) / 3600000 : null;
+  const tenure = r ? `<p class="muted evo-rules">上任 ${time(d.champion_since)} · 已任 ${held === null ? '—' : fmt(held, 1)} 小时（最短任期 ${r.min_tenure_hours} 小时）。期满后，连续 ${r.streak} 次样本外合格、且训练适应度高出 ${Math.round((r.margin - 1) * 100)}% 的挑战者才能接替；冠军样本外亏损超过 ${-r.retain.min_ret}% 或回撤超过 ${r.retain.max_dd}% 时提前更换。</p>` : '';
+  const chal = (d.challengers || []).map(x => `<li><span>${esc(x.id)} · ${esc(speciesName(d, x.species))} · 适应度 ${fmt(x.fitness, 2)}</span><span>连续合格 <b>${x.streak}</b> / ${r ? r.streak : 3}</span></li>`).join('');
   return `<div class="history-metrics evo-stats">${[['纸面权益 USDT', fmt(p.equity)], ['收益', `${signed(p.ret, 2)}%`, tone(p.ret)], ['持仓', `${(p.positions || []).length}`], ['已平仓', `${(p.trades || []).length}`]]
       .map(([k, v, cl = '']) => `<div><span>${k}</span><strong class="${cl}">${v}</strong></div>`).join('')}</div>` +
     `${miniCurve([{ pts: p.curve, cls: 'evo-test', label: '纸面' }])}` +
-    `<h4>当前冠军 · ${esc(c.id)}</h4><p class="evo-summary">${esc(c.summary)}</p>` +
+    `<h4>当前冠军 · ${esc(c.id)}</h4><p class="evo-summary">${esc(c.summary)}</p>${tenure}` +
     `<h4>持仓</h4><ul class="evo-list">${pos + pend || '<li class="empty">空仓，等待冠军的信号</li>'}</ul>` +
     `<h4>纸面成交</h4><ul class="evo-list">${trades || '<li class="empty">还没有平仓</li>'}</ul>` +
-    `<h4>冠军更替</h4><ul class="evo-list">${segs}</ul>`;
+    `<h4>冠军更替</h4><ul class="evo-list">${segs}</ul>` +
+    (chal ? `<h4>挑战者</h4><ul class="evo-list">${chal}</ul>` : '');
 }
 
 export function homeCardMarkup(d) {
