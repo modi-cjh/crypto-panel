@@ -19,21 +19,15 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
   await page.waitForSelector('#evolve-graph svg');
   // The gene pool replays its history on first view, generation by generation, then rests on the current state.
   await page.waitForSelector('#evolve-graph svg.replay', { timeout: 10000 });
-  assert.match(await page.locator('#evolve-play').innerText(), /暂停/);
-  await page.waitForFunction(() => !document.querySelector('#evolve-graph svg.replay'), null, { timeout: 15000 });
+  assert.equal(await page.locator('#evolve-play, #evolve-scrub').count(), 0);           // no replay controls: it just plays
+  assert.match(await page.locator('#evolve-graph .evo-gen-label').textContent(), /第 \d+ 代/);
+  await page.waitForFunction(() => !document.querySelector('#evolve-graph svg.replay'), null, { timeout: 20000 });
   assert.equal(await page.locator('#evolve-graph .future').count(), 0);
-  assert.match(await page.locator('#evolve-genlabel').innerText(), new RegExp(`第 ${dash.generation} 代`));
-  // Scrubbing to the first generation hides everything born later; the end of the slider shows everything again.
-  await page.locator('#evolve-scrub').fill('0');
-  assert.ok(await page.locator('#evolve-graph .future').count() > 0);
-  const last = await page.locator('#evolve-scrub').getAttribute('max');
-  await page.locator('#evolve-scrub').fill(last);
-  assert.equal(await page.locator('#evolve-graph svg.replay').count(), 0);
-  // Play, then click a node: the replay stops and the full pool is shown with that node selected.
-  await page.locator('#evolve-play').click(); await page.waitForSelector('#evolve-graph svg.replay');
+  assert.ok(await page.locator('#evolve-graph .evo-spark').count() > 0);
+  // Reload and click a node mid-replay: the replay stops and the full pool is shown with that node selected.
+  await page.reload(); await page.waitForSelector('#evolve-graph svg.replay', { timeout: 10000 });
   await page.locator(`#evolve-graph [data-node="${dash.champion.id}"]`).dispatchEvent('click');
   await page.waitForFunction(() => !document.querySelector('#evolve-graph svg.replay'));
-  assert.match(await page.locator('#evolve-play').innerText(), /回放进化/);
   assert.equal(await page.locator('[data-nav="evolve"]').getAttribute('aria-current'), 'page');
   assert.match(await page.title(), /策略进化/);
   assert.match(await page.locator('#evolve-loop').innerText(), new RegExp(`${dash.generation}[\\s\\S]*观察波动|观察波动[\\s\\S]*${dash.generation}`));
