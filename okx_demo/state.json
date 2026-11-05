@@ -194,6 +194,10 @@
   [
    1793890520065,
    5594.11
+  ],
+  [
+   1793893941275,
+   5594.11
   ]
  ],
  "mirrored": {
@@ -262,6 +266,63 @@
    "status": "done",
    "ordId": "4070525327713488896",
    "closed_reason": "paper_closed"
+  },
+  "BTC-USDT-SWAP|1793890800000": {
+   "inst": "BTC-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net"
+  },
+  "DOGE-USDT-SWAP|1793890800000": {
+   "inst": "DOGE-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "9.8",
+   "stop": 0.07781100998731243,
+   "target": 0.06445245283451018,
+   "leverage": 10,
+   "entry": 0.0721068,
+   "clOrdId": "evdoge1793890800",
+   "opened_at": 1793893941275,
+   "status": "open",
+   "ordId": "4073224283618787328"
+  },
+  "ETH-USDT-SWAP|1793890800000": {
+   "inst": "ETH-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net"
+  },
+  "SOL-USDT-SWAP|1793890800000": {
+   "inst": "SOL-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "6.54",
+   "stop": 98.18316797911257,
+   "target": 78.71578309681384,
+   "leverage": 8,
+   "entry": 89.63,
+   "clOrdId": "evsol1793890800",
+   "opened_at": 1793893941275,
+   "status": "open",
+   "ordId": "4073224313079578624"
+  },
+  "XRP-USDT-SWAP|1793890800000": {
+   "inst": "XRP-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "8.3",
+   "stop": 1.3395283769294872,
+   "target": 1.1180828147517947,
+   "leverage": 10,
+   "entry": 1.2722,
+   "clOrdId": "evxrp1793890800",
+   "opened_at": 1793893941275,
+   "status": "open",
+   "ordId": "4073224343245012992"
   }
  },
  "paused": false,

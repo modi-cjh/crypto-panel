@@ -24,3 +24,8 @@
 {"ts": "2026-11-04T16:36:17Z", "action": "skip", "inst": "ARX-USDT-SWAP", "dry_run": false, "reason": "no_price"}
 {"ts": "2026-11-04T17:31:46Z", "action": "open", "inst": "XAU-USDT-SWAP", "dry_run": false, "side": 1, "strategy": "breakout_long", "contracts": "2991", "price": 4095.7, "stop": "4036.1", "target": null, "leverage": 10, "risk_usdt": 178.31}
 {"ts": "2026-11-04T20:19:47Z", "action": "close", "inst": "XAU-USDT-SWAP", "dry_run": false, "strategy": "breakout_long", "reason": "paper_closed"}
+{"ts": "2026-11-05T15:52:21Z", "action": "skip", "inst": "BTC-USDT-SWAP", "dry_run": false, "reason": "exchange_position_exists_not_ours"}
+{"ts": "2026-11-05T15:52:21Z", "action": "open", "inst": "DOGE-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "9.8", "price": 0.0721068, "stop": "0.077811", "target": "0.0644525", "leverage": 10, "risk_usdt": 55.94}
+{"ts": "2026-11-05T15:52:21Z", "action": "skip", "inst": "ETH-USDT-SWAP", "dry_run": false, "reason": "exchange_position_exists_not_ours"}
+{"ts": "2026-11-05T15:52:21Z", "action": "open", "inst": "SOL-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "6.54", "price": 89.63, "stop": "98.18", "target": "78.72", "leverage": 8, "risk_usdt": 55.94}
+{"ts": "2026-11-05T15:52:21Z", "action": "open", "inst": "XRP-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "8.3", "price": 1.2722, "stop": "1.3395", "target": "1.1181", "leverage": 10, "risk_usdt": 55.94}
