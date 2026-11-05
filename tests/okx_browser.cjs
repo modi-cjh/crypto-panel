@@ -88,7 +88,10 @@ let feed = {
   await page.locator('#legacy-toggle').click();
   assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), true);   // original bot still reachable
   await page.locator('#legacy-toggle').click();
-  await page.locator('[data-nav="sim"]').click();
+  // The old bot's 账户历史 page is gone: no nav link, and old #/paper links land on 模拟交易.
+  assert.equal(await page.locator('[data-nav="paper"], #paper-page').count(), 0);
+  await page.evaluate(() => { location.hash = '#/paper'; });
+  await page.waitForFunction(() => location.hash === '#/sim');
   await page.waitForSelector('#sim-page:not([hidden]) #okx-metrics .history-metrics');
   assert.equal(await page.locator('[data-nav="sim"]').getAttribute('aria-current'), 'page');
   const metrics = await page.locator('#okx-metrics').innerText();

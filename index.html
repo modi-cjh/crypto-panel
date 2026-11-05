@@ -24,7 +24,7 @@
   <header class="header">
     <a class="brand" href="#/" aria-label="交易团队首页"><span class="brand-icon" aria-hidden="true">M<span>✦</span></span><span><b>MODI</b> · AI 交易团队<small class="brand-sub">智能协作 · 实时洞察</small></span></a>
     <div class="header-status"><span id="day-number" class="day-number">DAY —</span><time id="utc-clock">— UTC+7</time></div>
-    <nav aria-label="主导航"><a href="#/" data-nav="home">交易室</a><a href="#/sim" data-nav="sim">模拟交易</a><a href="#/evolve" data-nav="evolve">策略进化</a><a href="#/market" data-nav="market">市场行情</a><a href="#/paper" data-nav="paper">账户历史</a><button id="connection" class="connection" type="button" aria-haspopup="dialog" aria-controls="diag" title="点击查看连接诊断"><span id="connection-dot" class="dot"></span><span id="connection-text">正在连接</span></button></nav>
+    <nav aria-label="主导航"><a href="#/" data-nav="home">交易室</a><a href="#/sim" data-nav="sim">模拟交易</a><a href="#/evolve" data-nav="evolve">策略进化</a><a href="#/market" data-nav="market">市场行情</a><button id="connection" class="connection" type="button" aria-haspopup="dialog" aria-controls="diag" title="点击查看连接诊断"><span id="connection-dot" class="dot"></span><span id="connection-text">正在连接</span></button></nav>
     <aside class="pinned-balance" aria-label="常驻实时余额"><span class="pinned-label"><span id="pinned-label-text">主力盘余额</span> <span id="pinned-mode" class="mode-tag">—</span></span><strong id="pinned-equity">—</strong><span id="pinned-daily">当日盈亏 · 等待基准</span><small id="pinned-source">等待账户快照</small><small id="pinned-time">— UTC+7</small></aside>
   </header>
   <main id="main">
@@ -98,16 +98,6 @@
         <div class="evo-pool-body"><div class="evo-graph-box" id="evolve-graph"></div><aside class="evo-detail" id="evolve-detail" aria-live="polite"></aside></div></section>
       <section class="panel"><div class="panel-heading"><h2>纸面交易 · 冠军接管</h2><small class="muted">与回测同一套执行逻辑 · OKX 模拟盘跟单</small></div><div id="evolve-paper" class="okx-body"></div></section>
       <p class="panel-caption" id="evolve-caption"></p>
-    </section>
-    <section id="paper-page" class="page history-page" hidden aria-labelledby="paper-title">
-      <div class="page-heading"><div><div class="eyebrow">PAPER_MAIN / 只读模拟盘</div><h1 id="paper-title">账户历史</h1><p>只统计主力盘 · 时间 UTC+7 · 金额 USDT</p></div><span id="history-updated" class="pill">等待快照</span></div>
-      <div id="history-overview" class="history-overview"></div>
-      <details class="archive-section" open><summary>01 / 资金曲线与回撤 <span>收起 / 展开</span></summary><div class="history-section"><div class="segmented" id="history-range" role="group" aria-label="权益时间范围"><button data-range="day" aria-pressed="false">日</button><button data-range="week" aria-pressed="false">周</button><button data-range="all" class="active" aria-pressed="true">全部</button></div><div id="history-drawdown" class="history-metrics"></div><div id="history-curve" class="history-curve"></div><p class="panel-caption">完整 equity.csv 观测点 · 回撤按所选范围历史峰值计算，圆点标出最大回撤起止。</p></div></details>
-      <details class="archive-section" open><summary>02 / 风控仪表 <span>收起 / 展开</span></summary><div class="history-section"><div id="history-risk"></div><div id="history-stops" class="history-metrics"></div><div id="history-blackout" class="blackout-card" aria-live="polite"></div></div></details>
-      <details class="archive-section" open><summary>03 / 策略战绩 <span>收起 / 展开</span></summary><div class="history-section"><div id="history-strategies" class="history-strategies"></div><p class="panel-caption">仅 trades.csv 已平仓交易，按净盈亏统计；盈亏比 = 平均盈利 / 平均亏损绝对值；手续费占比 = 总手续费 / |Σ每笔毛盈亏|。毛盈亏 = 方向 × 币数 × (平价 − 开价)，已含成交滑点，未扣手续费、资金费。</p></div></details>
-      <details class="archive-section" open><summary>04 / 成交记录 <span>收起 / 展开</span></summary><div class="history-section"><div class="history-filters"><label>币种 <select id="history-symbol" aria-label="成交币种筛选"><option value="">全部币</option></select></label><label>策略 <select id="history-strategy" aria-label="成交策略筛选"><option value="">全部策略</option><option value="mean_reversion">均值回归</option><option value="breakout">突破（历史）</option><option value="manual">会议单</option></select></label></div><p class="panel-caption">已平仓完整交易 · 盈亏 % = 净盈亏 / 入场保证金 × 100% · 名义金额按开仓价</p><div id="history-trades" class="history-trades"></div><div class="pagination"><button id="history-prev">上一页</button><span id="history-page-number"></span><button id="history-next">下一页</button></div></div></details>
-      <details class="archive-section" open><summary>05 / 异动 → 决策记录 <span>收起 / 展开</span></summary><div class="history-section"><button type="button" class="pill" data-open-decisions>到机器人查看异动 / 决策 →</button><p class="panel-caption">这里保留旧 crypto-bot 历史记录；机器人同时展示当前模拟策略的信号与执行回执。</p><p class="panel-caption">仅 wake=true，按 wake_index 分组。精确引用优先；否则按同币和异动后 24h 关联。时间关联仅为候选，不代表因果。</p><div id="history-alerts"></div></div></details>
-      <p id="history-error" class="muted" role="status"></p>
     </section>
     <noscript><p class="note">请启用 JavaScript 以加载行情与模拟盘数据。</p></noscript>
   </main>
