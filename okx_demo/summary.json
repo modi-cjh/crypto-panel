@@ -1,26 +1,12 @@
 {
- "updated_at": "2026-11-06T08:50:10Z",
- "equity": 4541.0254819098245,
- "available": 4379.448136909825,
+ "updated_at": "2026-11-06T09:48:50Z",
+ "equity": 4529.948982509825,
+ "available": 4529.948982509825,
  "day_start": 5504.200882123051,
  "paused": false,
  "halted": true,
  "dry_run": false,
- "positions": [
-  {
-   "inst": "XRP-USDT-SWAP",
-   "side": "short",
-   "contracts": "8.3",
-   "avgPx": "1.2715",
-   "markPx": "1.2128",
-   "upl": "48.72099999999998",
-   "uplRatio": "0.4616594573338573",
-   "lever": "10",
-   "margin": "112.856345",
-   "ctVal": 100.0,
-   "ours": false
-  }
- ],
+ "positions": [],
  "stop_control": null,
  "execution_profile": {
   "mode": "evolved",
@@ -311,6 +297,10 @@
   [
    1793955010545,
    4541.03
+  ],
+  [
+   1793958530398,
+   4529.95
   ]
  ],
  "closed_trades": 6,
