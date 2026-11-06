@@ -211,7 +211,7 @@ class MirrorTests(unittest.TestCase):
     def test_following_the_evolution_champion_uses_standard_risk_on_its_coins(self):
         try:
             p = odt.configure_evolved()
-            self.assertEqual((p['mode'], odt.RISK, odt.SAME_SIDE_CAP), ('evolved', .01, .03))
+            self.assertEqual((p['mode'], odt.RISK, odt.SAME_SIDE_CAP), ('evolved', .05, .10))
             self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
             fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved')}))
             self.assertTrue(fake.posts[-1][1]['clOrdId'].startswith('evbtc'))
@@ -219,7 +219,7 @@ class MirrorTests(unittest.TestCase):
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
-    def test_five_same_side_signals_open_at_most_three_percent_of_risk(self):
+    def test_five_same_side_signals_open_at_most_ten_percent_of_risk(self):
         try:
             odt.configure_evolved()
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
@@ -227,8 +227,8 @@ class MirrorTests(unittest.TestCase):
             sig['DOGE-USDT-SWAP']['rank'] = 1                                                    # the leader's signal goes first
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
             orders = [b['instId'] for p, b in fake.posts if p == '/api/v5/trade/order']
-            self.assertEqual(orders, ['DOGE-USDT-SWAP', 'BTC-USDT-SWAP', 'ETH-USDT-SWAP'])        # rank, then coin-list order
-            self.assertEqual([a['inst'] for a in m.actions if a.get('reason') == 'same_side_risk'], ['SOL-USDT-SWAP', 'XRP-USDT-SWAP'])
+            self.assertEqual(orders, ['DOGE-USDT-SWAP', 'BTC-USDT-SWAP'])                         # 2 × 5 % fills the 10 % cap; rank, then coin order
+            self.assertEqual([a['inst'] for a in m.actions if a.get('reason') == 'same_side_risk'], ['ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP'])
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
