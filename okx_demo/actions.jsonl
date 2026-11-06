@@ -34,3 +34,5 @@
 {"ts": "2026-11-06T05:33:59Z", "action": "daily_halt", "inst": "-", "dry_run": false, "equity": 4490.341451409826, "day_start": 5504.200882123051}
 {"ts": "2026-11-06T05:33:59Z", "action": "close", "inst": "SOL-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "daily_halt"}
 {"ts": "2026-11-06T05:33:59Z", "action": "close", "inst": "XRP-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "daily_halt"}
+{"ts": "2026-11-06T17:18:09Z", "action": "skip", "inst": "SOL-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
+{"ts": "2026-11-06T17:18:09Z", "action": "open", "inst": "BTC-USDT-SWAP", "dry_run": false, "side": 1, "strategy": "evolved", "contracts": "1.81", "price": 75900.0, "stop": "73401.3", "target": "83448.6", "leverage": 10, "risk_usdt": 45.3}

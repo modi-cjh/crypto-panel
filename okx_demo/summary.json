@@ -1,12 +1,26 @@
 {
- "updated_at": "2026-11-06T16:23:13Z",
- "equity": 4529.948982509825,
- "available": 4529.948982509825,
- "day_start": 5504.200882123051,
+ "updated_at": "2026-11-06T17:18:09Z",
+ "equity": 4529.523633414825,
+ "available": 4391.883269414825,
+ "day_start": 4529.948982509825,
  "paused": false,
- "halted": true,
+ "halted": false,
  "dry_run": false,
- "positions": [],
+ "positions": [
+  {
+   "inst": "BTC-USDT-SWAP",
+   "side": "long",
+   "contracts": "1.81",
+   "avgPx": "75899.9",
+   "markPx": "75920.67",
+   "upl": "0.3759370000000737",
+   "uplRatio": "0.0027364989940715",
+   "lever": "10",
+   "margin": "137.378819",
+   "ctVal": 0.01,
+   "ours": true
+  }
+ ],
  "stop_control": null,
  "execution_profile": {
   "mode": "evolved",
@@ -23,7 +37,24 @@
   "risk": 0.01,
   "same_side_cap": 0.03
  },
- "open_mirrors": [],
+ "open_mirrors": [
+  {
+   "inst": "BTC-USDT-SWAP",
+   "side": 1,
+   "posSide": "long",
+   "strategy": "evolved",
+   "contracts": "1.81",
+   "stop": 73401.3047473585,
+   "target": 83448.5995521679,
+   "leverage": 10,
+   "entry": 75900.0,
+   "clOrdId": "evbtc1793980800",
+   "opened_at": 1793985489983,
+   "status": "open",
+   "ordId": "4076296128416960512",
+   "key": "BTC-USDT-SWAP|1793980800000"
+  }
+ ],
  "start_equity": 5000.0,
  "history": [
   [
@@ -329,6 +360,10 @@
   [
    1793982193173,
    4529.95
+  ],
+  [
+   1793985489983,
+   4529.52
   ]
  ],
  "closed_trades": 6,
@@ -737,6 +772,27 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-06T17:18:09Z",
+   "action": "skip",
+   "inst": "SOL-USDT-SWAP",
+   "dry_run": false,
+   "reason": "paper_entry_too_old"
+  },
+  {
+   "ts": "2026-11-06T17:18:09Z",
+   "action": "open",
+   "inst": "BTC-USDT-SWAP",
+   "dry_run": false,
+   "side": 1,
+   "strategy": "evolved",
+   "contracts": "1.81",
+   "price": 75900.0,
+   "stop": "73401.3",
+   "target": "83448.6",
+   "leverage": 10,
+   "risk_usdt": 45.3
+  },
+  {
    "ts": "2026-11-06T05:33:59Z",
    "action": "daily_halt",
    "inst": "-",
@@ -984,20 +1040,6 @@
   },
   {
    "ts": "2026-11-04T03:19:22Z",
-   "action": "skip",
-   "inst": "SOXS-USDT-SWAP",
-   "dry_run": false,
-   "reason": "no_price"
-  },
-  {
-   "ts": "2026-11-04T02:25:28Z",
-   "action": "skip",
-   "inst": "SOXS-USDT-SWAP",
-   "dry_run": false,
-   "reason": "no_price"
-  },
-  {
-   "ts": "2026-11-04T02:08:44Z",
    "action": "skip",
    "inst": "SOXS-USDT-SWAP",
    "dry_run": false,

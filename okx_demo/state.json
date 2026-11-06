@@ -1,7 +1,7 @@
 {
- "day": "2026-11-06",
- "day_start": 5504.200882123051,
- "halted": true,
+ "day": "2026-11-07",
+ "day_start": 4529.948982509825,
+ "halted": false,
  "history": [
   [
    1793738808073,
@@ -306,6 +306,10 @@
   [
    1793982193173,
    4529.95
+  ],
+  [
+   1793985489983,
+   4529.52
   ]
  ],
  "mirrored": {
@@ -441,6 +445,28 @@
    "side": 1,
    "posSide": "net",
    "reason": "too_old"
+  },
+  "SOL-USDT-SWAP|1793977200000": {
+   "inst": "SOL-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "BTC-USDT-SWAP|1793980800000": {
+   "inst": "BTC-USDT-SWAP",
+   "side": 1,
+   "posSide": "long",
+   "strategy": "evolved",
+   "contracts": "1.81",
+   "stop": 73401.3047473585,
+   "target": 83448.5995521679,
+   "leverage": 10,
+   "entry": 75900.0,
+   "clOrdId": "evbtc1793980800",
+   "opened_at": 1793985489983,
+   "status": "open",
+   "ordId": "4076296128416960512"
   }
  },
  "paused": false,
