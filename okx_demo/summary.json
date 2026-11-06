@@ -1,10 +1,10 @@
 {
- "updated_at": "2026-11-06T04:32:36Z",
- "equity": 5546.845396409826,
- "available": 2876.270261158037,
+ "updated_at": "2026-11-06T05:33:59Z",
+ "equity": 4490.717139009824,
+ "available": 2952.9983978980367,
  "day_start": 5504.200882123051,
  "paused": false,
- "halted": false,
+ "halted": true,
  "dry_run": false,
  "positions": [
   {
@@ -12,35 +12,22 @@
    "side": "short",
    "contracts": "8.3",
    "avgPx": "1.2715",
-   "markPx": "1.2822",
-   "upl": "-8.880999999999943",
-   "uplRatio": "-0.0841525756979933",
+   "markPx": "1.2232",
+   "upl": "40.08900000000001",
+   "uplRatio": "0.3798662996460878",
    "lever": "10",
    "margin": "105.32534",
    "ctVal": 100.0,
-   "ours": true
-  },
-  {
-   "inst": "SOL-USDT-SWAP",
-   "side": "short",
-   "contracts": "6.54",
-   "avgPx": "89.67",
-   "markPx": "95.43",
-   "upl": "-37.670400000000036",
-   "uplRatio": "-0.5138842422214793",
-   "lever": "8",
-   "margin": "73.42255914",
-   "ctVal": 1.0,
-   "ours": true
+   "ours": false
   },
   {
    "inst": "ETH-USDT-SWAP",
    "side": "long",
    "contracts": "29.72",
    "avgPx": "2275.21",
-   "markPx": "2386.98",
-   "upl": "332.18044",
-   "uplRatio": "0.4912513570175947",
+   "markPx": "2219.38",
+   "upl": "-165.92675999999977",
+   "uplRatio": "-0.2453839425811244",
    "lever": "10",
    "margin": "680.6325270434817957",
    "ctVal": 0.1,
@@ -51,9 +38,9 @@
    "side": "long",
    "contracts": "15.35",
    "avgPx": "77451.924814332247558",
-   "markPx": "79684.99",
-   "upl": "342.7755060000008",
-   "uplRatio": "0.2883162931096761",
+   "markPx": "75463.8",
+   "upl": "-305.1771589999995",
+   "uplRatio": "-0.2566914662351105",
    "lever": "10",
    "margin": "1182.7901630683063009",
    "ctVal": 0.01,
@@ -76,40 +63,7 @@
   "risk": 0.01,
   "same_side_cap": 0.03
  },
- "open_mirrors": [
-  {
-   "inst": "SOL-USDT-SWAP",
-   "side": -1,
-   "posSide": "short",
-   "strategy": "evolved",
-   "contracts": "6.54",
-   "stop": 98.18316797911257,
-   "target": 78.71578309681384,
-   "leverage": 8,
-   "entry": 89.63,
-   "clOrdId": "evsol1793890800",
-   "opened_at": 1793893941275,
-   "status": "open",
-   "ordId": "4073224313079578624",
-   "key": "SOL-USDT-SWAP|1793890800000"
-  },
-  {
-   "inst": "XRP-USDT-SWAP",
-   "side": -1,
-   "posSide": "short",
-   "strategy": "evolved",
-   "contracts": "8.3",
-   "stop": 1.3395283769294872,
-   "target": 1.1180828147517947,
-   "leverage": 10,
-   "entry": 1.2722,
-   "clOrdId": "evxrp1793890800",
-   "opened_at": 1793893941275,
-   "status": "open",
-   "ordId": "4073224343245012992",
-   "key": "XRP-USDT-SWAP|1793890800000"
-  }
- ],
+ "open_mirrors": [],
  "start_equity": 5000.0,
  "history": [
   [
@@ -367,9 +321,13 @@
   [
    1793939556812,
    5546.85
+  ],
+  [
+   1793943239230,
+   4490.72
   ]
  ],
- "closed_trades": 4,
+ "closed_trades": 6,
  "strategy_updated_at": "2026-11-04T19:29:04Z",
  "strategy_decisions": [
   {
@@ -775,6 +733,40 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-06T05:33:59Z",
+   "action": "daily_halt",
+   "inst": "-",
+   "dry_run": false,
+   "equity": 4490.341451409826,
+   "day_start": 5504.200882123051
+  },
+  {
+   "ts": "2026-11-06T05:33:59Z",
+   "action": "close",
+   "inst": "SOL-USDT-SWAP",
+   "dry_run": false,
+   "strategy": "evolved",
+   "reason": "daily_halt",
+   "pnl": 3.12969084,
+   "price_pnl": 3.597,
+   "funding": 0.11733414,
+   "close_price": 89.12,
+   "fee": -0.5846433
+  },
+  {
+   "ts": "2026-11-06T05:33:59Z",
+   "action": "close",
+   "inst": "XRP-USDT-SWAP",
+   "dry_run": false,
+   "strategy": "evolved",
+   "reason": "daily_halt",
+   "pnl": -11.278650950000063,
+   "price_pnl": 5.688099999999936,
+   "funding": -14.979585,
+   "close_price": 1.2558999367088608,
+   "fee": -1.98716595
+  },
+  {
    "ts": "2026-11-06T03:32:16Z",
    "action": "close",
    "inst": "DOGE-USDT-SWAP",
@@ -1006,42 +998,6 @@
    "inst": "SOXS-USDT-SWAP",
    "dry_run": false,
    "reason": "no_price"
-  },
-  {
-   "ts": "2026-11-04T01:33:13Z",
-   "action": "closed_on_exchange",
-   "inst": "XRP-USDT-SWAP",
-   "dry_run": false,
-   "strategy": "mean_reversion",
-   "pnl": -11.278650950000063,
-   "price_pnl": 5.688099999999936,
-   "funding": -14.979585,
-   "close_price": 1.2558999367088608,
-   "fee": -1.98716595,
-   "outcome": "target"
-  },
-  {
-   "ts": "2026-11-03T22:35:37Z",
-   "action": "resume",
-   "inst": "-",
-   "dry_run": false
-  },
-  {
-   "ts": "2026-11-03T21:51:06.429Z",
-   "action": "close",
-   "inst": "BTC-USDT-SWAP",
-   "strategy": "execution_test",
-   "execution_test": true,
-   "dry_run": false,
-   "side": 1,
-   "contracts": "0.01",
-   "price": 77876.31,
-   "leverage": 1,
-   "order_id": "4068148275580485632",
-   "reason": "execution_test",
-   "pnl": -9e-06,
-   "fee": 0.0077876355,
-   "net_pnl": -0.0077966355
   }
  ],
  "execution_test_trades": 1

@@ -1,7 +1,7 @@
 {
  "day": "2026-11-06",
  "day_start": 5504.200882123051,
- "halted": false,
+ "halted": true,
  "history": [
   [
    1793738808073,
@@ -258,6 +258,10 @@
   [
    1793939556812,
    5546.85
+  ],
+  [
+   1793943239230,
+   4490.72
   ]
  ],
  "mirrored": {
@@ -367,8 +371,9 @@
    "entry": 89.63,
    "clOrdId": "evsol1793890800",
    "opened_at": 1793893941275,
-   "status": "open",
-   "ordId": "4073224313079578624"
+   "status": "done",
+   "ordId": "4073224313079578624",
+   "closed_reason": "daily_halt"
   },
   "XRP-USDT-SWAP|1793890800000": {
    "inst": "XRP-USDT-SWAP",
@@ -382,8 +387,9 @@
    "entry": 1.2722,
    "clOrdId": "evxrp1793890800",
    "opened_at": 1793893941275,
-   "status": "open",
-   "ordId": "4073224343245012992"
+   "status": "done",
+   "ordId": "4073224343245012992",
+   "closed_reason": "daily_halt"
   },
   "DOGE-USDT-SWAP|1793894400000": {
    "inst": "DOGE-USDT-SWAP",
@@ -417,6 +423,20 @@
    "funding": -0.0705326724638172,
    "close_price": 0.0720773390816327,
    "fee": -0.7065022945
+  },
+  "2026-11-06T05:33:59Z|SOL-USDT-SWAP": {
+   "pnl": 3.12969084,
+   "price_pnl": 3.597,
+   "funding": 0.11733414,
+   "close_price": 89.12,
+   "fee": -0.5846433
+  },
+  "2026-11-06T05:33:59Z|XRP-USDT-SWAP": {
+   "pnl": -11.278650950000063,
+   "price_pnl": 5.688099999999936,
+   "funding": -14.979585,
+   "close_price": 1.2558999367088608,
+   "fee": -1.98716595
   }
  }
 }
