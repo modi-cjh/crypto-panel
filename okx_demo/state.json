@@ -250,6 +250,10 @@
   [
    1793932695953,
    5509.38
+  ],
+  [
+   1793935936130,
+   5546.85
   ]
  ],
  "mirrored": {
@@ -337,8 +341,9 @@
    "entry": 0.0721068,
    "clOrdId": "evdoge1793890800",
    "opened_at": 1793893941275,
-   "status": "open",
-   "ordId": "4073224283618787328"
+   "status": "done",
+   "ordId": "4073224283618787328",
+   "closed_reason": "paper_closed"
   },
   "ETH-USDT-SWAP|1793890800000": {
    "inst": "ETH-USDT-SWAP",
@@ -375,6 +380,13 @@
    "opened_at": 1793893941275,
    "status": "open",
    "ordId": "4073224343245012992"
+  },
+  "DOGE-USDT-SWAP|1793894400000": {
+   "inst": "DOGE-USDT-SWAP",
+   "status": "skipped",
+   "side": 1,
+   "posSide": "net",
+   "reason": "too_old"
   }
  },
  "paused": false,
@@ -394,6 +406,13 @@
    "funding": 0.0,
    "close_price": 4082.546907388833,
    "fee": -12.2337257
+  },
+  "2026-11-06T03:32:16Z|DOGE-USDT-SWAP": {
+   "pnl": -0.4882919669635372,
+   "price_pnl": 0.28874300000028,
+   "funding": -0.0705326724638172,
+   "close_price": 0.0720773390816327,
+   "fee": -0.7065022945
   }
  }
 }

@@ -1,7 +1,7 @@
 {
- "updated_at": "2026-11-06T02:38:15Z",
- "equity": 5509.384678371326,
- "available": 2805.740563192,
+ "updated_at": "2026-11-06T03:32:16Z",
+ "equity": 5546.845396409826,
+ "available": 2876.270261158037,
  "day_start": 5504.200882123051,
  "paused": false,
  "halted": false,
@@ -31,19 +31,6 @@
    "lever": "8",
    "margin": "73.42255914",
    "ctVal": 1.0,
-   "ours": true
-  },
-  {
-   "inst": "DOGE-USDT-SWAP",
-   "side": "short",
-   "contracts": "9.8",
-   "avgPx": "0.0721068026530613",
-   "markPx": "0.0759359",
-   "upl": "-37.5251539999993",
-   "uplRatio": "-0.5310313598790728",
-   "lever": "10",
-   "margin": "70.5941339275361828",
-   "ctVal": 1000.0,
    "ours": true
   },
   {
@@ -90,22 +77,6 @@
   "same_side_cap": 0.03
  },
  "open_mirrors": [
-  {
-   "inst": "DOGE-USDT-SWAP",
-   "side": -1,
-   "posSide": "short",
-   "strategy": "evolved",
-   "contracts": "9.8",
-   "stop": 0.07781100998731243,
-   "target": 0.06445245283451018,
-   "leverage": 10,
-   "entry": 0.0721068,
-   "clOrdId": "evdoge1793890800",
-   "opened_at": 1793893941275,
-   "status": "open",
-   "ordId": "4073224283618787328",
-   "key": "DOGE-USDT-SWAP|1793890800000"
-  },
   {
    "inst": "SOL-USDT-SWAP",
    "side": -1,
@@ -388,9 +359,13 @@
   [
    1793932695953,
    5509.38
+  ],
+  [
+   1793935936130,
+   5546.85
   ]
  ],
- "closed_trades": 3,
+ "closed_trades": 4,
  "strategy_updated_at": "2026-11-04T19:29:04Z",
  "strategy_decisions": [
   {
@@ -796,6 +771,26 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-06T03:32:16Z",
+   "action": "close",
+   "inst": "DOGE-USDT-SWAP",
+   "dry_run": false,
+   "strategy": "evolved",
+   "reason": "paper_closed",
+   "pnl": -0.4882919669635372,
+   "price_pnl": 0.28874300000028,
+   "funding": -0.0705326724638172,
+   "close_price": 0.0720773390816327,
+   "fee": -0.7065022945
+  },
+  {
+   "ts": "2026-11-06T03:32:16Z",
+   "action": "skip",
+   "inst": "DOGE-USDT-SWAP",
+   "dry_run": false,
+   "reason": "paper_entry_too_old"
+  },
+  {
    "ts": "2026-11-05T15:52:21Z",
    "action": "skip",
    "inst": "BTC-USDT-SWAP",
@@ -1043,26 +1038,6 @@
    "pnl": -9e-06,
    "fee": 0.0077876355,
    "net_pnl": -0.0077966355
-  },
-  {
-   "ts": "2026-11-03T21:51:05.902Z",
-   "action": "open",
-   "inst": "BTC-USDT-SWAP",
-   "strategy": "execution_test",
-   "execution_test": true,
-   "dry_run": false,
-   "side": 1,
-   "contracts": "0.01",
-   "price": 77876.4,
-   "leverage": 1,
-   "order_id": "4068148257863745536",
-   "stop": "77097.64"
-  },
-  {
-   "ts": "2026-11-03T20:54:57Z",
-   "action": "follow_current",
-   "inst": "-",
-   "dry_run": false
   }
  ],
  "execution_test_trades": 1
