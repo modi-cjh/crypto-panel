@@ -326,6 +326,10 @@
   [
    1793997177270,
    4528.21
+  ],
+  [
+   1793999875714,
+   4728.53
   ]
  ],
  "mirrored": {
@@ -483,6 +487,21 @@
    "opened_at": 1793985489983,
    "status": "open",
    "ordId": "4076296128416960512"
+  },
+  "XRP-USDT-SWAP|1793998800000": {
+   "inst": "XRP-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "124.34",
+   "stop": 1.2382098402657373,
+   "target": 0.9672411999682423,
+   "leverage": 10,
+   "entry": 1.22,
+   "clOrdId": "evxrp1793998800",
+   "opened_at": 1793999875714,
+   "status": "open",
+   "ordId": "4076778830597443584"
   }
  },
  "paused": false,
