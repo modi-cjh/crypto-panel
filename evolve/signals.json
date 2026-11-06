@@ -1,6 +1,6 @@
 {
- "updated_at": "2026-11-06T17:18:00Z",
- "champion": "s6702",
+ "updated_at": "2026-11-06T18:07:03Z",
+ "champion": "s5006",
  "team": [
   "s6702",
   "s5006",
@@ -12,13 +12,13 @@
   "SOL-USDT-SWAP": {
    "side": -1,
    "entry": 90.911814,
-   "stop": 94.42831950823886,
-   "tp": 86.12936650879517,
+   "stop": 95.78232024409813,
+   "tp": 61.688776535411236,
    "opened": 1793977200000,
    "strategy": "evolved",
    "leverage": 10,
-   "champion": "s6110",
-   "rank": 2
+   "champion": "s5006",
+   "rank": 1
   },
   "BTC-USDT-SWAP": {
    "side": 1,
@@ -29,7 +29,7 @@
    "strategy": "evolved",
    "leverage": 10,
    "champion": "s5594",
-   "rank": 4
+   "rank": 5
   }
  }
 }
