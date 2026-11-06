@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-06T03:32:06Z",
+ "updated_at": "2026-11-06T04:32:27Z",
  "champion": "s35",
  "team": [
   "s35",
@@ -9,17 +9,6 @@
   "s106"
  ],
  "positions": {
-  "DOGE-USDT-SWAP": {
-   "side": 1,
-   "entry": 0.071774352,
-   "stop": 0.06921596037250033,
-   "tp": 0.08569200245359823,
-   "opened": 1793894400000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s582",
-   "rank": 2
-  },
   "BTC-USDT-SWAP": {
    "side": -1,
    "entry": 78264.24402,
@@ -29,7 +18,7 @@
    "strategy": "evolved",
    "leverage": 10,
    "champion": "s544",
-   "rank": 3
+   "rank": 2
   },
   "ETH-USDT-SWAP": {
    "side": -1,
@@ -40,7 +29,7 @@
    "strategy": "evolved",
    "leverage": 10,
    "champion": "s544",
-   "rank": 3
+   "rank": 2
   },
   "SOL-USDT-SWAP": {
    "side": -1,
@@ -51,7 +40,7 @@
    "strategy": "evolved",
    "leverage": 10,
    "champion": "s544",
-   "rank": 3
+   "rank": 2
   },
   "XRP-USDT-SWAP": {
    "side": -1,
@@ -62,7 +51,18 @@
    "strategy": "evolved",
    "leverage": 10,
    "champion": "s544",
-   "rank": 3
+   "rank": 2
+  },
+  "DOGE-USDT-SWAP": {
+   "side": -1,
+   "entry": 0.074205156,
+   "stop": 0.07779616598731243,
+   "tp": 0.06443760883451018,
+   "opened": 1793890800000,
+   "strategy": "evolved",
+   "leverage": 10,
+   "champion": "s544",
+   "rank": 2
   }
  }
 }
