@@ -1,6 +1,6 @@
 {
- "updated_at": "2026-11-06T22:39:58Z",
- "champion": "s6702",
+ "updated_at": "2026-11-06T23:22:28Z",
+ "champion": "s6110",
  "team": [
   "s6702",
   "s5006",
@@ -18,7 +18,7 @@
    "strategy": "evolved",
    "leverage": 10,
    "champion": "s6110",
-   "rank": 2
+   "rank": 1
   },
   "XRP-USDT-SWAP": {
    "side": -1,
