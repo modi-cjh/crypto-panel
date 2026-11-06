@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-06T14:40:15Z",
+ "updated_at": "2026-11-06T15:28:04Z",
  "champion": "s5006",
  "team": [
   "s6702",
@@ -8,5 +8,18 @@
   "s7292",
   "s5594"
  ],
- "positions": {}
+ "positions": {
+  "SOL-USDT-SWAP": {
+   "side": -1,
+   "entry": 90.93,
+   "stop": 95.80050624409813,
+   "tp": 61.706962535411236,
+   "opened": 1793977200000,
+   "strategy": "evolved",
+   "leverage": 10,
+   "champion": "s5006",
+   "pending": true,
+   "rank": 1
+  }
+ }
 }
