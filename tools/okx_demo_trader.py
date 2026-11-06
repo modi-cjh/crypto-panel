@@ -52,8 +52,9 @@ ACTIVE_PROFILE = None
 def configure_evolved():
     """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply."""
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE
-    # 1 % per coin, at most 3 % in one direction: the five coins move together, so five same-side signals are one bet.
-    INSTRUMENTS, RISK, SAME_SIDE_CAP = list(EVOLVED_INSTRUMENTS), .01, .03
+    # 5 % per coin (chosen by the user: positions were too small), at most 10 % in one direction — the five coins move
+    # together, so same-side signals are one bet; two same-side stops in a day reach the 10 % daily halt.
+    INSTRUMENTS, RISK, SAME_SIDE_CAP = list(EVOLVED_INSTRUMENTS), .05, .10
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, same_side_cap=SAME_SIDE_CAP)
     return ACTIVE_PROFILE
 
