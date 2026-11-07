@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-07T01:54:01Z",
+ "updated_at": "2026-11-07T02:40:33Z",
  "champion": "s6702",
  "team": [
   "s6702",
@@ -20,17 +20,6 @@
    "champion": "s6110",
    "rank": 2
   },
-  "XRP-USDT-SWAP": {
-   "side": -1,
-   "entry": 1.1724654600000002,
-   "stop": 1.2380753002657374,
-   "tp": 0.9671066599682424,
-   "opened": 1793998800000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s7292",
-   "rank": 4
-  },
   "BTC-USDT-SWAP": {
    "side": 1,
    "entry": 75834.06378,
@@ -40,6 +29,17 @@
    "strategy": "evolved",
    "leverage": 10,
    "champion": "s5594",
+   "rank": 4
+  },
+  "XRP-USDT-SWAP": {
+   "side": -1,
+   "entry": 1.1724654600000002,
+   "stop": 1.2380753002657374,
+   "tp": 0.9671066599682424,
+   "opened": 1793998800000,
+   "strategy": "evolved",
+   "leverage": 10,
+   "champion": "s7292",
    "rank": 5
   }
  }
