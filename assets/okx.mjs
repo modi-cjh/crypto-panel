@@ -44,6 +44,9 @@ export const okxStart = d => finite(num(d?.start_equity)) && d.start_equity > 0 
 // also what OKX itself uses for unrealised PnL; without a fresh demo mark it shows the values recorded on the last run.
 export const OKX_DEMO_PUBLIC_WS = 'wss://wspap.okx.com/ws/v5/public';
 export const OKX_DEMO_FALLBACK_WS = 'wss://wspap.okx.com:8443/ws/v5/public';
+// Live-market streams: port 443 first (some networks block 8443 and reset the connection), 8443 as the backup.
+export const OKX_PUBLIC_WS = ['wss://ws.okx.com/ws/v5/public', 'wss://ws.okx.com:8443/ws/v5/public'];
+export const OKX_BUSINESS_WS = ['wss://ws.okx.com/ws/v5/business', 'wss://ws.okx.com:8443/ws/v5/business'];
 const MARK_FRESH = 30000;
 export function okxLive(d, marks = new Map(), now = Date.now()) {
   const positions = d.positions.map(p => {
