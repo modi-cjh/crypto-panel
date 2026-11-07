@@ -138,3 +138,11 @@ test('daily halt notice shows the actual loss against the 10 % line', async () =
   const html = acts({ recent_actions: [{ ts: '2026-11-05T08:00:00Z', action: 'daily_halt', inst: '-', equity: 4495, day_start: 5000 }] });
   assert.match(html, /当日亏损 10\.1%达到停手线（10%）/);
 });
+
+test('live-market streams try port 443 first and keep 8443 as the backup (some networks reset 8443)', async () => {
+  const { OKX_PUBLIC_WS, OKX_BUSINESS_WS, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS } = await import('../assets/okx.mjs');
+  for (const urls of [OKX_PUBLIC_WS, OKX_BUSINESS_WS, [OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS]]) {
+    assert.doesNotMatch(urls[0], /:8443/); assert.match(urls[1], /:8443/);
+    assert.equal(new URL(urls[0]).pathname, new URL(urls[1]).pathname);
+  }
+});

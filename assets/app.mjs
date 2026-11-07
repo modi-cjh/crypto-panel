@@ -4,7 +4,7 @@ import { runtimeConfig, refreshRuntimeHealth } from './runtime.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { riskProgress } from './history.mjs';
-import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-quotes443';
+import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, OKX_PUBLIC_WS, OKX_BUSINESS_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261107-live443';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261104-quotes443';
@@ -572,8 +572,8 @@ async function probeRest(url,headers={}){
 }
 $('diag-test').addEventListener('click',async()=>{
   const out=$('diag-test-out');out.textContent='测试中…（最多约 10 秒）';
-  const [rest,demoRest,live,demo,backup]=await Promise.all([probeRest('https://www.okx.com/api/v5/public/time'),probeRest('https://www.okx.com/api/v5/public/mark-price?instType=SWAP&instId=XRP-USDT-SWAP',{'x-simulated-trading':'1'}),probeSocket('wss://ws.okx.com:8443/ws/v5/public','XRP-USDT-SWAP'),probeSocket(OKX_DEMO_PUBLIC_WS,'XRP-USDT-SWAP'),probeSocket(OKX_DEMO_FALLBACK_WS,'XRP-USDT-SWAP')]);
-  out.textContent=`REST www.okx.com：${rest}\n模拟盘 REST：${demoRest}\n真实盘 WS ws.okx.com：${live}\n模拟盘 WS wspap.okx.com：${demo}\n模拟盘 WS 8443 备用：${backup}`;
+  const [rest,demoRest,live,demo,backup]=await Promise.all([probeRest('https://www.okx.com/api/v5/public/time'),probeRest('https://www.okx.com/api/v5/public/mark-price?instType=SWAP&instId=XRP-USDT-SWAP',{'x-simulated-trading':'1'}),probeSocket(OKX_PUBLIC_WS[0],'XRP-USDT-SWAP'),probeSocket(OKX_DEMO_PUBLIC_WS,'XRP-USDT-SWAP'),probeSocket(OKX_DEMO_FALLBACK_WS,'XRP-USDT-SWAP')]);
+  out.textContent=`REST www.okx.com：${rest}\n模拟盘 REST：${demoRest}\n真实盘 WS ws.okx.com（443）：${live}\n模拟盘 WS wspap.okx.com：${demo}\n模拟盘 WS 8443 备用：${backup}`;
   $('diag-body').textContent=diagText();
 });
 function updateStreamStatus(){
@@ -605,7 +605,7 @@ function syncStreams(){
   const key=symbols.join(',');
   if(key!==quoteStreamKey){
     quoteStream?.stop();quoteStreamKey=key;
-    quoteStream=new PublicStream({url:'wss://ws.okx.com:8443/ws/v5/public',args:symbols.flatMap(instId=>[{channel:'tickers',instId},{channel:'mark-price',instId}]),maxFailures:config.wsMaxFailures,
+    quoteStream=new PublicStream({url:OKX_PUBLIC_WS[0],fallbackUrls:OKX_PUBLIC_WS.slice(1),connectTimeout:8000,args:symbols.flatMap(instId=>[{channel:'tickers',instId},{channel:'mark-price',instId}]),maxFailures:config.wsMaxFailures,
       onState:(state,reason)=>{diagNote(`真实盘行情 WS：${state}${reason?' · '+reason:''}`);if(state!=='实时')liveQuotes.clear();renderPinnedBalance();if(route==='home')renderPublicHome();updateStreamStatus();},onData:body=>{
         const id=body.arg?.instId;if(!symbols.includes(id))return false;
         const row=body.data[0],value=number(row.markPx ?? row.last),at=number(row.ts);
@@ -621,7 +621,7 @@ function syncStreams(){
   if(candleKey!==candleStreamKey){
     candleStream?.stop();candleStreamKey=candleKey;
     if(candleKey){const id=coin,bar=timeframe;
-      candleStream=new PublicStream({url:'wss://ws.okx.com:8443/ws/v5/business',args:[{channel:'candle'+bar,instId:id}],maxFailures:config.wsMaxFailures,
+      candleStream=new PublicStream({url:OKX_BUSINESS_WS[0],fallbackUrls:OKX_BUSINESS_WS.slice(1),connectTimeout:8000,args:[{channel:'candle'+bar,instId:id}],maxFailures:config.wsMaxFailures,
         onState:(state,reason)=>{streamReason=reason;updateStreamStatus();},onData:body=>{
           if(body.arg?.instId!==id || body.arg?.channel!=='candle'+bar)return false;
           const next=parseCandles(body.data.filter(Array.isArray)).at(-1);if(!next || Date.now()/1000-next.time>(bar==='1H'?7200:28800))return false;
