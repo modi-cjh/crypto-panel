@@ -40,7 +40,7 @@ RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # daily loss halt: 10 % below th
 SAME_SIDE_CAP = .05
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
-OPEN_WINDOW = 2 * 3600_000        # only mirror paper entries that are at most this old
+OPEN_WINDOW = 5 * 3600_000        # only mirror paper entries that are at most this old (runs are 4 h apart, plus delay)
 MIN_STOP_DIST = .002              # skip entries whose stop is already too close to the current price
 AMEND_TOLERANCE = .001            # amend the exchange stop when the paper stop moved more than 0.1%
 UTC7 = timezone(timedelta(hours=7))

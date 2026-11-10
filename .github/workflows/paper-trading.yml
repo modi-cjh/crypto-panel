@@ -4,10 +4,10 @@
 name: Paper trading
 
 on:
-  # Every 5 minutes (GitHub's shortest interval; scheduled runs are often delayed or skipped). Strategy reruns
-  # are idempotent (only new closed bars count); the frequent runs keep the OKX demo account view current.
+  # Every 4 hours (minute 17, UTC 00:17, 04:17, …), kept low on purpose: fewer automated runs and commits on the
+  # account. Strategy reruns are idempotent (only new closed bars count), so a delayed or skipped run loses nothing.
   schedule:
-    - cron: '2-59/5 * * * *'
+    - cron: '17 */4 * * *'
   workflow_dispatch:
     inputs:
       reset:
