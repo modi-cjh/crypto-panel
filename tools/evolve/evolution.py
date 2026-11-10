@@ -7,8 +7,8 @@ becomes the paper-trading champion.
 """
 import random
 
-from execution import simulate, fitness
-from genome import random_genome, crossover, mutate, SPECIES
+from execution import simulate
+from genome import random_genome, crossover, mutate, fix, SPECIES
 import data as D
 
 POPULATION, ELITES, TOURNAMENT, CROSSOVER, IMMIGRANTS = 40, 4, 3, .7, 2
@@ -39,14 +39,70 @@ def downsample(curve, n=CURVE_POINTS):
     return [list(curve[round(i * step)]) for i in range(n)]
 
 
+# Walk-forward fitness: the training window is cut into FOLDS time segments, scored separately from the same backtest.
+# Later segments weigh more; the score is the weighted mean minus half the weighted spread, and segments that lose money
+# cost extra, so a strategy that made all its money in one stretch ranks below one that earns steadily.
+FOLDS = 4
+FOLD_WEIGHTS = [.5 + i / (FOLDS - 1) for i in range(FOLDS)]      # 0.5 … 1.5
+FOLD_CLIP = 10.0
+
+
+def fold_scores(tr, ts, start, cut):
+    """(score, ret %, max dd %, trades) per training segment, from the backtest's daily equity curve and trade list."""
+    bounds = [start + (cut - start) * k // FOLDS for k in range(FOLDS + 1)]
+    curve, out = tr['curve'], []
+    for k in range(FOLDS):
+        t0, t1 = ts[bounds[k]], ts[bounds[k + 1] - 1]
+        before = [e for t, e in curve if t <= t0]
+        pts = ([before[-1]] if before else [curve[0][1]]) + [e for t, e in curve if t0 < t <= t1]
+        peak, dd = pts[0], 0.0
+        for e in pts:
+            peak = max(peak, e); dd = max(dd, (peak - e) / peak if peak > 0 else 0)
+        ret = (pts[-1] / pts[0] - 1) * 100 if pts[0] > 0 else 0.0
+        n = sum(1 for t in tr['trades'] if t0 < t['closed'] <= t1)
+        score = max(-FOLD_CLIP, min(FOLD_CLIP, ret / max(dd * 100, 5.0)))
+        out.append(dict(score=round(score, 3), ret=round(ret, 2), max_dd=round(dd * 100, 2), trades=n))
+    return out
+
+
+def robust_fitness(folds, trades):
+    w = FOLD_WEIGHTS
+    sc = [f['score'] for f in folds]
+    mu = sum(a * b for a, b in zip(sc, w)) / sum(w)
+    sd = (sum(b * (a - mu) ** 2 for a, b in zip(sc, w)) / sum(w)) ** .5
+    losing = sum(1 for f in folds if f['ret'] <= 0)
+    return round((mu - .5 * sd - .5 * max(0, losing - 1)) * min(1.0, trades / 30), 4)
+
+
 def evaluate(genes, series, split):
     start, cut, end = split
     tr = simulate(genes, series, start, cut, curve_every=24)
     te = simulate(genes, series, cut, end, curve_every=24)
     m = te['metrics']
     qualified = m['ret'] > GATE['min_ret'] and m['max_dd'] < GATE['max_dd'] and m['trades'] >= GATE['min_trades']
-    return dict(fitness=fitness(tr['metrics']), train=tr['metrics'], test=m, qualified=qualified,
-                train_curve=downsample(tr['curve']), test_curve=downsample(te['curve']))
+    folds = fold_scores(tr, next(iter(series.values())).ts, start, cut)
+    return dict(fitness=robust_fitness(folds, tr['metrics']['trades']), train=dict(tr['metrics'], folds=folds), test=m,
+                qualified=qualified, train_curve=downsample(tr['curve']), test_curve=downsample(te['curve']))
+
+
+def add_migrants(state, migrants, series, split):
+    """One-time import of strategies from the old rolling-evolution system: each joins the population as a 'migrant'
+    in place of the weakest member that is not on the team, then competes like any other strategy."""
+    if state.get('migrated') == migrants.get('version'):
+        return []
+    team = {m['id'] for m in state.get('team', [])}
+    added = []
+    for m in migrants['strategies']:
+        node = new_node(state, fix(dict(m['genes'])), [], state['generation'], 'migrant', series, split)
+        node['origin'] = m.get('origin')
+        out = [nid for nid in state['population'] if nid not in team]
+        weakest = min(out, key=lambda nid: state['nodes'][nid]['fitness'])
+        state['population'].remove(weakest)
+        state['nodes'][weakest]['died'] = state['generation']
+        state['population'].append(node['id']); added.append(node['id'])
+    state['migrated'] = migrants.get('version')
+    update_hall(state)
+    return added
 
 
 def new_node(state, genes, parents, gen, how, series, split):
