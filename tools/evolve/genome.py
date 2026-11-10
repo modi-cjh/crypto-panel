@@ -84,7 +84,8 @@ def mutate(g, rng, rate=.25, scale=.2):
 
 
 def describe(g):
-    """One-line human description (Chinese), used by the dashboard."""
+    """One-line human description (Chinese), used by the dashboard. Genomes saved before a gene existed get its default."""
+    g = {**DEFAULTS, **g}
     sp = g['species']
     core = {'momentum': f"突破前 {g['lookback']} 根高低点", 'mean_revert': f"偏离 {g['lookback']} 根均值 {g['threshold']}σ 反向",
             'vol_breakout': f"单根振幅 > {g['expand']}×ATR 顺势", 'trend': f"EMA{g['fast']} 穿越 EMA{g['slow']}",
