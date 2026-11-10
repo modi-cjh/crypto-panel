@@ -54,7 +54,7 @@ def configure_evolved():
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE
     # 5 % per coin (chosen by the user: positions were too small), at most 10 % in one direction — the five coins move
     # together, so same-side signals are one bet; two same-side stops in a day reach the 10 % daily halt.
-    INSTRUMENTS, RISK, SAME_SIDE_CAP = list(EVOLVED_INSTRUMENTS), .05, .10
+    INSTRUMENTS, RISK, SAME_SIDE_CAP = list(EVOLVED_INSTRUMENTS), .01, .05   # per order 1 %, same direction ≤ 5 %
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, same_side_cap=SAME_SIDE_CAP)
     return ACTIVE_PROFILE
 
