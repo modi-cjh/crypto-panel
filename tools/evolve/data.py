@@ -1,4 +1,8 @@
-"""Data layer: real OKX 1H candles (public endpoints, no keys), cached in the paper-data branch.
+"""Data layer: real OKX 1H candles (public endpoints, no keys), cached between runs (GitHub Actions cache).
+
+- The coins: the UNIVERSE_SIZE most traded USDT perpetuals (crypto only, 24h quote volume) that have traded for the
+  whole window, chosen once and kept in <data>/evolve/universe.json so the paper account replays on a fixed set.
+  A coin that stops updating (delisted) is dropped from the shared timeline.
 
 - First run back-fills WINDOW_DAYS; later runs fetch only the new bars. Only closed bars (confirm == 1) are kept.
 - All instruments share one timeline (timestamps present for every instrument).
@@ -8,28 +12,35 @@
 """
 import json
 import subprocess
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from execution import Series
 
-INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
+INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']   # fallback / tests
+UNIVERSE_SIZE = 100
+WORKERS = 4           # parallel downloads; the shared pacing below keeps the total under OKX's rate limit
 WINDOW_DAYS = 365
 TRAIN_SHARE = .7
 WARMUP = 250          # bars used only to warm indicators up before the training window
 HOUR = 3600_000
 REF = 'BTC-USDT-SWAP'
 _next = 0.0
+_lock = threading.Lock()
 
 
 def okx_get(path, retries=4):
     """GET a public OKX endpoint with curl, paced well under the history-candles limit (20 requests / 2 s)."""
     global _next
     for attempt in range(retries):
-        wait = _next - time.monotonic()
+        with _lock:                       # one request every 0.12 s across all threads (limit: 20 per 2 s)
+            slot = max(_next, time.monotonic())
+            _next = slot + .12
+        wait = slot - time.monotonic()
         if wait > 0:
             time.sleep(wait)
-        _next = time.monotonic() + .15
         try:
             out = subprocess.run(['curl', '-sS', '-m', '20', 'https://www.okx.com/api/v5/' + path], capture_output=True, text=True, check=True).stdout
             body = json.loads(out)
@@ -72,10 +83,40 @@ def update_candles(cache_dir, inst, now_ms, get=okx_get):
     return rows
 
 
-def load_series(data_dir, now_ms, get=okx_get, instruments=INSTRUMENTS):
-    """Update every instrument and return {inst: Series} on the shared timeline."""
-    cache = Path(data_dir) / 'evolve' / 'candles'
-    per = {inst: update_candles(cache, inst, now_ms, get) for inst in instruments}
+def select_universe(now_ms, get=okx_get, size=UNIVERSE_SIZE):
+    """The `size` most traded crypto USDT perpetuals by 24h quote volume, listed for the whole window. BTC always included."""
+    live = {d['instId']: d for d in get('public/instruments?instType=SWAP')
+            if d.get('settleCcy') == 'USDT' and d.get('state') == 'live' and str(d.get('instCategory', '1')) == '1'}
+    oldest = now_ms - (WINDOW_DAYS + 14) * 24 * HOUR
+    ok = {k for k, d in live.items() if d.get('listTime') and int(d['listTime']) <= oldest}
+    vol = {t['instId']: float(t.get('volCcy24h') or 0) * float(t.get('last') or 0) for t in get('market/tickers?instType=SWAP') if t['instId'] in ok}
+    ranked = sorted(vol, key=vol.get, reverse=True)
+    picked = [REF] + [k for k in ranked if k != REF][:size - 1]
+    return picked
+
+
+def universe(data_dir, now_ms, get=okx_get):
+    """The fixed coin list in <data>/evolve/universe.json; chosen on first use."""
+    path = Path(data_dir) / 'evolve' / 'universe.json'
+    if path.exists():
+        return json.loads(path.read_text())['instruments']
+    picked = select_universe(now_ms, get)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(chosen_at=now_ms, rule=f'top {UNIVERSE_SIZE} USDT perpetuals by 24h volume, listed ≥ {WINDOW_DAYS} days',
+                                    instruments=picked), indent=1))
+    return picked
+
+
+def load_series(data_dir, now_ms, get=okx_get, instruments=None, cache_dir=None):
+    """Update every instrument and return {inst: Series} on the shared timeline. Coins whose candles stopped
+    (delisted, suspended) more than 3 hours before the freshest coin are left out."""
+    instruments = instruments or universe(data_dir, now_ms, get)
+    cache = Path(cache_dir) if cache_dir else Path(data_dir) / 'evolve' / 'candles'
+    with ThreadPoolExecutor(WORKERS) as pool:
+        got = dict(zip(instruments, pool.map(lambda inst: _safe_update(cache, inst, now_ms, get), instruments)))
+    per = {k: v for k, v in got.items() if v}
+    newest = max(rows[-1][0] for rows in per.values())
+    per = {k: v for k, v in per.items() if v[-1][0] >= newest - 3 * HOUR}
     common = sorted(set.intersection(*(set(r[0] for r in rows) for rows in per.values())))
     keep = set(common)
     out = {}
@@ -88,6 +129,14 @@ def load_series(data_dir, now_ms, get=okx_get, instruments=INSTRUMENTS):
         if inst != REF:
             s.ref = ref
     return out
+
+
+def _safe_update(cache, inst, now_ms, get):
+    try:
+        return update_candles(cache, inst, now_ms, get)
+    except RuntimeError as e:             # one coin failing must not stop the run
+        print(f'跳过 {inst}: {e}')
+        return []
 
 
 def split(series):

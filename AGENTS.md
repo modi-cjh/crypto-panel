@@ -23,7 +23,8 @@
 
 ```
 tools/evolve/              自我进化策略引擎（当前唯一信号来源）
-  data.py                  数据层：OKX 1H K 线缓存（paper-data/evolve/candles/）、共享时间轴、70/30 切分、波动观察
+  data.py                  数据层：币池 = 成交额前 100 的 USDT 永续（上市满一年，首次选定后固定在 paper-data/evolve/universe.json）；OKX 1H K 线缓存在 GitHub Actions cache（`candles/`，不进 paper-data 分支）；共享时间轴、70/30 切分、波动观察
+  execution.py             同源执行引擎；`entries()` 一次算出某基因在所有币上的全部入场信号（与逐根调用 `signal()` 结果完全相同，快约 100 倍，100 个币靠它才跑得动）
   genome.py                基因：物种（动量/均值回归/波动突破/均线趋势）与参数、交叉、突变
   execution.py             同源执行：回测与纸面交易共用的唯一撮合引擎 simulate()
   evolution.py             每代：观察 → 繁殖 → 训练集适应度（训练期分 4 段检验，近期权重大）→ 样本外闸门 → 选择；冠军选择、谱系修剪、旧系统策略一次性迁入

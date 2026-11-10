@@ -59,8 +59,19 @@ class Series:
                 bars.ref = self.ref.tf(hours)[0]
             return bars, closes_at, last_closed
         if hours == 1:
-            return self, list(range(self.n)), list(range(self.n))
+            return self._get(('tf', 1), lambda: (self, list(range(self.n)), list(range(self.n))))
         return self._get(('tf', hours), build)
+
+    def close_index(self, hours):
+        """For each bar j of the `hours` timeframe, the 1H index at which it closes."""
+        def build():
+            closes_at = self.tf(hours)[1]
+            out = [0] * self.tf(hours)[0].n
+            for i, j in enumerate(closes_at):
+                if j >= 0:
+                    out[j] = i
+            return out
+        return self._get(('cidx', hours), build)
 
     def vol_avg(self, n):
         """Average volume of the n bars BEFORE i (None without volume or history)."""
@@ -163,6 +174,68 @@ def stop_distance(g, s, i):
     return g['stop_atr'] * x.atr()[j] if j >= 0 else 0.0
 
 
+def _raw_signals(g, x):
+    """[(j, d)] for every bar j >= 2 of series x where the species fires, before the direction filter. Same rules as
+    _species_signal, evaluated for all bars at once (the hot path of every backtest)."""
+    sp, n, c = g['species'], x.n, x.c
+    if sp == 'momentum':
+        hi, lo = x.donchian(g['lookback'])
+        return [(j, 1 if c[j] > hi[j] else -1) for j in range(2, n) if c[j] > hi[j] or c[j] < lo[j]]
+    if sp == 'mean_revert':
+        z, th = x.zscore(g['lookback']), g['threshold']
+        return [(j, 1 if z[j] < -th else -1) for j in range(2, n) if z[j] < -th or z[j] > th]
+    if sp == 'vol_breakout':
+        atr, h, l, e, out = x.atr(), x.h, x.l, g['expand'], []
+        for j in range(2, n):
+            a, rng = atr[j - 1], h[j] - l[j]
+            if a > 0 and rng > e * a:
+                pos = (c[j] - l[j]) / rng
+                if pos > .75: out.append((j, 1))
+                elif pos < .25: out.append((j, -1))
+        return out
+    if sp == 'trend':
+        f, sl = x.ema(g['fast']), x.ema(g['slow'])
+        return [(j, 1 if f[j] > sl[j] else -1) for j in range(2, n)
+                if f[j] > sl[j] and f[j - 1] <= sl[j - 1] or f[j] < sl[j] and f[j - 1] >= sl[j - 1]]
+    if sp == 'vol_surge':
+        if not x.v:
+            return []
+        avg, v, m, o = x.vol_avg(g['lookback']), x.v, g['vol_mult'], x.o
+        return [(j, 1 if c[j] > o[j] else -1) for j in range(2, n) if avg[j] and v[j] > m * avg[j] and c[j] != o[j]]
+    if sp == 'rel_strength':
+        k, r, th = g['lookback'], x.ref, g['rs_th']
+        if r is None:
+            return []
+        rc, out = r.c, []
+        for j in range(max(2, k + 1), n):
+            rs = c[j] / c[j - k] - rc[j] / rc[j - k]
+            if rs > th or rs < -th:
+                prev = c[j - 1] / c[j - 1 - k] - rc[j - 1] / rc[j - 1 - k]
+                if rs > th >= prev: out.append((j, 1))
+                elif rs < -th <= prev: out.append((j, -1))
+        return out
+    return []
+
+
+def entries(g, series):
+    """All entry signals of genome g on every series, as {1H index i: [(inst, d, stop distance)]} in series order.
+    Equivalent to calling signal() and stop_distance() on every bar, but computed once per genome."""
+    tf, out = g.get('tf', 1), {}
+    want = {'long': 1, 'short': -1}.get(g['direction'])
+    lo, hi, k = g['vol_min'], g['vol_max'], g['stop_atr']
+    for inst, s in series.items():
+        x = s.tf(tf)[0]
+        cidx, vr, atr = s.close_index(tf), s.vol_ratio(), x.atr()
+        for j, d in _raw_signals(g, x):
+            if want and d != want:
+                continue
+            i = cidx[j]
+            if i < 2 or vr[i] < lo or vr[i] > hi:
+                continue
+            out.setdefault(i, []).append((inst, d, k * atr[j]))
+    return out
+
+
 def _species_signal(g, s, i):
     sp, d = g['species'], 0
     if sp == 'momentum':
@@ -195,12 +268,16 @@ def _species_signal(g, s, i):
 
 
 # ----------------------------------------------------------------- the engine
-def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, curve_every=24):
+def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, curve_every=24, events=None):
     """Run genome g over bar indexes [start, end) of every series (all series share the same timeline).
+    `events` = entries(g, series), when the caller already computed them.
 
     Returns dict(equity, trades, curve, positions, metrics). `positions` are still open at `end` unless close_at_end.
     """
     insts = list(series)
+    ts0 = series[insts[0]].ts
+    if events is None:
+        events = entries(g, series)
     cash, pos, trades, curve = equity, {}, [], []
     peak, max_dd, pending, dists = equity, 0.0, {}, {}
     rr, trail = g['target_rr'], g.get('trail', 0)
@@ -254,13 +331,11 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
         eq = cash + sum(p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items())
         peak = max(peak, eq); max_dd = max(max_dd, (peak - eq) / peak if peak > 0 else 0)
         if curve_every and (i - start) % curve_every == 0:
-            curve.append((series[insts[0]].ts[i], round(eq, 2)))
+            curve.append((ts0[i], round(eq, 2)))
         if i < end - 1 or not close_at_end:
-            for inst in insts:
+            for inst, d, dist in events.get(i, ()):
                 if inst not in pos:
-                    d = signal(g, series[inst], i)
-                    if d:
-                        pending[inst], dists[inst] = d, stop_distance(g, series[inst], i)
+                    pending[inst], dists[inst] = d, dist
     last = end - 1
     eq = cash + sum(p['qty'] * (series[k].c[last] - p['entry']) * p['side'] for k, p in pos.items())
     if curve_every and (not curve or curve[-1][0] != series[insts[0]].ts[last]):

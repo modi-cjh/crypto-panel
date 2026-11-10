@@ -7,7 +7,7 @@ becomes the paper-trading champion.
 """
 import random
 
-from execution import simulate
+from execution import simulate, entries
 from genome import random_genome, crossover, mutate, fix, SPECIES
 import data as D
 
@@ -76,8 +76,9 @@ def robust_fitness(folds, trades):
 
 def evaluate(genes, series, split):
     start, cut, end = split
-    tr = simulate(genes, series, start, cut, curve_every=24)
-    te = simulate(genes, series, cut, end, curve_every=24)
+    ev = entries(genes, series)
+    tr = simulate(genes, series, start, cut, curve_every=24, events=ev)
+    te = simulate(genes, series, cut, end, curve_every=24, events=ev)
     m = te['metrics']
     qualified = m['ret'] > GATE['min_ret'] and m['max_dd'] < GATE['max_dd'] and m['trades'] >= GATE['min_trades']
     folds = fold_scores(tr, next(iter(series.values())).ts, start, cut)
