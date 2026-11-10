@@ -386,6 +386,10 @@
   [
    1794331415946,
    7349.1
+  ],
+  [
+   1794344377703,
+   7347.48
   ]
  ],
  "mirrored": {
@@ -617,6 +621,28 @@
    "side": -1,
    "posSide": "net",
    "reason": "too_old"
+  },
+  "ETH-USDT-SWAP|1794175200000": {
+   "inst": "ETH-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "SOL-USDT-SWAP|1794326400000": {
+   "inst": "SOL-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "31.28",
+   "stop": 87.98856346123318,
+   "target": 77.65129652562578,
+   "leverage": 10,
+   "entry": 83.29,
+   "clOrdId": "evsol1794326400",
+   "opened_at": 1794344377703,
+   "status": "open",
+   "ordId": "4088338427011387392"
   }
  },
  "paused": false,
