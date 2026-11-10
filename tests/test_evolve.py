@@ -99,6 +99,8 @@ class MergedGeneTests(unittest.TestCase):
         g = base_genes()
         old = {k: v for k, v in g.items() if k not in G.DEFAULTS}
         self.assertEqual(G.fix(dict(old))['tf'], 1); self.assertEqual(G.fix(dict(old))['trail'], 0)
+        self.assertIn('1 小时', G.describe(old))                   # dashboard text for genomes stored before the new genes
+        self.assertNotIn('tf', old)
         s = series_from(walk(600, 4))
         a = X.simulate(G.fix(dict(old)), {'BTC-USDT-SWAP': s}, 50, 600)
         b = X.simulate(g, {'BTC-USDT-SWAP': s}, 50, 600)
