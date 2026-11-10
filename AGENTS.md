@@ -34,7 +34,7 @@ tools/okx_demo_trader.py   OKX 模拟盘跟单：跟随 evolve/signals.json（�
                            → paper-data/okx_demo/{state.json, actions.jsonl, summary.json}
 tools/paper_trader.py, tools/volume_test.py   已退役的旧三策略引擎与限时档位（仅在没有 evolve/signals.json 时作为后备）
 tools/stop_demo.py         全部平仓并暂停（stop-demo.yml）
-.github/workflows/paper-trading.yml   定时运行上面两个程序（cron 每 5 分钟，GitHub 实际约 40–50 分钟一次）
+.github/workflows/paper-trading.yml   定时运行上面两个程序（cron 每 4 小时，`17 */4 * * *`；为减少账号上的自动运行和提交，不要调高频率）
 runtime/ + deploy/         可选常驻服务（FastAPI）；部署后替代 GitHub 定时任务
 index.html, assets/*.mjs   看板（无构建步骤，原生 ES 模块）
   assets/evolve.mjs        策略进化页：进化循环、适应度曲线、基因池谱系图、节点详情、纸面交易
@@ -81,7 +81,7 @@ PANEL_URL=http://127.0.0.1:8008/ node tests/evolve_browser.cjs    # 策略进化
 
 - **OKX 模拟盘是独立市场，价格与真实盘不同**（例：XRP 模拟盘 1.2686 vs 真实盘 1.2811）。模拟仓位的浮盈必须用模拟盘标记价，不能用真实盘行情。
 - **部分 4G 网络屏蔽 OKX**（请求一直挂起直到超时），Wi‑Fi / VPN 正常。看板必须在连不上 OKX 时退回账户快照，不能空白或报错。
-- **GitHub 定时任务严重延迟**：写的是每 5 分钟，实际 40–50 分钟一次；看板上的“快照 X 分钟前”是真实情况，不是 bug。
+- **定时任务每 4 小时一次**（用户要求，担心高频自动运行导致 GitHub 账号被封）：看板上的“快照 X 小时前”是正常的，不是 bug；不要改回高频。
 - **已实现盈亏 = 价差 + 手续费 + 资金费**，模拟盘资金费可能很高；止盈成交也可能整体亏损。交易所止损 / 止盈的金额来自 `/api/v5/account/positions-history`（注意它和 `/account/positions` 前缀相同，测试桩里要先匹配 history）。
 - **GitHub Pages 缓存约 10 分钟**，手机 Safari 会继续用旧的 JS 模块；验证线上效果时在网址后加 `?v=数字`。
 - **Safari 设置**（隐藏 IP 地址、内容拦截器）可能单独拦截 OKX 连接；右上角连接状态可点开“连接诊断”逐项测试。
