@@ -75,10 +75,12 @@ def main(argv=None):
     ap.add_argument('--generations', type=int, default=5)
     ap.add_argument('--budget', type=float, default=420, help='seconds; stop breeding early when exceeded')
     ap.add_argument('--reset', action='store_true')
+    ap.add_argument('--candles', type=Path, help='candle cache directory (default <data>/evolve/candles)')
     args = ap.parse_args(argv)
     t0, now = time.time(), int(time.time() * 1000)
     out = args.data / 'evolve'; out.mkdir(parents=True, exist_ok=True)
-    series = D.load_series(args.data, now)
+    series = D.load_series(args.data, now, cache_dir=args.candles)
+    print(f'{len(series)} 个币 · {next(iter(series.values())).n} 根 1H K 线 · 数据用时 {time.time() - t0:.0f}s')
     split = D.split(series)
     state_path = out / 'state.json'
     if args.reset or not state_path.exists():
@@ -105,7 +107,8 @@ def main(argv=None):
     state_path.write_text(json.dumps(state, separators=(',', ':')))
     (out / 'dashboard.json').write_text(json.dumps(dashboard(state, series, split, obs, paper_view, timing), ensure_ascii=False, separators=(',', ':')))
     (out / 'nodes.json').write_text(json.dumps(node_details(state), ensure_ascii=False, separators=(',', ':')))
-    (out / 'signals.json').write_text(json.dumps(dict(updated_at=iso(now), champion=champion, team=[m['id'] for m in state.get('team', [])], positions=signals), indent=1))
+    (out / 'signals.json').write_text(json.dumps(dict(updated_at=iso(now), champion=champion, team=[m['id'] for m in state.get('team', [])],
+                                                  instruments=list(series), positions=signals), indent=1))
     for r in rows:
         print(f"第 {r['gen']} 代 · 波动 {r['regime']} ({r['vol']}) · 最佳适应度 {r['best']} · 平均 {r['mean']} · 合格 {r['qualified']} · 新生 {r['born']} · 淘汰 {r['killed']}")
     for c in changes:

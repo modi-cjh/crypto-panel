@@ -1,4 +1,4 @@
-# Self-evolving strategies on real OKX candles (tools/evolve): each run evolves 5 generations, keeps the
+# Self-evolving strategies on real OKX candles of the top-100 USDT perpetuals (tools/evolve): each run evolves up to 5 generations, keeps the
 # out-of-sample-qualified champion paper-trading with the backtest engine, and mirrors its positions to OKX demo
 # trading (simulated funds; tools/okx_demo_trader.py). Results are committed to the separate `paper-data` branch.
 name: Paper trading
@@ -30,7 +30,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45   # the first run downloads a year of 1H candles for 100 coins (~20 min); later runs take minutes
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,15 +49,36 @@ jobs:
             git -C data remote add origin "$remote"
           fi
 
-      # Self-evolving strategies (tools/evolve): 5 generations per run on real OKX 1H candles, then the qualified
-      # champion paper-trades with the same execution engine as the backtests; its positions go to signals.json.
+      # 100 coins × a year of 1H candles (~60 MB) live in the Actions cache, not in the paper-data branch, so the branch
+      # does not grow by the whole candle set on every run. Each run saves a new cache entry and restores the latest one.
+      - name: Restore cached candles
+        uses: actions/cache/restore@v4
+        with:
+          path: candles
+          key: candles-${{ github.run_id }}
+          restore-keys: candles-
+
+      - name: Move candles out of the paper-data branch (one-time)
+        run: |
+          mkdir -p candles
+          if [ -d data/evolve/candles ]; then cp -n data/evolve/candles/*.json candles/ 2>/dev/null || true; rm -rf data/evolve/candles; fi
+
+      # Self-evolving strategies (tools/evolve): up to 5 generations per run on real OKX 1H candles (stops early after the
+      # time budget), then the qualified team paper-trades with the same execution engine as the backtests; its positions go to signals.json.
       - name: Evolve strategies and paper-trade the champion
         env:
           RESET: ${{ inputs.reset }}
         run: |
-          args=(--data data --generations 5)
+          args=(--data data --candles candles --generations 5)
           if [ "$RESET" = "true" ]; then args+=(--reset); fi
           python3 code/tools/evolve/run.py "${args[@]}"
+
+      - name: Save candles
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: candles
+          key: candles-${{ github.run_id }}
 
       # Mirrors the paper account onto OKX demo trading (simulated funds only). Skips itself when the
       # OKX_* secrets are absent; a failure here never blocks committing the paper results.

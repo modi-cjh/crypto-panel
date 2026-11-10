@@ -40,6 +40,27 @@ def base_genes(**kw):
 
 
 class ExecutionTests(unittest.TestCase):
+    def test_precomputed_entries_match_bar_by_bar_signals_for_every_species_and_timeframe(self):
+        rnd = random.Random(7)
+        btc = series_from(walk(900, 1), 'BTC-USDT-SWAP'); eth = series_from(walk(900, 2, .0003), 'ETH-USDT-SWAP')
+        for s in (btc, eth):
+            s.v = [rnd.uniform(1, 10) * (8 if rnd.random() < .03 else 1) for _ in range(s.n)]
+        eth.ref = btc
+        series = {'BTC-USDT-SWAP': btc, 'ETH-USDT-SWAP': eth}
+        checked = 0
+        for k in range(60):
+            g = G.random_genome(random.Random(k), G.SPECIES[k % len(G.SPECIES)])
+            g['vol_min'], g['vol_max'] = min(g['vol_min'], .6), max(g['vol_max'], 2.5)
+            want = {}
+            for i in range(btc.n):
+                for inst, s in series.items():
+                    d = X.signal(g, s, i)
+                    if d:
+                        want.setdefault(i, []).append((inst, d, X.stop_distance(g, s, i)))
+            self.assertEqual(X.entries(g, series), want, g)
+            checked += len(want)
+        self.assertGreater(checked, 50)
+
     def test_signal_on_close_fills_next_open_with_slippage_and_fee(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 5          # breakout on bar 40
         s = series_from(closes)
@@ -378,6 +399,21 @@ class EvolutionTests(unittest.TestCase):
         for p in champ['parents']: self.assertIn(p, st['nodes'])
 
 
+class UniverseTests(unittest.TestCase):
+    def test_top_volume_crypto_perpetuals_listed_for_the_whole_window(self):
+        now, day = T0 + 400 * 24 * H, 24 * H
+        inst = lambda i, listed, cat='1', settle='USDT', state='live': dict(instId=i, listTime=str(now - listed * day), instCategory=cat, settleCcy=settle, state=state)
+        meta = [inst('BTC-USDT-SWAP', 2000), inst('ETH-USDT-SWAP', 2000), inst('NEW-USDT-SWAP', 100), inst('AAPL-USDT-SWAP', 900, cat='3'),
+                inst('BTC-USD-SWAP', 2000, settle='BTC'), inst('OLD-USDT-SWAP', 900, state='suspend'), inst('PEPE-USDT-SWAP', 800)]
+        tick = [dict(instId=i, last=p, volCcy24h=v) for i, p, v in (('BTC-USDT-SWAP', '1', '1'), ('ETH-USDT-SWAP', '1', '50'), ('NEW-USDT-SWAP', '1', '99'),
+                                                                     ('AAPL-USDT-SWAP', '1', '98'), ('OLD-USDT-SWAP', '1', '97'), ('PEPE-USDT-SWAP', '2', '40'))]
+        get = lambda path: meta if path.startswith('public/instruments') else tick
+        self.assertEqual(D.select_universe(now, get, size=3), ['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'ETH-USDT-SWAP'])
+        with tempfile.TemporaryDirectory() as tmp:
+            first = D.universe(tmp, now, get)
+            self.assertEqual(D.universe(tmp, now, lambda p: []), first)          # chosen once, then fixed
+
+
 class DataTests(unittest.TestCase):
     def fake(self, now, hours):
         rows = [[str(now - (k + 1) * H), '1', '1.1', '.9', '1', '0', '0', '0', '1'] for k in range(hours)]   # newest first
@@ -432,7 +468,7 @@ class RunTests(unittest.TestCase):
         import data as dmod
         orig = dmod.okx_get
         try:
-            dmod.load_series.__defaults__ = (get, D.INSTRUMENTS)
+            dmod.load_series.__defaults__ = (get, D.INSTRUMENTS, None)
             clock = R.time.time
             R.time.time = lambda: 1_794_300_000.0            # fixed clock: the population seed comes from it, keep the run reproducible
             self.addCleanup(setattr, R.time, 'time', clock)
@@ -456,7 +492,7 @@ class RunTests(unittest.TestCase):
                 R.main(['--data', tmp, '--generations', '1'])            # second run resumes the same population
                 self.assertEqual(json.loads((out / 'dashboard.json').read_text())['generation'], 3)
         finally:
-            dmod.load_series.__defaults__ = (orig, D.INSTRUMENTS)
+            dmod.load_series.__defaults__ = (orig, None, None)
 
 
 if __name__ == '__main__':

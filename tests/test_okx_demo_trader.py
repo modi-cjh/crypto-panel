@@ -213,6 +213,11 @@ class MirrorTests(unittest.TestCase):
             p = odt.configure_evolved()
             self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT), ('evolved', .02, .05, .20, .20))
             self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
+            odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])     # the evolution's top-100 list
+            self.assertEqual(odt.INSTRUMENTS, ['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])
+            odt.configure_evolved(['BTC-USD-SWAP'])                                          # not a USDT perpetual: majors only
+            self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
+            odt.configure_evolved()
             fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved')}))
             self.assertTrue(fake.posts[-1][1]['clOrdId'].startswith('evbtc'))
             self.assertEqual(m.summary()['execution_profile']['mode'], 'evolved')

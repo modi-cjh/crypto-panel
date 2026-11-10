@@ -219,6 +219,6 @@ export function homeCardMarkup(d) {
 
 export function dataCaption(d) {
   const x = d.data, g = d.gate;
-  return `数据：${x.instruments.map(coin).join(' / ')} · 1 小时 K 线 · 共 ${fmt(x.bars, 0)} 根。训练集 ${date(x.train_from)} – ${date(x.train_to)}（70%），样本外 ${date(x.test_from)} – ${date(x.test_to)}（30%，策略进化时从没见过）。` +
+  return `数据：${x.instruments.length > 8 ? `成交额前 ${x.instruments.length} 的 USDT 永续（${x.instruments.slice(0, 5).map(coin).join(' / ')} 等）` : x.instruments.map(coin).join(' / ')} · 1 小时 K 线 · 共 ${fmt(x.bars, 0)} 根。训练集 ${date(x.train_from)} – ${date(x.train_to)}（70%），样本外 ${date(x.test_from)} – ${date(x.test_to)}（30%，策略进化时从没见过）。` +
     `样本外合格条件：收益 > ${g.min_ret}%、最大回撤 < ${g.max_dd}%、交易 ≥ ${g.min_trades} 次。回测与纸面交易共用同一套执行逻辑（下一根开盘成交、手续费 0.05%、滑点 0.02%、同根 K 线同时触及止损与止盈按止损计）。更新 ${time(d.updated_at)} UTC+7`;
 }

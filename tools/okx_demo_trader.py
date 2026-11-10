@@ -51,12 +51,16 @@ EVOLVED_INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-U
 ACTIVE_PROFILE = None
 
 
-def configure_evolved():
-    """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply."""
+def configure_evolved(universe=None):
+    """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply. `universe` is the
+    coin list the evolution trades (signals.json 'instruments', the top-100 perpetuals); without it, the five majors."""
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT
     # Chosen by the user: each order risks its strategy's own risk gene (2–5 %), at most 20 % in one direction (the five
     # coins move together, so same-side signals are one bet), and a 20 % daily loss flattens everything until tomorrow.
     INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], .20, EVOLVED_DAILY_HALT
+    if isinstance(universe, list) and universe and len(set(universe)) == len(universe) and all(
+            isinstance(i, str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', i) for i in universe):
+        INSTRUMENTS = list(universe)
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT)
     return ACTIVE_PROFILE
 
@@ -511,8 +515,9 @@ def main():
     # Signal source: the evolution champion's paper positions when present (tools/evolve), else the retired strategy engine.
     evolved_path, paper_path = args.data / 'evolve' / 'signals.json', args.data / 'combined' / 'state.json'
     if evolved_path.exists():
-        paper = {'positions': json.loads(evolved_path.read_text()).get('positions', {}), 'source': 'evolve'}
-        applied = configure_evolved()
+        sig = json.loads(evolved_path.read_text())
+        paper = {'positions': sig.get('positions', {}), 'source': 'evolve'}
+        applied = configure_evolved(sig.get('instruments'))
         print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 同向 ≤ {SAME_SIDE_CAP:.0%} · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
     else:
         if not paper_path.exists():
