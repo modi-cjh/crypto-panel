@@ -18,11 +18,13 @@ const GENE_NAMES = { species: '物种', direction: '方向', tf: '周期', trail
   stop_atr: '止损 ×ATR', target_rr: '止盈 R', max_hold: '最长持有 h', risk: '单笔风险', vol_min: '波动下限', vol_max: '波动上限' };
 const USED = { momentum: ['lookback'], mean_revert: ['lookback', 'threshold'], vol_breakout: ['expand'], trend: ['fast', 'slow'], vol_surge: ['lookback', 'vol_mult'], rel_strength: ['lookback', 'rs_th'] };
 const TF_NAMES = { 1: '1 小时', 4: '4 小时', 24: '日线' };
-const HOW = { seed: '初始随机', immigrant: '随机移民', crossover: '交叉', mutation: '突变', niche: '物种保护' };
+const HOW = { seed: '初始随机', immigrant: '随机移民', crossover: '交叉', mutation: '突变', niche: '物种保护', migrant: '旧系统迁入' };
 const REASON = { stop: '止损', target: '止盈', time: '到期', switch: '换冠军平仓' };
 const SWITCH_WHY = { first: '补入空位', challenger: '挑战者接替', breakdown: '原成员样本外失守', carry: '沿用原冠军', balance: '方向配额调整' };
 const DIRECTION = { both: '多空', long: '只做多', short: '只做空' };
 // Team members (the paper-trading champions); older dashboards only have a single champion.
+// Walk-forward segments of the training window (oldest first), shown under the metrics table.
+const foldsLine = n => Array.isArray(n.train?.folds) && n.train.folds.length ? `<p class="muted evo-folds">训练期分 ${n.train.folds.length} 段（越近权重越大）：${n.train.folds.map(f => `<span class="${tone(f.ret)}">${signed(f.ret, 1)}%</span>`).join(' · ')}${n.origin ? ` · 来源 ${esc(n.origin)}` : ''}</p>` : n.origin ? `<p class="muted evo-folds">来源 ${esc(n.origin)}</p>` : '';
 export const teamIds = d => (d.team && d.team.length ? d.team.map(m => m.id) : d.champion ? [d.champion.id] : []);
 
 export function validEvolve(d) {
@@ -176,7 +178,7 @@ export function detailMarkup(d, id, details = null, detailsFailed = false) {
   return `<div class="evo-detail-head"><h3><i class="evo-dot" style="background:${SPECIES_COLORS[n.species]}"></i>${esc(speciesName(d, n.species))} · ${esc(n.id)}</h3>${status}${gate}</div>` +
     `<p class="evo-summary">${esc(n.summary || '')}</p>` +
     `<p class="muted evo-origin">第 ${n.born} 代出生 · ${HOW[n.how] || esc(n.how)} · 父代 ${parents} · 训练适应度 <b>${fmt(n.fitness, 3)}</b></p>` +
-    `<div class="table-scroll"><table class="evo-metrics"><thead><tr><th></th><th>收益</th><th>最大回撤</th><th>交易次数</th><th>胜率</th><th>盈亏比</th></tr></thead><tbody>${metricRow('训练集 70%', n.train)}${metricRow('样本外 30%', n.test)}</tbody></table></div>` +
+    `<div class="table-scroll"><table class="evo-metrics"><thead><tr><th></th><th>收益</th><th>最大回撤</th><th>交易次数</th><th>胜率</th><th>盈亏比</th></tr></thead><tbody>${metricRow('训练集 70%', n.train)}${metricRow('样本外 30%', n.test)}</tbody></table></div>` + foldsLine(n) +
     (!isSlim(d, n) ? `${miniCurve(curves)}<div class="sim-legend">${curves.map(c => `<span><i class="${c.cls}"></i>${c.label}</span>`).join('')}</div>` +
       `<h4>基因</h4><table class="evo-genes"><tbody>${genes}</tbody></table><p class="muted evo-note">灰色基因当前物种用不到，但会遗传给后代。</p>`
       : `<p class="muted evo-loading" role="status">${detailsFailed ? '基因与回测曲线暂时读取失败，稍后自动重试' : '正在读取基因与回测曲线…'}</p>`);

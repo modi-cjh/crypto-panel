@@ -156,6 +156,36 @@ class MergedGeneTests(unittest.TestCase):
         self.assertEqual([i for i in range(20, 70) if X.signal(g, btc, i)], [])   # BTC has no reference: never fires
 
 
+class RobustFitnessAndMigrantTests(unittest.TestCase):
+    def setUp(self):
+        self.sr = {'BTC-USDT-SWAP': series_from(walk(900, 21)), 'ETH-USDT-SWAP': series_from(walk(900, 22), 'ETH-USDT-SWAP')}
+        self.sr['ETH-USDT-SWAP'].ref = self.sr['BTC-USDT-SWAP']
+        self.split = (60, 630, 900)
+
+    def test_training_is_scored_in_segments_and_steady_beats_lumpy(self):
+        r = E.evaluate(base_genes(), self.sr, self.split)
+        self.assertEqual(len(r['train']['folds']), E.FOLDS)
+        self.assertEqual(sum(f['trades'] for f in r['train']['folds']), r['train']['trades'])
+        steady = [dict(score=2.0, ret=5.0, max_dd=5, trades=10)] * 4
+        lumpy = [dict(score=-1.0, ret=-2.0, max_dd=5, trades=10)] * 3 + [dict(score=8.0, ret=40.0, max_dd=5, trades=10)]
+        self.assertGreater(E.robust_fitness(steady, 40), E.robust_fitness(lumpy, 40))
+        self.assertLess(E.robust_fitness(steady, 15), E.robust_fitness(steady, 40))      # too few trades are damped
+
+    def test_migrants_join_once_replacing_the_weakest_non_team_members(self):
+        st = E.init_state(7, self.sr, self.split)
+        mig = json.loads((Path(__file__).resolve().parents[1] / 'tools' / 'evolve' / 'migrants.json').read_text())
+        before = len(st['population'])
+        added = E.add_migrants(st, mig, self.sr, self.split)
+        self.assertEqual(len(added), len(mig['strategies'])); self.assertEqual(len(st['population']), before)
+        self.assertTrue(all(st['nodes'][i]['how'] == 'migrant' and st['nodes'][i]['origin'] for i in added))
+        self.assertEqual(E.add_migrants(st, mig, self.sr, self.split), [])                # only once per version
+        for m in mig['strategies']:
+            g = m['genes']
+            for k, (kind, lo, hi) in G.GENES.items():
+                if kind != 'choice': self.assertTrue(lo <= g[k] <= hi, (k, g[k]))
+                else: self.assertIn(g[k], lo)
+
+
 class GenomeTests(unittest.TestCase):
     def test_bounds_and_relations_hold_after_mutation_and_crossover(self):
         rng = random.Random(7)
@@ -395,6 +425,9 @@ class RunTests(unittest.TestCase):
         orig = dmod.okx_get
         try:
             dmod.load_series.__defaults__ = (get, D.INSTRUMENTS)
+            clock = R.time.time
+            R.time.time = lambda: 1_794_300_000.0            # fixed clock: the population seed comes from it, keep the run reproducible
+            self.addCleanup(setattr, R.time, 'time', clock)
             with tempfile.TemporaryDirectory() as tmp:
                 R.main(['--data', tmp, '--generations', '2'])
                 out = Path(tmp) / 'evolve'

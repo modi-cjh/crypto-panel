@@ -25,7 +25,7 @@ def iso(ms):
     return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
 
 
-GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'fitness', 'qualified', 'train', 'test')
+GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'origin', 'fitness', 'qualified', 'train', 'test')
 
 
 def node_view(n, curves=False, slim=False):
@@ -86,6 +86,10 @@ def main(argv=None):
     else:
         state = json.loads(state_path.read_text())
         E.refresh(state, series, split)
+    migrants_path = Path(__file__).with_name('migrants.json')
+    if migrants_path.exists():
+        for nid in E.add_migrants(state, json.loads(migrants_path.read_text()), series, split):
+            print(f"旧系统迁入 {nid} · {state['nodes'][nid].get('origin')}")
     obs, rows = None, []
     for _ in range(args.generations):
         obs = D.observe_volatility(series)            # observe first, then breed

@@ -26,7 +26,8 @@ tools/evolve/              自我进化策略引擎（当前唯一信号来源�
   data.py                  数据层：OKX 1H K 线缓存（paper-data/evolve/candles/）、共享时间轴、70/30 切分、波动观察
   genome.py                基因：物种（动量/均值回归/波动突破/均线趋势）与参数、交叉、突变
   execution.py             同源执行：回测与纸面交易共用的唯一撮合引擎 simulate()
-  evolution.py             每代：观察 → 繁殖 → 训练集适应度 → 样本外闸门 → 选择；冠军选择、谱系修剪
+  evolution.py             每代：观察 → 繁殖 → 训练集适应度（训练期分 4 段检验，近期权重大）→ 样本外闸门 → 选择；冠军选择、谱系修剪、旧系统策略一次性迁入
+  convert_old.py, migrants.json   旧系统（trading-evo）策略转换与迁入名单
   paper.py                 冠军组合纸面交易（5 个席位、每席按段重放 simulate），导出 OKX 跟单信号（同币种取排名高者）
   run.py                   一次运行 = 更新数据 + 进化 5 代 + 换冠军 + 纸面交易
                            → paper-data/evolve/{state.json, dashboard.json（精简谱系）, nodes.json（每个节点的基因与曲线，点开时加载）, signals.json}
