@@ -98,6 +98,17 @@
         <div class="evo-pool-body"><div class="evo-graph-box" id="evolve-graph"></div><aside class="evo-detail" id="evolve-detail" aria-live="polite"></aside></div></section>
       <section class="panel"><div class="panel-heading"><h2>纸面交易 · 冠军接管</h2><small class="muted">与回测同一套执行逻辑 · OKX 模拟盘跟单</small></div><div id="evolve-paper" class="okx-body"></div></section>
       <p class="panel-caption" id="evolve-caption"></p>
+      <section id="lab" class="lab-system" aria-labelledby="lab-title">
+      <div class="page-heading lab-heading"><div><div class="eyebrow">SYSTEM 2 / 持续进化（6 物种 · 4 周期）</div><h2 id="lab-title">第二套进化系统 · 纸面账户</h2><p>每周用当时已有的数据滚动进化，挑战者考核 28 天胜出才接管账户；一个 1000 USDT 的账户由“上线组合”的策略共同交易。目前是历史 K 线回放，没有下单。</p></div><span id="lab-updated" class="pill">等待数据</span></div>
+      <p id="lab-error" class="alert" hidden></p>
+      <section class="panel okx-hero"><div class="panel-heading"><h2>账户权益 <span id="lab-label" class="mode-tag">回放</span></h2></div><div id="lab-hero" class="okx-body"></div></section>
+      <section class="panel"><div class="panel-heading"><h2>权益 K 线</h2><div id="lab-range" class="segmented" role="group" aria-label="权益 K 线周期"><button data-period="4h" aria-pressed="false">4 小时</button><button data-period="day" class="active" aria-pressed="true">日</button><button data-period="week" aria-pressed="false">周</button></div></div><div id="lab-chart" class="lab-chart"></div><p id="lab-chart-error" class="chart-error" hidden>图表组件未加载，刷新页面重试。</p></section>
+      <section class="panel"><div class="panel-heading"><h2>上线策略 · 各自盈亏</h2><small class="muted">USDT · 含已平仓与持仓浮盈</small></div><ol id="lab-strategies" class="okx-acts"></ol></section>
+      <section class="panel"><div class="panel-heading"><h2>当前持仓 <span id="lab-pos-count" class="pill">0</span></h2><small class="muted">点一下看开仓策略与止损</small></div><div id="lab-positions" class="okx-pos-list"></div></section>
+      <section class="panel"><div class="panel-heading"><h2>平仓记录</h2><small class="muted">最新在前 · UTC+7</small></div><ol id="lab-closed" class="okx-acts"></ol><button id="lab-closed-more" class="expand-button" type="button" aria-expanded="false" hidden>显示更多</button></section>
+      <section class="panel"><div class="panel-heading"><h2>各版本对比</h2><small class="muted">同一段时间完整回放 · 起始 1000 USDT</small></div><div id="lab-versions"></div></section>
+      <p class="panel-caption" id="lab-caption"></p>
+      </section>
     </section>
     <noscript><p class="note">请启用 JavaScript 以加载行情与模拟盘数据。</p></noscript>
   </main>

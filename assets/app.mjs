@@ -12,6 +12,7 @@ import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
 import { workState, pnlMood, tradeBurst, positionReport, pnlComment } from './robot-work.mjs';
 import { EVOLVE_URL, EVOLVE_NODES_URL, validNodeDetails, needsDetails, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays } from './evolve.mjs';
 import { GeneFx } from './evolve-fx.mjs';
+import { LAB_URL, validLab, labBars, heroMarkup as labHero, strategiesMarkup as labStrategies, positionsMarkup as labPositions, closedMarkup as labClosed, versionsMarkup as labVersions, labCaption, labTime, mountLabChart } from './lab.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
 import config from '../config.js';
@@ -418,7 +419,7 @@ function navigate() {
   if (location.hash === '#/paper') { location.replace('#/sim'); return; }   // the old bot's history page is gone; the OKX account lives on 模拟交易
   const hash = location.hash || '#/';
   const match = /^#\/coin\/([A-Z0-9]+-USDT-SWAP)$/.exec(hash);
-  route = match ? 'coin' : hash === '#/market' ? 'market' : hash === '#/sim' ? 'sim' : hash === '#/evolve' ? 'evolve' : 'home';
+  route = match ? 'coin' : hash === '#/market' ? 'market' : hash === '#/sim' ? 'sim' : hash === '#/evolve' || hash === '#/lab' ? 'evolve' : 'home';
   coin = match?.[1] || homeCoin;
   candleCharts?.destroy(); candleCharts = null;
   for (const page of ['home', 'market', 'coin', 'sim', 'evolve']) $(`${page}-page`).hidden = route !== page;
@@ -445,7 +446,7 @@ function navigate() {
   } else { renderMarket(); refreshSlow(); }
   if (route === 'home') refreshSnapshot();
   if(route==='evolve')queueMicrotask(()=>geneFx.kick());   // resume the gene-pool motion (geneFx is created later in this module)
-  document.documentElement.dataset.route=route;renderPinnedBalance();renderSim();refreshSim();refreshEvolve();
+  document.documentElement.dataset.route=route;renderPinnedBalance();renderSim();refreshSim();refreshEvolve();refreshLab();
   refreshPublicAccount();syncStreams();
 }
 $('search').addEventListener('input', renderMarket);
@@ -879,6 +880,31 @@ async function refreshDecisionHistory(){
 }
 document.addEventListener('modi-decisions-open',refreshDecisionHistory);
 
+// 策略进化 · 第二套系统: replay account (lab/account.json), loaded once per visit; refreshed hourly while the page is open.
+let labData=null,labBusy=false,labChart=null,labPeriod='day',labLimit=20,labLoadedAt=0;
+async function refreshLab(){
+ if(route!=='evolve' || labBusy || labData && Date.now()-labLoadedAt<3600e3){if(route==='evolve' && labData)renderLab();return;}labBusy=true;
+ try{
+  const r=await fetch(`${LAB_URL}?t=${Math.floor(Date.now()/3600e3)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});
+  if(!r.ok)throw new Error('读取失败');const d=await r.json();if(!validLab(d))throw new Error('格式不对');
+  labData=d;labLoadedAt=Date.now();$('lab-error').hidden=true;renderLab();
+ }catch{if(route==='evolve' && !labData){$('lab-error').hidden=false;$('lab-error').textContent='回放账户数据暂时读取失败，稍后刷新重试。';}}
+ finally{labBusy=false;}
+}
+function renderLab(){
+ const d=labData;if(route!=='evolve' || !d)return;
+ setText($('lab-updated'),`第 ${d.generation} 代 · 截至 ${labTime(d.end)} UTC+7`);setText($('lab-label'),`回放 ${d.label||''}`.trim());
+ setHTML($('lab-hero'),labHero(d));setHTML($('lab-strategies'),labStrategies(d));
+ setText($('lab-pos-count'),String(d.positions.length));setHTML($('lab-positions'),labPositions(d));
+ setHTML($('lab-closed'),labClosed(d,labLimit));const more=$('lab-closed-more');more.hidden=d.closed.length<=labLimit;
+ setHTML($('lab-versions'),labVersions(d));setText($('lab-caption'),labCaption(d));
+ if(!labChart)labChart=mountLabChart($('lab-chart'));
+ $('lab-chart-error').hidden=Boolean(labChart);if(labChart)labChart.update(labBars(d,labPeriod),d.start_equity);
+}
+$('lab-range').addEventListener('click',e=>{const b=e.target.closest('[data-period]');if(!b)return;labPeriod=b.dataset.period;
+ $('lab-range').querySelectorAll('button').forEach(x=>{const on=x===b;x.classList.toggle('active',on);x.setAttribute('aria-pressed',String(on));});renderLab();});
+$('lab-closed-more').addEventListener('click',()=>{labLimit+=50;renderLab();});
+window.addEventListener('load',()=>{if(route==='evolve')renderLab();});
 initTradeControls();refreshRuntimeHealth();navigate();refreshPrices();refreshEvents();
 setInterval(()=>{if(!document.hidden){refreshPrices();pollOkxMarks();renderPinnedBalance();updateStreamStatus();updateCompanionWork();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
@@ -890,3 +916,4 @@ setInterval(()=>{if(!document.hidden){refreshHealth();if(route==='home')renderHo
  refreshRuntimeHealth();}},10000);
 const updateClock = () => { $('utc-clock').textContent = new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(Date.now()) + ' UTC+7'; $('day-number').textContent = 'DAY ' + dayNumber(config.startDate); };
 updateClock(); setInterval(updateClock, 1000);
+
