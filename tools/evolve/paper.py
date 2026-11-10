@@ -5,7 +5,7 @@ each run replays every slot's current segment from the bar it started on up to t
 result is exactly what the backtest engine produces on live bars. When a seat changes hands, the old member's segment is
 closed at that bar's close and the new member continues with the slot's equity. The account equity is the slots' sum.
 """
-from execution import simulate, START_EQUITY
+from execution import simulate, stop_distance, START_EQUITY
 from evolution import TEAM_SIZE
 
 HOUR = 3600_000
@@ -55,7 +55,7 @@ def _close(slot, series, last_ts):
 
 def _signal_from_pending(inst, d, genes, series, last_ts, member):
     sr = series[inst]
-    dist, px, rr = genes['stop_atr'] * sr.atr()[-1], sr.c[-1], genes['target_rr']
+    dist, px, rr = stop_distance(genes, sr, sr.n - 1), sr.c[-1], genes['target_rr']
     return dict(side=d, entry=px, stop=px - d * dist, tp=px + d * rr * dist if rr > 0 else None, opened=last_ts + HOUR,
                 strategy='evolved', leverage=10, champion=member, pending=True)
 

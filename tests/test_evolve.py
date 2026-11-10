@@ -34,7 +34,7 @@ def walk(n, seed, drift=0.0):
 
 def base_genes(**kw):
     g = G.random_genome(random.Random(1), 'momentum')
-    g.update(direction='both', lookback=20, stop_atr=2.0, target_rr=0.0, max_hold=240, risk=.01, vol_min=.3, vol_max=4.0)
+    g.update(direction='both', lookback=20, stop_atr=2.0, target_rr=0.0, max_hold=240, risk=.01, vol_min=.3, vol_max=4.0, tf=1, trail=0)
     g.update(kw)
     return g
 
@@ -92,6 +92,68 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(paper['positions'], back['positions'])
 
 
+class MergedGeneTests(unittest.TestCase):
+    """Genes merged from the rolling-evolution system: timeframe, trailing stop, volume surge, relative strength."""
+
+    def test_old_genomes_get_neutral_defaults_and_trade_exactly_as_before(self):
+        g = base_genes()
+        old = {k: v for k, v in g.items() if k not in G.DEFAULTS}
+        self.assertEqual(G.fix(dict(old))['tf'], 1); self.assertEqual(G.fix(dict(old))['trail'], 0)
+        s = series_from(walk(600, 4))
+        a = X.simulate(G.fix(dict(old)), {'BTC-USDT-SWAP': s}, 50, 600)
+        b = X.simulate(g, {'BTC-USDT-SWAP': s}, 50, 600)
+        self.assertEqual(a['trades'], b['trades'])
+
+    def test_population_saved_before_the_new_genes_keeps_evolving(self):
+        sr = {'BTC-USDT-SWAP': series_from(walk(700, 11)), 'ETH-USDT-SWAP': series_from(walk(700, 12), 'ETH-USDT-SWAP')}
+        sr['ETH-USDT-SWAP'].ref = sr['BTC-USDT-SWAP']
+        sp = (60, 480, 700)
+        st = E.init_state(5, sr, sp)
+        for n in st['nodes'].values():                    # as stored on paper-data before this change
+            for k in G.DEFAULTS: n['genes'].pop(k, None)
+        row = E.generation(st, sr, sp, D.observe_volatility(sr))
+        self.assertEqual(len(st['population']), E.POPULATION)
+        self.assertTrue(all('tf' in st['nodes'][i]['genes'] for i in st['population'] if st['nodes'][i]['born'] == row['gen']))
+
+    def test_4h_bars_are_complete_utc_aligned_and_decide_only_when_they_close(self):
+        s = series_from(walk(100, 2))
+        bars, closes_at, last = s.tf(4)
+        for j in range(bars.n):
+            self.assertEqual(bars.ts[j] % (4 * H), 0)
+            k = s.ts.index(bars.ts[j])
+            self.assertEqual(bars.o[j], s.o[k]); self.assertEqual(bars.c[j], s.c[k + 3])
+            self.assertEqual(bars.h[j], max(s.h[k:k + 4])); self.assertEqual(closes_at[k + 3], j)
+        self.assertTrue(all(c == -1 for i, c in enumerate(closes_at) if (s.ts[i] + H) % (4 * H)))
+        self.assertTrue(all(last[i] <= i // 4 for i in range(s.n)))
+        g = base_genes(tf=4)
+        r = X.simulate(g, {'BTC-USDT-SWAP': s}, 30, s.n)
+        for t in r['trades'] + r['positions']:
+            self.assertEqual(t['opened'] % (4 * H), 0)               # decided on a 4H close, filled at the next 1H open
+
+    def test_trailing_stop_follows_the_best_price_and_never_loosens(self):
+        closes = [100.0] * 40 + [110.0] + [112.0, 116.0, 120.0, 118.0]
+        s = series_from(closes)
+        fixed = X.simulate(base_genes(), {'BTC-USDT-SWAP': s}, 30, s.n)['positions'][0]
+        trail = X.simulate(base_genes(trail=1), {'BTC-USDT-SWAP': s}, 30, s.n)['positions'][0]
+        self.assertAlmostEqual(fixed['stop'], fixed['entry'] - X.stop_distance(base_genes(), s, 40))
+        self.assertGreater(trail['stop'], fixed['stop'])
+        self.assertAlmostEqual(trail['stop'], max(s.h[41:]) - (trail['entry'] - fixed['stop']))
+
+    def test_volume_surge_and_relative_strength_signals(self):
+        closes = [100.0] * 60 + [101.0]
+        vol = [10.0] * 60 + [100.0]
+        s = series_from(closes); s.v = vol
+        g = base_genes(species='vol_surge', lookback=20, vol_mult=3.0)
+        self.assertEqual(X.signal(g, s, 60), 1)
+        self.assertEqual(X.signal(g, s, 59), 0)
+        btc = series_from([100.0] * 70)
+        alt = series_from([100.0] * 60 + [100.0 * 1.01 ** k for k in range(1, 11)], 'ETH-USDT-SWAP'); alt.ref = btc
+        g = base_genes(species='rel_strength', lookback=10, rs_th=.05)
+        fired = [i for i in range(20, 70) if X.signal(g, alt, i)]
+        self.assertEqual(len(fired), 1); self.assertEqual(X.signal(g, alt, fired[0]), 1)
+        self.assertEqual([i for i in range(20, 70) if X.signal(g, btc, i)], [])   # BTC has no reference: never fires
+
+
 class GenomeTests(unittest.TestCase):
     def test_bounds_and_relations_hold_after_mutation_and_crossover(self):
         rng = random.Random(7)
@@ -147,7 +209,7 @@ class EvolutionTests(unittest.TestCase):
         fixed = E.protect_species(st, elites, kids, pop, 99, rng, self.obs, self.sr, self.split)
         self.assertEqual(len(fixed), 20)
         for sp in G.SPECIES: self.assertGreaterEqual(sum(1 for n in elites + fixed if n['species'] == sp), E.MIN_PER_SPECIES, sp)
-        self.assertEqual(sum(1 for n in fixed if n['how'] == 'niche'), 9)
+        self.assertEqual(sum(1 for n in fixed if n['how'] == 'niche'), (len(G.SPECIES) - 1) * E.MIN_PER_SPECIES)
         self.assertEqual(len(st['population']), E.POPULATION)
         counts = {'trend': 36, 'momentum': 1}
         a, b = dict(species='trend', fitness=4.0), dict(species='momentum', fitness=1.0)

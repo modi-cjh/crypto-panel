@@ -2,8 +2,8 @@
 export const EVOLVE_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/evolve/dashboard.json';
 // Schema 2 keeps lineage nodes slim; genes, summary and curves of every node are in nodes.json, loaded when a node is opened.
 export const EVOLVE_NODES_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/evolve/nodes.json';
-export const SPECIES_COLORS = { momentum: '#2f6fb0', mean_revert: '#7b4bd1', vol_breakout: '#d98200', trend: '#1f9d63' };
-const SPECIES_ORDER = ['momentum', 'mean_revert', 'vol_breakout', 'trend'];
+export const SPECIES_COLORS = { momentum: '#2f6fb0', mean_revert: '#7b4bd1', vol_breakout: '#d98200', trend: '#1f9d63', vol_surge: '#c2417a', rel_strength: '#138a9c' };
+const SPECIES_ORDER = ['momentum', 'mean_revert', 'vol_breakout', 'trend', 'vol_surge', 'rel_strength'];
 const finite = Number.isFinite;
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const fmt = (v, d = 2) => finite(v) ? v.toLocaleString('zh-CN', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
@@ -14,9 +14,10 @@ const day = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Bangkok', year: '
 const time = t => finite(typeof t === 'number' ? t : Date.parse(t)) ? clock.format(typeof t === 'number' ? t : Date.parse(t)) : '—';
 const date = t => finite(Date.parse(t)) ? day.format(Date.parse(t)) : '—';
 const coin = inst => String(inst).split('-')[0];
-const GENE_NAMES = { species: '物种', direction: '方向', lookback: '回看窗口', threshold: '偏离阈值 σ', expand: '振幅倍数', fast: '快线 EMA', slow: '慢线 EMA',
+const GENE_NAMES = { species: '物种', direction: '方向', tf: '周期', trail: '移动止损', lookback: '回看窗口', vol_mult: '放量倍数', rs_th: '强弱阈值', threshold: '偏离阈值 σ', expand: '振幅倍数', fast: '快线 EMA', slow: '慢线 EMA',
   stop_atr: '止损 ×ATR', target_rr: '止盈 R', max_hold: '最长持有 h', risk: '单笔风险', vol_min: '波动下限', vol_max: '波动上限' };
-const USED = { momentum: ['lookback'], mean_revert: ['lookback', 'threshold'], vol_breakout: ['expand'], trend: ['fast', 'slow'] };
+const USED = { momentum: ['lookback'], mean_revert: ['lookback', 'threshold'], vol_breakout: ['expand'], trend: ['fast', 'slow'], vol_surge: ['lookback', 'vol_mult'], rel_strength: ['lookback', 'rs_th'] };
+const TF_NAMES = { 1: '1 小时', 4: '4 小时', 24: '日线' };
 const HOW = { seed: '初始随机', immigrant: '随机移民', crossover: '交叉', mutation: '突变', niche: '物种保护' };
 const REASON = { stop: '止损', target: '止盈', time: '到期', switch: '换冠军平仓' };
 const SWITCH_WHY = { first: '补入空位', challenger: '挑战者接替', breakdown: '原成员样本外失守', carry: '沿用原冠军', balance: '方向配额调整' };
@@ -162,12 +163,12 @@ export function detailMarkup(d, id, details = null, detailsFailed = false) {
   const pop = new Set(d.population || []), champ = d.champion?.id === n.id, seat = teamIds(d).indexOf(n.id);
   const status = champ ? '<span class="pill okx-pill up">冠军组合领头 · 纸面交易中</span>' : seat >= 0 ? '<span class="pill okx-pill up">冠军组合成员 · 纸面交易中</span>' : pop.has(n.id) ? '<span class="pill">存活</span>' : `<span class="pill muted">第 ${n.died ?? '—'} 代淘汰</span>`;
   const gate = n.qualified ? '<span class="pill okx-pill up">样本外合格</span>' : '<span class="pill okx-pill down">样本外不合格</span>';
-  const used = new Set(['species', 'direction', 'stop_atr', 'target_rr', 'max_hold', 'risk', 'vol_min', 'vol_max', ...(USED[n.species] || [])]);
+  const used = new Set(['species', 'direction', 'tf', 'trail', 'stop_atr', 'target_rr', 'max_hold', 'risk', 'vol_min', 'vol_max', ...(USED[n.species] || [])]);
   const bounds = d.gene_bounds || {};
   const genes = Object.keys(GENE_NAMES).filter(k => n.genes && k in n.genes).map(k => {
     const v = n.genes[k], b = bounds[k];
-    const shown = k === 'species' ? speciesName(d, v) : k === 'direction' ? DIRECTION[v] : k === 'risk' ? `${fmt(v * 100, 2)}%` : k === 'target_rr' && !v ? '无' : esc(v);
-    const bar = Array.isArray(b) && b.length === 2 && finite(b[0]) ? `<i class="evo-gbar"><b style="width:${Math.max(2, Math.min(100, (v - b[0]) / (b[1] - b[0]) * 100)).toFixed(0)}%"></b></i>` : '';
+    const shown = k === 'species' ? speciesName(d, v) : k === 'direction' ? DIRECTION[v] : k === 'tf' ? TF_NAMES[v] || esc(v) : k === 'trail' ? (v ? '是' : '否') : k === 'rs_th' ? `${fmt(v * 100, 1)}%` : k === 'risk' ? `${fmt(v * 100, 2)}%` : k === 'target_rr' && !v ? '无' : esc(v);
+    const bar = k !== 'trail' && Array.isArray(b) && b.length === 2 && finite(b[0]) ? `<i class="evo-gbar"><b style="width:${Math.max(2, Math.min(100, (v - b[0]) / (b[1] - b[0]) * 100)).toFixed(0)}%"></b></i>` : '';
     return `<tr class="${used.has(k) ? '' : 'inert'}"><th>${GENE_NAMES[k]}</th><td>${shown}</td><td>${bar}</td></tr>`;
   }).join('');
   const parents = n.parents.length ? n.parents.map(p => d.nodes.some(x => x.id === p) ? `<button type="button" class="pill" data-node="${esc(p)}">${esc(p)}</button>` : `<span class="pill muted">${esc(p)}</span>`).join(' ') : '无（随机生成）';
