@@ -2,6 +2,8 @@
 
 - First run back-fills WINDOW_DAYS; later runs fetch only the new bars. Only closed bars (confirm == 1) are kept.
 - All instruments share one timeline (timestamps present for every instrument).
+- Each row keeps the quote volume (USDT); caches written before volume was stored are back-filled again once.
+- Every series except BTC gets BTC as its `ref` (relative-strength species).
 - The window is split by time: the first TRAIN_SHARE for training, the rest is out-of-sample.
 """
 import json
@@ -16,6 +18,7 @@ WINDOW_DAYS = 365
 TRAIN_SHARE = .7
 WARMUP = 250          # bars used only to warm indicators up before the training window
 HOUR = 3600_000
+REF = 'BTC-USDT-SWAP'
 _next = 0.0
 
 
@@ -39,13 +42,17 @@ def okx_get(path, retries=4):
 
 
 def _rows(raw):
-    return [[int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4])] for r in raw if len(r) < 9 or r[8] == '1']
+    """[ts, open, high, low, close, quote volume] for closed bars (OKX: r[7] = volCcyQuote, r[8] = confirm)."""
+    return [[int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[7]) if len(r) > 7 else 0.0]
+            for r in raw if len(r) < 9 or r[8] == '1']
 
 
 def update_candles(cache_dir, inst, now_ms, get=okx_get):
     """Load the cached candles for inst, append any new closed bars, trim to the window, save. Returns rows (oldest first)."""
     path = Path(cache_dir) / f'{inst}.json'
     rows = json.loads(path.read_text())['rows'] if path.exists() else []
+    if rows and len(rows[0]) < 6:      # cache from before volume was stored: fetch the window again
+        rows = []
     have = {r[0] for r in rows}
     since = now_ms - WINDOW_DAYS * 24 * HOUR
     last = rows[-1][0] if rows else since - HOUR
@@ -74,7 +81,12 @@ def load_series(data_dir, now_ms, get=okx_get, instruments=INSTRUMENTS):
     out = {}
     for inst, rows in per.items():
         rows = [r for r in rows if r[0] in keep]
-        out[inst] = Series(inst, [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows], [r[4] for r in rows])
+        out[inst] = Series(inst, [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows], [r[4] for r in rows],
+                           [r[5] for r in rows])
+    ref = out.get(REF)
+    for inst, s in out.items():
+        if inst != REF:
+            s.ref = ref
     return out
 
 

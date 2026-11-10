@@ -6,6 +6,9 @@ Rules (identical in every caller):
 - Stop and target are checked inside each later bar; if a bar touches both, the stop is assumed first (conservative);
   a gap through the stop fills at the open. Positions also exit at the close after `max_hold` bars.
 - Equity is marked to market at every close; max drawdown is measured on that curve.
+- Timeframe gene `tf` (1 / 4 / 24 h): signals and the stop's ATR come from 4H / 1D bars built from the 1H bars (UTC
+  aligned, complete bars only) and are decided when such a bar closes; fills, stops and targets still run on 1H bars.
+- Gene `trail` = 1: after each bar the stop follows the best price at the original stop distance (never loosens).
 """
 import math
 
@@ -13,15 +16,61 @@ FEE = .0005          # taker fee per side
 SLIP = .0002         # slippage per fill
 MAX_NOTIONAL = 3.0   # per position, × equity
 START_EQUITY = 10000.0
+MAX_HOLD_H = 720     # longest hold in hours, whatever the timeframe
+HOUR = 3600_000
 
 
 # ----------------------------------------------------------------- indicators (cached per series)
 class Series:
-    """One instrument's 1H candles with lazily cached indicators."""
-    def __init__(self, inst, ts, o, h, l, c):
+    """One instrument's 1H candles (volume optional) with lazily cached indicators. `ref` is the BTC series on the
+    same timeline (relative strength); the BTC series itself has no ref."""
+    def __init__(self, inst, ts, o, h, l, c, v=None, ref=None):
         self.inst, self.ts, self.o, self.h, self.l, self.c = inst, ts, o, h, l, c
+        self.v, self.ref = v, ref
         self.n = len(ts)
         self._cache = {}
+
+    def tf(self, hours):
+        """(bars, closes_at, last_closed) for a timeframe of `hours`: bars is a Series of complete UTC-aligned bars;
+        closes_at[i] is the bar that closes with 1H bar i (else -1); last_closed[i] the latest bar closed by i (else -1)."""
+        def build():
+            groups, cur = [], None
+            for i, t in enumerate(self.ts):
+                k = t // (hours * HOUR)
+                if cur is None or cur[0] != k:
+                    cur = [k, i, i]; groups.append(cur)
+                else:
+                    cur[2] = i
+            full = [(a, b) for k, a, b in groups if b - a + 1 == hours and self.ts[b] - self.ts[a] == (hours - 1) * HOUR]
+            closes_at, last_closed = [-1] * self.n, [-1] * self.n
+            for j, (a, b) in enumerate(full):
+                closes_at[b] = j
+            last = -1
+            for i in range(self.n):
+                if closes_at[i] >= 0:
+                    last = closes_at[i]
+                last_closed[i] = last
+            bars = Series(self.inst, [self.ts[a] for a, b in full], [self.o[a] for a, b in full],
+                          [max(self.h[a:b + 1]) for a, b in full], [min(self.l[a:b + 1]) for a, b in full], [self.c[b] for a, b in full],
+                          [sum(self.v[a:b + 1]) for a, b in full] if self.v else None)
+            if self.ref is not None:
+                bars.ref = self.ref.tf(hours)[0]
+            return bars, closes_at, last_closed
+        if hours == 1:
+            return self, list(range(self.n)), list(range(self.n))
+        return self._get(('tf', hours), build)
+
+    def vol_avg(self, n):
+        """Average volume of the n bars BEFORE i (None without volume or history)."""
+        def build():
+            out, s = [None] * self.n, 0.0
+            for i in range(self.n):
+                if i >= n:
+                    out[i] = s / n
+                    s -= self.v[i - n]
+                s += self.v[i]
+            return out
+        return self._get(('vavg', n), build)
 
     def _get(self, key, build):
         if key not in self._cache:
@@ -91,12 +140,28 @@ class Series:
 
 # ----------------------------------------------------------------- signals
 def signal(g, s, i):
-    """+1 long, -1 short, 0 none, decided on the CLOSE of bar i (data up to i only)."""
+    """+1 long, -1 short, 0 none, decided on the CLOSE of 1H bar i (data up to i only). A 4H / 1D genome only
+    decides when one of its bars closes at i, from those bars."""
     if i < 2:
         return 0
     vr = s.vol_ratio()[i]
     if vr < g['vol_min'] or vr > g['vol_max']:      # volatility regime filter (the genome's own view)
         return 0
+    x, closes_at, _ = s.tf(g.get('tf', 1))
+    j = closes_at[i]
+    if j < 2:
+        return 0
+    return _species_signal(g, x, j)
+
+
+def stop_distance(g, s, i):
+    """Stop distance for a signal decided at the close of 1H bar i: stop_atr × ATR of the genome's timeframe."""
+    x, _, last_closed = s.tf(g.get('tf', 1))
+    j = last_closed[i]
+    return g['stop_atr'] * x.atr()[j] if j >= 0 else 0.0
+
+
+def _species_signal(g, s, i):
     sp, d = g['species'], 0
     if sp == 'momentum':
         hi, lo = s.donchian(g['lookback'])
@@ -112,6 +177,16 @@ def signal(g, s, i):
     elif sp == 'trend':
         f, sl = s.ema(g['fast']), s.ema(g['slow'])
         d = 1 if f[i] > sl[i] and f[i - 1] <= sl[i - 1] else -1 if f[i] < sl[i] and f[i - 1] >= sl[i - 1] else 0
+    elif sp == 'vol_surge':
+        avg = s.vol_avg(g['lookback'])[i] if s.v else None
+        if avg and s.v[i] > g['vol_mult'] * avg:
+            d = 1 if s.c[i] > s.o[i] else -1 if s.c[i] < s.o[i] else 0
+    elif sp == 'rel_strength':
+        n, r = g['lookback'], s.ref
+        if r is not None and i - 1 >= n:
+            rs = s.c[i] / s.c[i - n] - r.c[i] / r.c[i - n]
+            prev = s.c[i - 1] / s.c[i - 1 - n] - r.c[i - 1] / r.c[i - 1 - n]
+            d = 1 if rs > g['rs_th'] >= prev else -1 if rs < -g['rs_th'] <= prev else 0
     if g['direction'] == 'long' and d < 0 or g['direction'] == 'short' and d > 0:
         return 0
     return d
@@ -125,25 +200,25 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     """
     insts = list(series)
     cash, pos, trades, curve = equity, {}, [], []
-    peak, max_dd, pending = equity, 0.0, {}
-    stop_k, rr, hold = g['stop_atr'], g['target_rr'], g['max_hold']
+    peak, max_dd, pending, dists = equity, 0.0, {}, {}
+    rr, trail = g['target_rr'], g.get('trail', 0)
+    hold = min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H)
     for i in range(start, end):
         # 1) fills at this bar's open for signals decided on the previous close
         for inst, d in pending.items():
             s = series[inst]
-            atr = s.atr()[i - 1]
-            if atr <= 0 or inst in pos:
+            dist = dists.get(inst, 0.0)
+            if dist <= 0 or inst in pos:
                 continue
             px = s.o[i] * (1 + SLIP * d)
-            dist = stop_k * atr
             mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items())
             qty = min(mark * g['risk'] / dist, mark * MAX_NOTIONAL / px)
             if qty <= 0:
                 continue
             cash -= qty * px * FEE
             pos[inst] = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None,
-                             opened=s.ts[i], bar=i, fee=qty * px * FEE)
-        pending = {}
+                             opened=s.ts[i], bar=i, fee=qty * px * FEE, dist=dist)
+        pending, dists = {}, {}
         # 2) exits inside this bar
         for inst in list(pos):
             p, s = pos[inst], series[inst]
@@ -171,6 +246,8 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
                 trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=exit_px, opened=p['opened'], closed=s.ts[i],
                                    pnl=pnl - p['fee'], reason=why))
                 del pos[inst]
+            elif trail:                                     # after the bar: follow the best price, never loosen
+                p['stop'] = max(p['stop'], h - p['dist']) if p['side'] == 1 else min(p['stop'], l + p['dist'])
         # 3) mark to market, drawdown, new signals on this close
         eq = cash + sum(p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items())
         peak = max(peak, eq); max_dd = max(max_dd, (peak - eq) / peak if peak > 0 else 0)
@@ -181,7 +258,7 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
                 if inst not in pos:
                     d = signal(g, series[inst], i)
                     if d:
-                        pending[inst] = d
+                        pending[inst], dists[inst] = d, stop_distance(g, series[inst], i)
     last = end - 1
     eq = cash + sum(p['qty'] * (series[k].c[last] - p['entry']) * p['side'] for k, p in pos.items())
     if curve_every and (not curve or curve[-1][0] != series[insts[0]].ts[last]):
