@@ -122,9 +122,9 @@ def update(state, series, changes):
         member = seg['champion']
         for p in res['positions']:
             signals.setdefault(p['inst'], dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], opened=p['opened'],
-                                               strategy='evolved', leverage=10, champion=member, rank=r + 1))
+                                               strategy='evolved', leverage=10, champion=member, rank=r + 1, risk=seg['genes']['risk']))
         for inst, d in (res.get('pending') or {}).items():
-            signals.setdefault(inst, dict(_signal_from_pending(inst, d, seg['genes'], series, last_ts, member), rank=r + 1))
+            signals.setdefault(inst, dict(_signal_from_pending(inst, d, seg['genes'], series, last_ts, member), rank=r + 1, risk=seg['genes']['risk']))
     curve = _sum_curves(curves, [sl['start_equity'] for sl in slots])
     equity = round(sum(m['equity'] for m in members) + sum(sl['segments'][-1]['end_equity'] if sl['segments'] and sl['segments'][-1]['to_ts'] else
                                                           (sl['start_equity'] if not sl['segments'] else 0) for sl in slots), 2)

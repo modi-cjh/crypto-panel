@@ -36,7 +36,9 @@ from runtime_guard import entries_allowed, atomic_json
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
-RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # daily loss halt: 10 % below the day's starting equity
+RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # daily loss halt: 10 % below the day's starting equity (legacy modes)
+EVOLVED_DAILY_HALT = .20                         # following the evolution champions: halt at 20 % (chosen by the user)
+RISK_RANGE = (.02, .05)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
 SAME_SIDE_CAP = .05
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
@@ -51,16 +53,17 @@ ACTIVE_PROFILE = None
 
 def configure_evolved():
     """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply."""
-    global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE
-    # 5 % per coin (chosen by the user: positions were too small), at most 10 % in one direction — the five coins move
-    # together, so same-side signals are one bet; two same-side stops in a day reach the 10 % daily halt.
-    INSTRUMENTS, RISK, SAME_SIDE_CAP = list(EVOLVED_INSTRUMENTS), .01, .05   # per order 1 %, same direction ≤ 5 %
-    ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, same_side_cap=SAME_SIDE_CAP)
+    global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT
+    # Chosen by the user: each order risks its strategy's own risk gene (2–5 %), at most 20 % in one direction (the five
+    # coins move together, so same-side signals are one bet), and a 20 % daily loss flattens everything until tomorrow.
+    INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], .20, EVOLVED_DAILY_HALT
+    ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT)
     return ACTIVE_PROFILE
 
 
 def configure_volume_test(now=None, universe=None):
-    global INSTRUMENTS, RISK, SAME_SIDE_CAP
+    global INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT
+    DAILY_HALT = .10
     p = volume_profile(now)
     INSTRUMENTS, RISK = p['instruments'], p['risk']
     if p['mode'] == 'aggressive' and isinstance(universe, list) and len(universe) == p['scan_limit'] and len(set(universe)) == len(universe) and all(isinstance(i,str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP',i) for i in universe):
@@ -292,7 +295,10 @@ class Mirror:
         sp = self.spec(inst)
         if not sp['ctVal']:
             return self.log('skip', inst, reason='no_instrument_spec')
-        risk = RISK * self.equity
+        r = RISK
+        if ACTIVE_PROFILE and ACTIVE_PROFILE.get('mode') == 'evolved' and p.get('risk') is not None:
+            r = min(RISK_RANGE[1], max(RISK_RANGE[0], float(p['risk'])))
+        risk = r * self.equity
         same_risk = 0.0
         for existing_key, m in self.s['mirrored'].items():
             if m.get('status') != 'open' or m.get('side') != side:
@@ -507,7 +513,7 @@ def main():
     if evolved_path.exists():
         paper = {'positions': json.loads(evolved_path.read_text()).get('positions', {}), 'source': 'evolve'}
         applied = configure_evolved()
-        print(f"跟随进化冠军 · 每笔风险 {RISK:.0%} · {len(INSTRUMENTS)} 币")
+        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 同向 ≤ {SAME_SIDE_CAP:.0%} · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
     else:
         if not paper_path.exists():
             print('没有策略信号，跳过跟单。'); return

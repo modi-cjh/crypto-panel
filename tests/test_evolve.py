@@ -34,7 +34,7 @@ def walk(n, seed, drift=0.0):
 
 def base_genes(**kw):
     g = G.random_genome(random.Random(1), 'momentum')
-    g.update(direction='both', lookback=20, stop_atr=2.0, target_rr=0.0, max_hold=240, risk=.01, vol_min=.3, vol_max=4.0, tf=1, trail=0)
+    g.update(direction='both', lookback=20, stop_atr=2.0, target_rr=0.0, max_hold=240, risk=.02, vol_min=.3, vol_max=4.0, tf=1, trail=0)
     g.update(kw)
     return g
 
@@ -116,6 +116,14 @@ class MergedGeneTests(unittest.TestCase):
         row = E.generation(st, sr, sp, D.observe_volatility(sr))
         self.assertEqual(len(st['population']), E.POPULATION)
         self.assertTrue(all('tf' in st['nodes'][i]['genes'] for i in st['population'] if st['nodes'][i]['born'] == row['gen']))
+
+    def test_a_strategy_holds_at_most_three_positions(self):
+        insts = ['BTC', 'ETH', 'SOL', 'XRP', 'DOGE']
+        closes = [100.0] * 40 + [110.0] + [111.0] * 5                      # every coin breaks out on the same bar
+        sr = {f'{c}-USDT-SWAP': series_from(closes, f'{c}-USDT-SWAP') for c in insts}
+        r = X.simulate(base_genes(), sr, 30, len(closes))
+        self.assertEqual(len(r['positions']), X.MAX_POSITIONS)
+        self.assertEqual([p['inst'] for p in r['positions']], [f'{c}-USDT-SWAP' for c in insts[:3]])
 
     def test_4h_bars_are_complete_utc_aligned_and_decide_only_when_they_close(self):
         s = series_from(walk(100, 2))

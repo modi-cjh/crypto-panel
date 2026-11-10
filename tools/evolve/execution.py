@@ -2,7 +2,8 @@
 
 Rules (identical in every caller):
 - Signals are computed on a closed bar; the order fills at the NEXT bar's open, with slippage and a taker fee.
-- One position per instrument; size = equity × risk ÷ stop distance, notional capped at MAX_NOTIONAL × equity.
+- One position per instrument and at most MAX_POSITIONS at once; size = equity × risk ÷ stop distance, notional capped at
+  MAX_NOTIONAL × equity.
 - Stop and target are checked inside each later bar; if a bar touches both, the stop is assumed first (conservative);
   a gap through the stop fills at the open. Positions also exit at the close after `max_hold` bars.
 - Equity is marked to market at every close; max drawdown is measured on that curve.
@@ -17,6 +18,7 @@ SLIP = .0002         # slippage per fill
 MAX_NOTIONAL = 3.0   # per position, × equity
 START_EQUITY = 10000.0
 MAX_HOLD_H = 720     # longest hold in hours, whatever the timeframe
+MAX_POSITIONS = 3    # open positions per strategy at the same time; extra signals wait until one closes
 HOUR = 3600_000
 
 
@@ -208,7 +210,7 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
         for inst, d in pending.items():
             s = series[inst]
             dist = dists.get(inst, 0.0)
-            if dist <= 0 or inst in pos:
+            if dist <= 0 or inst in pos or len(pos) >= MAX_POSITIONS:
                 continue
             px = s.o[i] * (1 + SLIP * d)
             mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items())
