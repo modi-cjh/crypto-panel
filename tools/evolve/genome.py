@@ -24,7 +24,7 @@ GENES = {
     'target_rr': ('float', 0.0, 6.0),    # target as multiple of stop distance; < .5 means no target
     'max_hold': ('int', 4, 240),         # bars of the genome's timeframe (capped at MAX_HOLD_H hours)
     'trail': ('choice', [0, 1], None),   # 1: the stop trails the best price at the stop distance after every bar
-    'risk': ('float', .003, .02),        # equity at risk per trade
+    'risk': ('float', .02, .05),         # equity at risk per trade, chosen by the strategy itself (2–5 %)
     'vol_min': ('float', .3, 1.2),       # trade only when ATR% ÷ its baseline is inside [vol_min, vol_max]
     'vol_max': ('float', 1.0, 4.0),
 }
