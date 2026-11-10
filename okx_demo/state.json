@@ -1,6 +1,6 @@
 {
- "day": "2026-11-07",
- "day_start": 4529.948982509825,
+ "day": "2026-11-10",
+ "day_start": 7359.268794405454,
  "halted": false,
  "history": [
   [
@@ -378,6 +378,10 @@
   [
    1794034774276,
    4975.03
+  ],
+  [
+   1794328666385,
+   7349.1
   ]
  ],
  "mirrored": {
@@ -533,8 +537,10 @@
    "entry": 75900.0,
    "clOrdId": "evbtc1793980800",
    "opened_at": 1793985489983,
-   "status": "open",
-   "ordId": "4076296128416960512"
+   "status": "done",
+   "ordId": "4076296128416960512",
+   "closed_reason": "exchange_stop_or_target",
+   "realized_pnl": -59.65288372774462
   },
   "XRP-USDT-SWAP|1793998800000": {
    "inst": "XRP-USDT-SWAP",
@@ -548,8 +554,44 @@
    "entry": 1.22,
    "clOrdId": "evxrp1793998800",
    "opened_at": 1793999875714,
-   "status": "open",
-   "ordId": "4076778830597443584"
+   "status": "done",
+   "ordId": "4076778830597443584",
+   "closed_reason": "paper_closed"
+  },
+  "BTC-USDT-SWAP|1794319200000": {
+   "inst": "BTC-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "ETH-USDT-SWAP|1794182400000": {
+   "inst": "ETH-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "SOL-USDT-SWAP|1794182400000": {
+   "inst": "SOL-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "XRP-USDT-SWAP|1794182400000": {
+   "inst": "XRP-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "DOGE-USDT-SWAP|1794182400000": {
+   "inst": "DOGE-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
   }
  },
  "paused": false,
@@ -590,6 +632,13 @@
    "funding": -14.979585,
    "close_price": 1.2558999367088608,
    "fee": -1.98716595
+  },
+  "2026-11-10T16:37:46Z|XRP-USDT-SWAP": {
+   "pnl": 2878.799155673374,
+   "price_pnl": 2228.2001,
+   "funding": 664.6544356233742,
+   "close_price": 1.0407978044072703,
+   "fee": -14.05537995
   }
  }
 }

@@ -1,39 +1,12 @@
 {
- "updated_at": "2026-11-07T06:59:34Z",
- "equity": 4975.026791015824,
- "available": 2867.350529414825,
- "day_start": 4529.948982509825,
+ "updated_at": "2026-11-10T16:37:46Z",
+ "equity": 7349.095254455455,
+ "available": 7349.095254455455,
+ "day_start": 7359.268794405454,
  "paused": false,
  "halted": false,
  "dry_run": false,
- "positions": [
-  {
-   "inst": "XRP-USDT-SWAP",
-   "side": "short",
-   "contracts": "124.34",
-   "avgPx": "1.22",
-   "markPx": "1.1927",
-   "upl": "339.4481999999985",
-   "uplRatio": "0.2237704918032779",
-   "lever": "10",
-   "margin": "1629.115114",
-   "ctVal": 100.0,
-   "ours": true
-  },
-  {
-   "inst": "BTC-USDT-SWAP",
-   "side": "long",
-   "contracts": "1.81",
-   "avgPx": "75899.9",
-   "markPx": "76003.29",
-   "upl": "1.8713589999999898",
-   "uplRatio": "0.0136218888298933",
-   "lever": "10",
-   "margin": "137.241588601",
-   "ctVal": 0.01,
-   "ours": true
-  }
- ],
+ "positions": [],
  "stop_control": null,
  "execution_profile": {
   "mode": "evolved",
@@ -50,40 +23,7 @@
   "risk": 0.05,
   "same_side_cap": 0.1
  },
- "open_mirrors": [
-  {
-   "inst": "BTC-USDT-SWAP",
-   "side": 1,
-   "posSide": "long",
-   "strategy": "evolved",
-   "contracts": "1.81",
-   "stop": 73401.3047473585,
-   "target": 83448.5995521679,
-   "leverage": 10,
-   "entry": 75900.0,
-   "clOrdId": "evbtc1793980800",
-   "opened_at": 1793985489983,
-   "status": "open",
-   "ordId": "4076296128416960512",
-   "key": "BTC-USDT-SWAP|1793980800000"
-  },
-  {
-   "inst": "XRP-USDT-SWAP",
-   "side": -1,
-   "posSide": "short",
-   "strategy": "evolved",
-   "contracts": "124.34",
-   "stop": 1.2382098402657373,
-   "target": 0.9672411999682423,
-   "leverage": 10,
-   "entry": 1.22,
-   "clOrdId": "evxrp1793998800",
-   "opened_at": 1793999875714,
-   "status": "open",
-   "ordId": "4076778830597443584",
-   "key": "XRP-USDT-SWAP|1793998800000"
-  }
- ],
+ "open_mirrors": [],
  "start_equity": 5000.0,
  "history": [
   [
@@ -461,9 +401,13 @@
   [
    1794034774276,
    4975.03
+  ],
+  [
+   1794328666385,
+   7349.1
   ]
  ],
- "closed_trades": 6,
+ "closed_trades": 8,
  "strategy_updated_at": "2026-11-04T19:29:04Z",
  "strategy_decisions": [
   {
@@ -869,6 +813,67 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-10T16:37:46Z",
+   "action": "closed_on_exchange",
+   "inst": "BTC-USDT-SWAP",
+   "dry_run": false,
+   "strategy": "evolved",
+   "pnl": -59.65288372774462,
+   "price_pnl": -45.247285,
+   "funding": -13.054434180244627,
+   "close_price": 73400.05,
+   "fee": -1.3511645475,
+   "outcome": "stop"
+  },
+  {
+   "ts": "2026-11-10T16:37:46Z",
+   "action": "close",
+   "inst": "XRP-USDT-SWAP",
+   "dry_run": false,
+   "strategy": "evolved",
+   "reason": "paper_closed",
+   "pnl": 2878.799155673374,
+   "price_pnl": 2228.2001,
+   "funding": 664.6544356233742,
+   "close_price": 1.0407978044072703,
+   "fee": -14.05537995
+  },
+  {
+   "ts": "2026-11-10T16:37:46Z",
+   "action": "skip",
+   "inst": "BTC-USDT-SWAP",
+   "dry_run": false,
+   "reason": "paper_entry_too_old"
+  },
+  {
+   "ts": "2026-11-10T16:37:46Z",
+   "action": "skip",
+   "inst": "ETH-USDT-SWAP",
+   "dry_run": false,
+   "reason": "paper_entry_too_old"
+  },
+  {
+   "ts": "2026-11-10T16:37:46Z",
+   "action": "skip",
+   "inst": "SOL-USDT-SWAP",
+   "dry_run": false,
+   "reason": "paper_entry_too_old"
+  },
+  {
+   "ts": "2026-11-10T16:37:46Z",
+   "action": "skip",
+   "inst": "XRP-USDT-SWAP",
+   "dry_run": false,
+   "reason": "paper_entry_too_old"
+  },
+  {
+   "ts": "2026-11-10T16:37:46Z",
+   "action": "skip",
+   "inst": "DOGE-USDT-SWAP",
+   "dry_run": false,
+   "reason": "paper_entry_too_old"
+  },
+  {
    "ts": "2026-11-06T21:17:55Z",
    "action": "open",
    "inst": "XRP-USDT-SWAP",
@@ -1092,62 +1097,9 @@
   {
    "ts": "2026-11-04T08:42:25Z",
    "action": "skip",
-   "inst": "CASHCAT-USDT-SWAP",
-   "dry_run": false,
-   "reason": "paper_entry_too_old"
-  },
-  {
-   "ts": "2026-11-04T08:42:25Z",
-   "action": "skip",
    "inst": "UNITREE-USDT-SWAP",
    "dry_run": false,
    "reason": "no_price"
-  },
-  {
-   "ts": "2026-11-04T07:46:46Z",
-   "action": "skip",
-   "inst": "CASHCAT-USDT-SWAP",
-   "dry_run": false,
-   "reason": "no_price"
-  },
-  {
-   "ts": "2026-11-04T07:46:46Z",
-   "action": "skip",
-   "inst": "UNITREE-USDT-SWAP",
-   "dry_run": false,
-   "reason": "no_price"
-  },
-  {
-   "ts": "2026-11-04T06:24:51Z",
-   "action": "skip",
-   "inst": "CASHCAT-USDT-SWAP",
-   "dry_run": false,
-   "reason": "no_price"
-  },
-  {
-   "ts": "2026-11-04T05:23:31Z",
-   "action": "skip",
-   "inst": "ADA-USDT-SWAP",
-   "dry_run": false,
-   "reason": "target_already_reached",
-   "price": 0.1986,
-   "target": 0.18925
-  },
-  {
-   "ts": "2026-11-04T04:20:31Z",
-   "action": "skip",
-   "inst": "AAVE-USDT-SWAP",
-   "dry_run": false,
-   "reason": "stop_too_close_or_crossed",
-   "price": 122.63,
-   "stop": 122.74509452742842
-  },
-  {
-   "ts": "2026-11-04T04:20:31Z",
-   "action": "skip",
-   "inst": "SOXS-USDT-SWAP",
-   "dry_run": false,
-   "reason": "paper_entry_too_old"
   }
  ],
  "execution_test_trades": 1
