@@ -1,68 +1,68 @@
 {
- "updated_at": "2026-11-10T16:32:12Z",
- "champion": "s6702",
+ "updated_at": "2026-11-10T17:20:59Z",
+ "champion": "s6110",
  "team": [
-  "s6702",
+  "s12018",
   "s5006",
   "s6110",
   "s7292",
   "s8560"
  ],
  "positions": {
-  "ETH-USDT-SWAP": {
-   "side": -1,
-   "entry": 2126.17468,
-   "stop": 2240.963716165982,
-   "tp": 1788.6949136720134,
-   "opened": 1794182400000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s6702",
-   "rank": 1
-  },
-  "SOL-USDT-SWAP": {
-   "side": -1,
-   "entry": 86.48270000000001,
-   "stop": 91.13446628035781,
-   "tp": 72.80650713574808,
-   "opened": 1794182400000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s6702",
-   "rank": 1
-  },
-  "XRP-USDT-SWAP": {
-   "side": -1,
-   "entry": 1.1122775,
-   "stop": 1.1734684218202613,
-   "tp": 0.9323761898484316,
-   "opened": 1794182400000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s6702",
-   "rank": 1
-  },
   "DOGE-USDT-SWAP": {
    "side": -1,
-   "entry": 0.068896218,
-   "stop": 0.0727049116729601,
-   "tp": 0.05769865860149728,
-   "opened": 1794182400000,
+   "entry": 0.070125972,
+   "stop": 0.07302938547264158,
+   "tp": 0.06617732967720744,
+   "opened": 1794236400000,
    "strategy": "evolved",
    "leverage": 10,
-   "champion": "s6702",
+   "champion": "s6110",
    "rank": 1
   },
   "BTC-USDT-SWAP": {
    "side": -1,
-   "entry": 73703.75630000001,
-   "stop": 76164.15822813456,
-   "tp": 66470.1746312844,
-   "opened": 1794319200000,
+   "entry": 75477.70144,
+   "stop": 77574.78360127714,
+   "tp": 72625.6697006631,
+   "opened": 1794240000000,
    "strategy": "evolved",
    "leverage": 10,
-   "champion": "s6702",
+   "champion": "s6110",
    "rank": 1
+  },
+  "SOL-USDT-SWAP": {
+   "side": -1,
+   "entry": 90.911814,
+   "stop": 95.78232024409813,
+   "tp": 61.688776535411236,
+   "opened": 1793977200000,
+   "strategy": "evolved",
+   "leverage": 10,
+   "champion": "s5006",
+   "rank": 3
+  },
+  "ETH-USDT-SWAP": {
+   "side": -1,
+   "entry": 2134.27306,
+   "stop": 2235.681256552924,
+   "tp": 1525.8238806824556,
+   "opened": 1794265200000,
+   "strategy": "evolved",
+   "leverage": 10,
+   "champion": "s5006",
+   "rank": 3
+  },
+  "XRP-USDT-SWAP": {
+   "side": -1,
+   "entry": 1.1724654600000002,
+   "stop": 1.2380753002657374,
+   "tp": 0.9671066599682424,
+   "opened": 1793998800000,
+   "strategy": "evolved",
+   "leverage": 10,
+   "champion": "s7292",
+   "rank": 4
   }
  }
 }

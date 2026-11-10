@@ -1,6 +1,6 @@
 {
- "day": "2026-11-10",
- "day_start": 7359.268794405454,
+ "day": "2026-11-11",
+ "day_start": 7349.095254455455,
  "halted": false,
  "history": [
   [
@@ -382,6 +382,10 @@
   [
    1794328666385,
    7349.1
+  ],
+  [
+   1794331415946,
+   7349.1
   ]
  ],
  "mirrored": {
@@ -588,6 +592,27 @@
   },
   "DOGE-USDT-SWAP|1794182400000": {
    "inst": "DOGE-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "BTC-USDT-SWAP|1794240000000": {
+   "inst": "BTC-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "DOGE-USDT-SWAP|1794236400000": {
+   "inst": "DOGE-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "ETH-USDT-SWAP|1794265200000": {
+   "inst": "ETH-USDT-SWAP",
    "status": "skipped",
    "side": -1,
    "posSide": "net",

@@ -44,3 +44,6 @@
 {"ts": "2026-11-10T16:37:46Z", "action": "skip", "inst": "SOL-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-10T16:37:46Z", "action": "skip", "inst": "XRP-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-10T16:37:46Z", "action": "skip", "inst": "DOGE-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
+{"ts": "2026-11-10T17:23:35Z", "action": "skip", "inst": "BTC-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
+{"ts": "2026-11-10T17:23:35Z", "action": "skip", "inst": "DOGE-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
+{"ts": "2026-11-10T17:23:35Z", "action": "skip", "inst": "ETH-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
