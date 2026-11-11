@@ -267,8 +267,14 @@ class MirrorTests(unittest.TestCase):
             sig['DOGE-USDT-SWAP']['rank'] = 1                                                    # the leader's signal goes first
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
             orders = [b['instId'] for p, b in fake.posts if p == '/api/v5/trade/order']
-            self.assertEqual(orders, ['DOGE-USDT-SWAP', 'BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP'])   # 4 × 5 % = the 20 % cap
-            self.assertEqual([a['inst'] for a in m.actions if a.get('reason') == 'same_side_risk'], ['XRP-USDT-SWAP'])
+            self.assertEqual(orders, ['DOGE-USDT-SWAP', 'BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP'])
+            # crowding: with three shorts already open the next ones risk half → 5 + 5 + 5 + 2.5 + 2.5 = the 20 % cap
+            self.assertEqual([round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'], [.05, .05, .05, .025, .025])
+            odt.SAME_SIDE_CAP = .12                                                               # a tighter cap: the third 5 % does not fit
+            fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
+            self.assertEqual([b['instId'] for p, b in fake.posts if p == '/api/v5/trade/order'], ['DOGE-USDT-SWAP', 'BTC-USDT-SWAP'])
+            self.assertEqual(len([a for a in m.actions if a.get('reason') == 'same_side_risk']), 3)
+            odt.SAME_SIDE_CAP = .20
             for k in sig: sig[k]['risk'] = .02                                                    # smaller strategies: all five fit
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
             self.assertEqual(len([1 for p, b in fake.posts if p == '/api/v5/trade/order']), 5)
@@ -326,6 +332,36 @@ class MirrorTests(unittest.TestCase):
             self.assertEqual([b['instId'] for q, b in fake.posts if q == '/api/v5/trade/order'], ['XRP-USDT-SWAP'])
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
+    def test_evolved_mode_trades_cross_margin_and_every_position_keeps_a_stop_on_the_exchange(self):
+        try:
+            odt.configure_evolved()
+            self.assertEqual(odt.MARGIN_MODE, 'cross')
+            sig = {'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved', risk=.02)}
+            fake = FakeOKX(); m, state = run(fake, paper(**sig))
+            lev = next(b for q, b in fake.posts if q == '/api/v5/account/set-leverage'); order = next(b for q, b in fake.posts if q == '/api/v5/trade/order')
+            self.assertEqual((lev['mgnMode'], 'posSide' in lev, order['tdMode']), ('cross', False, 'cross'))
+            self.assertEqual(order['attachAlgoOrds'][0]['slTriggerPx'], '68600')                    # the entry carries its stop
+            mir = next(iter(state['mirrored'].values())); self.assertEqual(mir['mgnMode'], 'cross')
+            # next run: the position is there but no stop is resting on the exchange → it is placed again
+            later = odt.Mirror(fake, state, paper(**sig), NOW + odt.timedelta(hours=4), False)
+            fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3')]; fake.posts.clear()
+            later.run('run')
+            algo = next(b for q, b in fake.posts if q == '/api/v5/trade/order-algo')
+            self.assertEqual((algo['slTriggerPx'], algo['tdMode'], algo['side'], algo['posSide'], algo['closeFraction']), ('68600', 'cross', 'sell', 'long', '1'))
+            self.assertIn('restore_stop', [a['action'] for a in later.actions])
+            # with a stop resting, nothing is sent
+            fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='9', slTriggerPx='68600')]; fake.posts.clear()
+            again = odt.Mirror(fake, state, paper(**sig), NOW + odt.timedelta(hours=8), False); again.run('run')
+            self.assertEqual(fake.posts, [])
+            # no stop and the price is already beyond it: close instead of placing a stop that would fire at once
+            fake.algos = []; fake.prices = {'BTC-USDT-SWAP': 68000.0}; fake.posts.clear()
+            gone = odt.Mirror(fake, state, paper(**sig), NOW + odt.timedelta(hours=12), False); gone.run('run')
+            close = next(b for q, b in fake.posts if q == '/api/v5/trade/close-position')
+            self.assertEqual(close['mgnMode'], 'cross'); self.assertIn('stop_missing_price_beyond_stop', [a.get('reason') for a in gone.actions])
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+        self.assertEqual(odt.MARGIN_MODE, 'isolated')                                           # the retired strategy engine stays isolated
 
     def test_positions_opened_this_run_are_in_the_summary_right_away(self):
         fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))

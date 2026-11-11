@@ -436,59 +436,101 @@ class EvolutionTests(unittest.TestCase):
         self.assertFalse(E.one_sided(dict(up=5, down=3, up_days=40, down_days=40)))
         self.assertFalse(E.one_sided(dict(up=5, down=-3, up_days=40, down_days=5)))     # too few falling days to judge
 
-    def test_a_member_that_loses_its_seat_winds_down_instead_of_closing_at_market(self):
-        ref = lambda sr: [setattr(v, 'ref', sr['BTC-USDT-SWAP']) for k, v in sr.items() if k != 'BTC-USDT-SWAP']
-        ref(self.sr)
-        st = E.init_state(5, self.sr, self.split)
-        for nid in st['population'][:10]: st['nodes'][nid]['qualified'] = True
-        E.update_hall(st)
-        n = self.sr['BTC-USDT-SWAP'].n
-        E.choose_team(st, 0)
-        t0 = self.sr['BTC-USDT-SWAP'].ts[200]
-        for back in range(100, 500, 10):                                # find a bar where some member holds a position
-            cut = {k: X.Series(k, v.ts[:n - back], v.o[:n - back], v.h[:n - back], v.l[:n - back], v.c[:n - back]) for k, v in self.sr.items()}
-            ref(cut)
-            st['paper'] = dict(start_equity=10000.0, slots=[P._new_slot(2000.0) for _ in range(E.TEAM_SIZE)])
-            for i, m in enumerate(st['team']):
-                node = st['nodes'][m['id']]
-                st['paper']['slots'][i]['segments'].append(dict(champion=m['id'], slot=i, genes=node['genes'], species=node['species'], from_ts=t0,
-                                                                reason='first', start_equity=2000.0, to_ts=None, end_equity=None))
-            view, _ = P.update(st, cut, [])
-            held = [m for m in view['members'] if m['positions']]
-            if held:
-                break
-        self.assertTrue(held, 'need a member holding a position at the cut')
-        slot_i, old = held[0]['slot'], held[0]['id']
-        before = view['equity']
-        new = next(nid for nid in st['population'] if nid not in {m['id'] for m in st['team']})
-        st['team'][slot_i] = dict(id=new, since=0)
-        view2, signals = P.update(st, cut, [(slot_i, old, new, 'challenger')])
-        self.assertAlmostEqual(view2['equity'], before, places=1)                      # nothing is sold: equity is unchanged by the switch
-        wind = [p for p in view2['positions'] if p.get('winding')]
-        self.assertTrue(wind); self.assertEqual({p['champion'] for p in wind}, {old})
-        for p in wind: self.assertIn(p['inst'], signals)                               # the mirror keeps managing them
-        self.assertFalse([t for t in view2['trades'] if t['reason'] == 'switch'])
-        view3, _ = P.update(st, self.sr, [])                                           # 150 bars later
-        slot = st['paper']['slots'][slot_i]
-        late = [t for t in slot['closed_trades'] if t.get('champion') == old and t['closed'] > cut['BTC-USDT-SWAP'].ts[-1]]
-        self.assertTrue(late or slot['winding'])                                       # exits by its own stop / target / time
-        self.assertFalse([t for t in late if t['reason'] == 'switch'])
-        self.assertAlmostEqual(view3['equity'], sum(m['equity'] for m in view3['members']), places=1)
+    def _breakout_market(self, coins=8, tail=30):
+        closes = [100.0] * 40 + [110.0] + [111.0] * tail                       # every coin breaks out on bar 40
+        return {f'C{k}-USDT-SWAP': series_from(list(closes), f'C{k}-USDT-SWAP') for k in range(coins)}
 
-    def test_leader_sizes_against_the_whole_account_and_the_title_is_sticky(self):
-        closes = [100.0] * 40 + [110.0] + [111.0] * 30
-        s = series_from(closes); g = base_genes(risk=.02)
-        extra = {t: 8000.0 for t in s.ts}                                             # the other four slots
-        normal = X.simulate(g, {'BTC-USDT-SWAP': s}, 30, len(closes), equity=2000.0)['positions'][0]
-        lead = X.simulate(g, {'BTC-USDT-SWAP': series_from(closes)}, 30, len(closes), equity=2000.0, risk=P.LEADER_RISK, lever_cap=P.LEADER_LEVERAGE,
-                          extra_equity=extra)['positions'][0]
-        dist = lead['entry'] - lead['stop']
-        self.assertAlmostEqual(lead['qty'] * dist, 10000.0 * P.LEADER_RISK, delta=5)   # a stop costs 20 % of the whole account
-        self.assertAlmostEqual(normal['qty'] * dist, 2000.0 * .02, delta=.5)           # a normal member: 2 % of its own slot
-        self.assertEqual(lead['lever'], max(1, min(P.LEADER_LEVERAGE, int(.8 / (dist / lead['entry'])))))
-        self.assertGreater(lead['lever'], X.LEVERAGE)
-        self.assertLess((lead['entry'] - lead['liq']), lead['entry']); self.assertLess(lead['liq'], lead['stop'])   # the stop still comes before liquidation
-        # the title: stays with the leader while it is on the team, moves only after tenure and a clear lead
+    def test_shared_account_with_one_strategy_matches_the_single_strategy_engine(self):
+        loose = dict(X.ACCOUNT_RULES, same_side_cap=9, daily_halt=9)
+        for k in range(12):
+            g = G.random_genome(random.Random(k), G.SPECIES[k % len(G.SPECIES)])
+            a = X.simulate(g, self.sr, 60, 900, equity=5000.0, curve_every=1)
+            if any(t['reason'] == 'liquidation' for t in a['trades']):
+                continue
+            b = X.simulate_account([dict(id='x', genes=g, from_i=0, wind_i=None, boosts=[])], self.sr, 60, 900, equity=5000.0, rules=loose)
+            self.assertAlmostEqual(a['equity'], b['equity'], places=6, msg=g)
+            self.assertEqual(len(a['trades']), len(b['trades'])); self.assertEqual(a['curve'], b['curve'])
+            self.assertAlmostEqual(b['pnl']['x'], b['equity'] - 5000.0, places=6)
+
+    def test_shared_account_rules_one_position_per_coin_crowding_cap_leader_and_wind_down(self):
+        sr = self._breakout_market()
+        g = base_genes(risk=.02)
+        seg = lambda i, **kw: dict(dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]), **kw)
+        r = X.simulate_account([seg(1), seg(2), seg(3)], sr, 30, 71, equity=10000.0)
+        pos = {p['inst']: p for p in r['positions']}
+        self.assertEqual(len(pos), 8)                                                    # one position per coin, 3 per strategy at most
+        self.assertEqual([sum(1 for p in pos.values() if p['seg'] == f'm{i}') for i in (1, 2, 3)], [3, 3, 2])
+        risk = [round(p['qty'] * (p['entry'] - p['stop']) / 10000.0, 3) for p in r['positions']]
+        self.assertEqual(risk[:3], [.02, .02, .02])                                      # the first three longs: full size
+        for x in risk[3:6]: self.assertAlmostEqual(x, .01, delta=.0005)                  # 3+ longs already open: half
+        for x in risk[6:]: self.assertAlmostEqual(x, .005, delta=.0005)                  # 6+: a quarter
+        self.assertEqual((X.crowd_factor(2), X.crowd_factor(3), X.crowd_factor(6)), (1.0, .5, .25))
+        # same-side cap: 5 % each, the cap is 20 % → four fit, the rest is skipped (crowding halves from the 4th)
+        g5 = base_genes(risk=.05)
+        r5 = X.simulate_account([dict(id=f'm{i}', genes=g5, from_i=0, wind_i=None, boosts=[]) for i in range(4)], sr, 30, 71, equity=10000.0)
+        total = sum(p['qty'] * (p['entry'] - p['stop']) for p in r5['positions']) / 10000.0
+        self.assertLessEqual(total, .205); self.assertGreater(total, .17)       # (measured on the starting equity; fees move it a hair)
+        # the leader: 20 % of the whole account per trade, leverage above the normal cap, outside the same-side cap
+        lead = X.simulate_account([seg(1, boosts=[(0, None)]), seg(2, genes=g5)], sr, 30, 71, equity=10000.0)
+        lp = [p for p in lead['positions'] if p['boost']]
+        self.assertEqual(len(lp), 3)
+        self.assertAlmostEqual(lp[0]['qty'] * (lp[0]['entry'] - lp[0]['stop']) / 10000.0, .20, delta=.002)
+        self.assertGreater(lp[0]['lever'], X.LEVERAGE)
+        others = [p for p in lead['positions'] if not p['boost']]
+        self.assertTrue(others)                                                          # the leader's 60 % did not use up the others' cap
+        self.assertAlmostEqual(others[0]['qty'] * (others[0]['entry'] - others[0]['stop']) / 10000.0, .025, delta=.003)   # 4th long: half of 5 %
+        # wind-down: a segment that lost its seat at bar 45 keeps its positions but takes no new signal
+        w = X.simulate_account([seg(1, wind_i=45)], sr, 30, 71, equity=10000.0)
+        self.assertEqual(len(w['positions']), 3)
+        self.assertEqual(X.simulate_account([seg(1, wind_i=40)], sr, 30, 71, equity=10000.0)['positions'], [])   # wound before the signal bar
+
+    def test_daily_halt_closes_the_other_members_and_leaves_the_leader(self):
+        closes = [100.0] * 40 + [110.0, 111.0, 111.0] + [104.0] * 20                     # breakout, then a fall that stays above the stops
+        sr = {f'C{k}-USDT-SWAP': series_from(list(closes), f'C{k}-USDT-SWAP') for k in range(6)}
+        g = base_genes(risk=.05, stop_atr=6.0)
+        segs = [dict(id='lead', genes=base_genes(risk=.02, stop_atr=6.0), from_i=0, wind_i=None, boosts=[(0, None)])] + \
+               [dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]) for i in range(2)]
+        r = X.simulate_account(segs, sr, 30, len(closes), equity=10000.0, rules=dict(X.ACCOUNT_RULES, daily_halt=.03))
+        halted = [t for t in r['trades'] if t['reason'] == 'daily_halt']
+        self.assertTrue(halted); self.assertFalse(any(t['boost'] for t in halted))       # only the other members are closed
+        self.assertTrue(all(p['boost'] for p in r['positions'])); self.assertTrue(r['positions'])   # the leader's positions stay
+
+    def test_paper_account_is_shared_converts_the_old_slots_and_follows_seat_and_leader_changes(self):
+        st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10), (2.0, True, 3, 10), (1.0, True, 3, 10)])
+        for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % 4]
+        E.update_hall(st); E.choose_team(st, T0)
+        n = self.sr['BTC-USDT-SWAP'].n
+        cut = lambda back: {k: X.Series(k, v.ts[:n - back], v.o[:n - back], v.h[:n - back], v.l[:n - back], v.c[:n - back]) for k, v in self.sr.items()}
+        st['paper'] = dict(start_equity=10000.0, slots=[dict(P._new_slot(2100.0), curve_done=[[T0, 2000.0], [T0 + H, 2100.0]]) for _ in range(E.TEAM_SIZE)])
+        view, signals = P.update(st, cut(300), [])
+        acc = st['paper']['account']
+        self.assertNotIn('slots', st['paper']); self.assertEqual(acc['start_equity'], 10500.0)        # the slots' total carries over
+        self.assertEqual(view['equity'], 10500.0); self.assertEqual(view['mode'], 'cross')
+        self.assertEqual(view['curve'][-2:], [[T0 + H, 10500.0], [cut(300)['BTC-USDT-SWAP'].ts[-1], 10500.0]])   # old curve kept, new one continues
+        self.assertEqual([g['champion'] for g in acc['segs']], ids); self.assertEqual([m['id'] for m in view['members']], ids)
+        self.assertEqual([bool(g['boosts']) for g in acc['segs']], [True, False, False, False, False])  # the leader's title
+        view, signals = P.update(st, cut(150), [])                                                       # 150 bars later
+        self.assertAlmostEqual(view['equity'], 10500.0 + sum(m['pnl'] for m in view['members']), places=1)   # one account: equity = start + everyone's result
+        self.assertEqual(len({p['inst'] for p in view['positions']}), len(view['positions']))           # one position per coin
+        for inst, sig in signals.items():
+            lead = sig['champion'] == ids[0]
+            self.assertEqual((sig.get('leader', False), sig['leverage']), (True, 50) if lead else (False, 10))
+            if lead: self.assertEqual(sig['risk'], .20)
+        # a seat changes hands: the old member winds down, the title moves
+        new = next(nid for nid in st['population'] if nid not in ids)
+        st['team'][1] = dict(id=new, since=0); st['champion'] = ids[2]
+        view2, _ = P.update(st, cut(150), [(1, ids[1], new, 'challenger')])
+        segs = {g['champion']: g for g in acc['segs']}
+        last = cut(150)['BTC-USDT-SWAP'].ts[-1]
+        self.assertEqual(segs[ids[1]]['wind_ts'], last); self.assertIsNone(segs[new]['wind_ts'])
+        self.assertEqual(segs[ids[0]]['boosts'], [[cut(300)['BTC-USDT-SWAP'].ts[-1], last]]); self.assertEqual(segs[ids[2]]['boosts'], [[last, None]])
+        self.assertAlmostEqual(view2['equity'], view['equity'], places=2)                               # nothing is sold by the change itself
+        self.assertEqual(view2['leader']['id'], ids[2]); self.assertEqual(view2['members'][0]['id'], ids[2])
+        self.assertIn('leader', [x['reason'] for x in view2['segments']]); self.assertIn('challenger', [x['reason'] for x in view2['segments']])
+        view3, _ = P.update(st, self.sr, [])
+        self.assertFalse([t for t in view3['trades'] if t['reason'] == 'switch'])
+
+    def test_leader_title_is_sticky(self):
         st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10), (2.0, True, 3, 10), (1.0, True, 3, 10)])
         for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % 4]
         E.update_hall(st); E.choose_team(st, T0)
@@ -498,34 +540,6 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(st['champion'], ids[0])                                      # better fitness, but tenure has not passed
         E.choose_team(st, T0 + E.MIN_TENURE + 3600_000)
         self.assertEqual(st['champion'], ids[1])
-        # paper: the leader's segment is boosted and its signals carry the leader size; a title change starts new segments
-        view, signals = P.update(st, self.sr, [(i, None, m['id'], 'first') for i, m in enumerate(st['team'])])
-        segs = {sl['segments'][-1]['champion']: sl['segments'][-1] for sl in st['paper']['slots'] if sl['segments']}
-        self.assertTrue(segs[ids[1]]['boost']); self.assertFalse(any(sg['boost'] for k, sg in segs.items() if k != ids[1]))
-        self.assertEqual(view['leader'], dict(id=ids[1], risk=.20, leverage=50)); self.assertEqual(view['members'][0]['id'], ids[1])
-        for sig in signals.values():
-            if sig['champion'] == ids[1]: self.assertEqual((sig['risk'], sig['leverage'], sig['leader']), (.20, 50, True))
-            else: self.assertEqual(sig['leverage'], 10); self.assertNotIn('leader', sig)
-        st['champion'] = ids[2]
-        P.update(st, self.sr, [])
-        slot_of = {sl['segments'][-1]['champion']: sl for sl in st['paper']['slots']}
-        self.assertEqual([slot_of[ids[1]]['segments'][-1]['reason'], slot_of[ids[1]]['segments'][-1]['boost']], ['demoted', False])
-        self.assertEqual([slot_of[ids[2]]['segments'][-1]['reason'], slot_of[ids[2]]['segments'][-1]['boost']], ['leader', True])
-
-    def test_team_paper_slots_sum_and_mirror_signals_do_not_collide(self):
-        st = E.init_state(5, self.sr, self.split)
-        for nid in st['population'][:6]: st['nodes'][nid]['qualified'] = True
-        E.update_hall(st)
-        E.choose_team(st, self.sr['BTC-USDT-SWAP'].ts[500])
-        changes = [(i, None, m['id'], 'first') for i, m in enumerate(st['team'])]
-        # start the slots some bars back so they have something to trade
-        view, signals = P.update(st, {k: v for k, v in self.sr.items()}, changes)
-        self.assertEqual(len(st['paper']['slots']), E.TEAM_SIZE)
-        self.assertAlmostEqual(view['equity'], sum(m['equity'] for m in view['members']) + 2000 * (E.TEAM_SIZE - len(view['members'])), places=1)
-        self.assertEqual(len(signals), len({p['inst'] for p in view['positions']} | {p['inst'] for p in view['pending']}))
-        for inst, sig in signals.items(): self.assertIn(sig['champion'], [m['id'] for m in st['team']]); self.assertIn(sig['rank'], range(1, len(st['team']) + 1))
-        seg = st['paper']['slots'][0]['segments'][-1]                      # each slot is the backtest engine on live bars
-        self.assertEqual(P.run_segment(seg, seg['genes'], self.sr)['equity'], view['members'][[m['slot'] for m in view['members']].index(0)]['equity'])
 
     def test_prune_keeps_champion_ancestry(self):
         st = E.init_state(3, self.sr, self.split)

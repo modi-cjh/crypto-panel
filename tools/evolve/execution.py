@@ -396,3 +396,169 @@ def fitness(m):
     """Training fitness: return per unit of drawdown (Calmar-like), damped when there are too few trades."""
     dd = max(m['max_dd'], 5.0)
     return round(m['ret'] / dd * min(1.0, m['trades'] / 30), 4)
+
+
+# ----------------------------------------------------------------- the shared (cross-margin) team account
+ACCOUNT_RULES = dict(leader_risk=.20, leader_lever=50, lever=LEVERAGE, same_side_cap=.20, daily_halt=.10, day_shift=7 * HOUR)
+CROWD_STEPS = ((6, .25), (3, .5))     # same-side positions already open → risk factor for the next entry on that side
+
+
+def crowd_factor(same_side_open):
+    """Many positions on one side are one bet: with 3 or more already open on that side a new entry risks half, with 6 or
+    more a quarter (everyone, the leader included). The OKX mirror uses the same steps."""
+    return next((f for n, f in CROWD_STEPS if same_side_open >= n), 1.0)
+
+
+def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1):
+    """ONE account traded by several strategies at once, cross margin (全仓): the paper account of the champion team.
+
+    segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
+    from_i <= i < wind_i (wind_i None = still seated); after wind_i its open positions run to their own exits.
+    `boosts` are the bar ranges in which the segment is the team leader; a position opened on a leader signal keeps the
+    leader size for its whole life.
+
+    Same bar rules as simulate() (signal on a close, fill at the next open with slippage and fee, stop before target,
+    gaps fill at the open, time exit, trailing stop, whole contract lots, funding). What is shared:
+    - size = account equity × risk ÷ stop distance (risk = the strategy's risk gene; the leader: rules['leader_risk']);
+    - one position per coin for the whole account, at most MAX_POSITIONS per strategy;
+    - margin = notional ÷ leverage (leverage = min(cap, 80 % ÷ stop distance), cap = rules['lever'] / 'leader_lever'), and
+      a new entry needs it to fit into 95 % of the free margin (equity − margin in use);
+    - crowding: with 3+ positions already open on a side the next entry on that side risks half, with 6+ a quarter;
+    - same-side cap: the open risk of the non-leader positions on one side plus the new one stays within
+      rules['same_side_cap'] × equity (leader positions are outside it);
+    - daily halt (days start at UTC+7 midnight): when the non-leader positions have lost rules['daily_halt'] × the day's
+      starting equity, they are closed at that close and the non-leader strategies stay out until the next day;
+    - liquidation is for the whole account: when equity at a close is at or below the maintenance margin
+      (Σ notional × MMR) every position is closed.
+    Returns dict(equity, curve, trades, positions, pending, pnl={seg id: realised + floating}, halted, metrics).
+    """
+    insts = list(series)
+    ts0 = series[insts[0]].ts
+    ev = {s['id']: entries(s['genes'], series) for s in segs}
+    by_id = {s['id']: s for s in segs}
+    boosted = lambda s, i: any(a <= i and (b is None or i < b) for a, b in s.get('boosts') or ())
+    cash, pos, trades, curve, pending = equity, {}, [], [], []
+    pnl = {s['id']: 0.0 for s in segs}
+    peak, max_dd = equity, 0.0
+    day, day_start, others_real, snap, halted = None, equity, 0.0, {}, False
+    cap_side, halt = rules['same_side_cap'], rules['daily_halt']
+
+    def close(inst, px, why, i, slip=True):
+        nonlocal cash, others_real
+        p = pos.pop(inst)
+        if slip:
+            px *= (1 - SLIP * p['side'])
+        fee = p['qty'] * px * FEE
+        gain = p['qty'] * (px - p['entry']) * p['side'] - fee
+        cash += gain
+        net = gain - p['fee'] - p['funding']
+        pnl[p['seg']] += net
+        if not p['boost']:
+            others_real += gain - snap.pop(inst, 0.0)          # today's part: the result minus what it was worth at the day's start
+        trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=px, opened=p['opened'], closed=ts0[i], pnl=net,
+                           funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why, seg=p['seg'], boost=p['boost']))
+
+    for i in range(start, end):
+        # 0) funding
+        for inst, p in pos.items():
+            f = series[inst].funding
+            if f:
+                rate = f.get(ts0[i])
+                if rate:
+                    pay = p['qty'] * series[inst].o[i] * rate * p['side']
+                    cash -= pay; p['funding'] += pay
+        # 1) fills at this open: the leader's signals first, then the segments in their order
+        for sid, inst, d, dist, boost in sorted(pending, key=lambda x: not x[4]):
+            s, g = series[inst], by_id[sid]['genes']
+            if dist <= 0 or inst in pos or sum(1 for p in pos.values() if p['seg'] == sid) >= MAX_POSITIONS or (halted and not boost):
+                continue
+            px = s.o[i] * (1 + SLIP * d)
+            if dist / px < MIN_STOP_DIST:
+                continue
+            mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items())
+            r = (rules['leader_risk'] if boost else g['risk']) * crowd_factor(sum(1 for p in pos.values() if p['side'] == d))
+            qty = mark * r / dist
+            if s.spec:
+                ct, lot, mn = s.spec
+                qty = math.floor(qty / ct / lot + 1e-9) * lot
+                if qty <= 0 or qty < mn - 1e-12:
+                    continue
+                qty *= ct
+            if not boost:
+                same = sum(p['qty'] * max((p['entry'] - p['stop']) * p['side'], 0) for p in pos.values() if not p['boost'] and p['side'] == d)
+                if same + qty * dist > cap_side * mark * (1 + 1e-9):
+                    continue
+            lever = max(1, min(rules['leader_lever'] if boost else rules['lever'], int(.8 / (dist / px))))
+            margin = qty * px / lever
+            if qty <= 0 or margin > (mark - sum(p['margin'] for p in pos.values())) * MARGIN_USE:
+                continue
+            cash -= qty * px * FEE
+            rr = g['target_rr']
+            pos[inst] = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None, opened=ts0[i], bar=i,
+                             fee=qty * px * FEE, dist=dist, lever=lever, margin=margin, funding=0.0, seg=sid, boost=boost, risk=r,
+                             hold=min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H), trail=g.get('trail', 0))
+        pending = []
+        # 2) exits inside this bar
+        for inst in list(pos):
+            p, s = pos[inst], series[inst]
+            o, h, l, c = s.o[i], s.h[i], s.l[i], s.c[i]
+            exit_px, why = None, None
+            if p['side'] == 1:
+                if o <= p['stop']: exit_px, why = o, 'stop'
+                elif l <= p['stop']: exit_px, why = p['stop'], 'stop'
+                elif p['target'] and o >= p['target']: exit_px, why = o, 'target'
+                elif p['target'] and h >= p['target']: exit_px, why = p['target'], 'target'
+            else:
+                if o >= p['stop']: exit_px, why = o, 'stop'
+                elif h >= p['stop']: exit_px, why = p['stop'], 'stop'
+                elif p['target'] and o <= p['target']: exit_px, why = o, 'target'
+                elif p['target'] and l <= p['target']: exit_px, why = p['target'], 'target'
+            if exit_px is None and i - p['bar'] >= p['hold']:
+                exit_px, why = c, 'time'
+            if exit_px is not None:
+                close(inst, exit_px, why, i)
+            elif p['trail']:
+                p['stop'] = max(p['stop'], h - p['dist']) if p['side'] == 1 else min(p['stop'], l + p['dist'])
+        # 3) the account at this close: liquidation, daily halt, curve
+        unreal = {k: p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items()}
+        eq = cash + sum(unreal.values())
+        if pos and eq <= sum(p['qty'] * series[k].c[i] * MMR for k, p in pos.items()):
+            for inst in list(pos):
+                close(inst, series[inst].c[i], 'liquidation', i)
+            unreal, eq = {}, cash
+        d_now = (ts0[i] + rules['day_shift']) // (24 * HOUR)
+        if d_now != day:                                        # a new day starts with this bar: yesterday's close is the baseline
+            day, halted, others_real = d_now, False, 0.0
+            day_start = eq
+            snap = {k: unreal[k] for k, p in pos.items() if not p['boost']}
+        others_day = others_real + sum(unreal[k] - snap.get(k, 0.0) for k, p in pos.items() if not p['boost'])
+        if not halted and day_start > 0 and others_day <= -halt * day_start:
+            halted = True
+            for inst in [k for k, p in pos.items() if not p['boost']]:
+                close(inst, series[inst].c[i], 'daily_halt', i)
+            eq = cash + sum(p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items())
+        peak = max(peak, eq); max_dd = max(max_dd, (peak - eq) / peak if peak > 0 else 0)
+        if curve_every and (i - start) % curve_every == 0:
+            curve.append((ts0[i], round(eq, 2)))
+        # 4) signals on this close, from the seated segments
+        for s in segs:
+            if s['from_i'] <= i and (s.get('wind_i') is None or i < s['wind_i']):
+                b = boosted(s, i)
+                if halted and not b:
+                    continue
+                for inst, d, dist in ev[s['id']].get(i, ()):
+                    if inst not in pos:
+                        pending.append((s['id'], inst, d, dist, b))
+    last = end - 1
+    for k, p in pos.items():
+        pnl[p['seg']] += p['qty'] * (series[k].c[last] - p['entry']) * p['side'] - p['fee'] - p['funding']
+    eq = cash + sum(p['qty'] * (series[k].c[last] - p['entry']) * p['side'] for k, p in pos.items())
+    if curve_every and (not curve or curve[-1][0] != ts0[last]):
+        curve.append((ts0[last], round(eq, 2)))
+    wins = sum(1 for t in trades if t['pnl'] > 0)
+    metrics = dict(ret=round((eq / equity - 1) * 100, 3), max_dd=round(max_dd * 100, 3), trades=len(trades),
+                   win_rate=round(wins / len(trades) * 100, 1) if trades else 0.0)
+    open_positions = [dict(inst=k, side=p['side'], entry=p['entry'], qty=p['qty'], stop=p['stop'], target=p['target'], opened=p['opened'],
+                           lever=p['lever'], margin=round(p['margin'], 4), funding=round(p['funding'], 4), seg=p['seg'], boost=p['boost'], risk=p['risk'])
+                      for k, p in pos.items()]
+    return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, pending=pending, pnl=pnl, halted=halted, metrics=metrics)

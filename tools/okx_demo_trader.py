@@ -7,7 +7,8 @@ the paper results. Every request carries `x-simulated-trading: 1`; it cannot rea
 
 Each run, against <data>/combined/state.json:
   - a paper position opened in the last OPEN_WINDOW that is not mirrored yet is opened at market,
-    isolated margin, sized to 1% of the demo account's equity at the paper stop, with the stop (and the
+    sized by the strategy's risk at the paper stop (evolved mode: cross margin 全仓, one shared account; less when many
+    positions are already open on that side; the legacy modes: isolated, 1 %), with the stop (and the
     mean-reversion target) attached as exchange-side algo orders;
   - when the paper stop trails, the exchange stop is amended;
   - when the paper position is gone, the mirrored position is closed;
@@ -42,6 +43,8 @@ RISK_RANGE = (.01, .05)   # evolved mode: each order risks its strategy's own ri
 # The team leader (signals with leader=True; chosen by the user): 20 % of the whole account per trade, up to 50× leverage
 # (never more than the coin allows), outside the same-side cap and outside the daily halt.
 LEADER_RISK, LEADER_LEVERAGE = .20, 50
+MARGIN_MODE = 'isolated'          # evolved mode: 'cross' (全仓) — the team shares one account and its margin, like the paper account
+CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
 SAME_SIDE_CAP = .05
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
@@ -58,7 +61,8 @@ ACTIVE_PROFILE = None
 def configure_evolved(universe=None):
     """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply. `universe` is the
     coin list the evolution trades (signals.json 'instruments', the top-100 perpetuals); without it, the five majors."""
-    global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT
+    global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT, MARGIN_MODE
+    MARGIN_MODE = 'cross'
     # Chosen by the user: each order risks its strategy's own risk gene (1–5 %), at most 20 % in one direction, and a
     # 10 % daily loss (the leader's result not counted) closes the other members' positions until tomorrow. The leader: see LEADER_RISK.
     INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], .20, EVOLVED_DAILY_HALT
@@ -66,13 +70,13 @@ def configure_evolved(universe=None):
             isinstance(i, str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', i) for i in universe):
         INSTRUMENTS = list(universe)
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT,
-                          leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE)
+                          leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE, margin_mode=MARGIN_MODE)
     return ACTIVE_PROFILE
 
 
 def configure_volume_test(now=None, universe=None):
-    global INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT
-    DAILY_HALT = .10
+    global INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT, MARGIN_MODE
+    DAILY_HALT, MARGIN_MODE = .10, 'isolated'
     p = volume_profile(now)
     INSTRUMENTS, RISK = p['instruments'], p['risk']
     if p['mode'] == 'aggressive' and isinstance(universe, list) and len(universe) == p['scan_limit'] and len(set(universe)) == len(universe) and all(isinstance(i,str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP',i) for i in universe):
@@ -326,6 +330,9 @@ class Mirror:
             r = LEADER_RISK
         elif evolved and p.get('risk') is not None:
             r = min(RISK_RANGE[1], max(RISK_RANGE[0], float(p['risk'])))
+        if evolved:                                # many positions on one side are one bet: the next one risks less
+            crowd = sum(1 for m in self.s['mirrored'].values() if m.get('status') == 'open' and m.get('side') == side)
+            r *= next((f for n, f in CROWD_STEPS if crowd >= n), 1.0)
         risk = r * self.equity
         same_risk = 0.0
         for existing_key, m in self.s['mirrored'].items():
@@ -354,7 +361,7 @@ class Mirror:
         if margin > self.available * .95:
             return self.log('skip', inst, reason='insufficient_margin', margin=round(margin, 4), available=round(self.available, 4))
         pos_side = ('long' if side == 1 else 'short') if self.hedged else None
-        lev_body = dict(instId=inst, lever=str(lever), mgnMode='isolated', **({'posSide': pos_side} if pos_side else {}))
+        lev_body = dict(instId=inst, lever=str(lever), mgnMode=MARGIN_MODE, **({'posSide': pos_side} if pos_side and MARGIN_MODE == 'isolated' else {}))
         r = self.post('/api/v5/account/set-leverage', lev_body)
         if not ok(r):
             return self.log('error', inst, step='set_leverage', detail=first_error(r))
@@ -363,13 +370,13 @@ class Mirror:
         if p.get('tp'):
             algo.update(tpTriggerPx=fmt(quantize(p['tp'], tick, ROUND_HALF_UP)), tpOrdPx='-1', tpTriggerPxType='last')
         cl = f"{TAG.get(p.get('strategy'), 'px')}{inst.split('-')[0].lower()}{int(p['opened']) // 1000}"[:32]
-        order = dict(instId=inst, tdMode='isolated', side='buy' if side == 1 else 'sell', ordType='market', sz=fmt(contracts),
+        order = dict(instId=inst, tdMode=MARGIN_MODE, side='buy' if side == 1 else 'sell', ordType='market', sz=fmt(contracts),
                      clOrdId=cl, attachAlgoOrds=[algo], **({'posSide': pos_side} if pos_side else {}))
         r = self.post('/api/v5/trade/order', order)
         if not ok(r):
             return self.log('error', inst, step='order', detail=first_error(r), size=fmt(contracts))
         self.s['mirrored'][key] = dict(inst=inst, side=side, posSide=pos_side or 'net', strategy=p.get('strategy'), contracts=fmt(contracts),
-                                       stop=p['stop'], target=p.get('tp'), leverage=lever, entry=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader,
+                                       stop=p['stop'], target=p.get('tp'), leverage=lever, entry=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader, mgnMode=MARGIN_MODE,
                                        ordId=(r.get('data') or [{}])[0].get('ordId'))
         self.new_order_risk[key] = float(contracts) * sp['ctVal'] * abs(px - p['stop'])
         self.available -= margin
@@ -402,7 +409,7 @@ class Mirror:
         return dict({k: v for k, v in res.items() if k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee')}, outcome=kind)
 
     def close(self, key, m, reason):
-        body = dict(instId=m['inst'], mgnMode='isolated', autoCxl=True, **({'posSide': m['posSide']} if m['posSide'] != 'net' else {}))
+        body = dict(instId=m['inst'], mgnMode=m.get('mgnMode', 'isolated'), autoCxl=True, **({'posSide': m['posSide']} if m['posSide'] != 'net' else {}))
         r = self.post('/api/v5/trade/close-position', body)
         if not ok(r):
             return self.log('error', m['inst'], step='close', detail=first_error(r))
@@ -416,6 +423,30 @@ class Mirror:
         extra = {k: res[k] for k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee')} if res else {}
         self.book_leader(m, res)
         self.log('close', m['inst'], strategy=m.get('strategy'), reason=reason, **extra)
+
+    def ensure_stop(self, key, m, p):
+        """Every open position must have its stop resting on the exchange. If none is found for a position opened in an
+        earlier run (the attached stop was cancelled or never registered), place it again at the paper stop; if the price
+        is already beyond that stop, close the position."""
+        if int(m.get('opened_at') or 0) >= self.now_ms:
+            return True                                            # opened in this run: its stop is not in this run's snapshot yet
+        if any(a['instId'] == m['inst'] and (a.get('posSide', 'net') == m['posSide'] or m['posSide'] == 'net') and a.get('slTriggerPx')
+               for a in self.algos):
+            return True
+        stop, px = float(p['stop'] if p else m['stop']), self.price(m['inst'])
+        if px and (px - stop) * m['side'] <= 0:
+            self.close(key, m, 'stop_missing_price_beyond_stop')
+            return False
+        tick = self.spec(m['inst'])['tickSz']
+        body = dict(instId=m['inst'], tdMode=m.get('mgnMode', 'isolated'), side='sell' if m['side'] == 1 else 'buy', ordType='conditional', closeFraction='1',
+                    slTriggerPx=fmt(quantize(stop, tick, ROUND_HALF_UP)), slOrdPx='-1', slTriggerPxType='last',
+                    **({'posSide': m['posSide']} if m['posSide'] != 'net' else {'reduceOnly': True}))
+        r = self.post('/api/v5/trade/order-algo', body)
+        if not ok(r):
+            self.log('error', m['inst'], step='restore_stop', detail=first_error(r))
+        else:
+            self.log('restore_stop', m['inst'], stop=body['slTriggerPx']); m['stop'] = stop
+        return True
 
     def amend_stop(self, key, m, new_stop):
         algo = next((a for a in self.algos if a['instId'] == m['inst'] and (a.get('posSide', 'net') == m['posSide'] or m['posSide'] == 'net')), None)
@@ -501,6 +532,8 @@ class Mirror:
                 self.log('closed_on_exchange', m['inst'], strategy=m.get('strategy'), **res)
             elif not same:
                 self.close(key, m, 'paper_closed')
+            elif not self.ensure_stop(key, m, p):
+                continue
             elif abs(p['stop'] - m['stop']) / m['stop'] > AMEND_TOLERANCE and (p['stop'] - m['stop']) * m['side'] > 0:
                 self.amend_stop(key, m, p['stop'])
         # New entries (a dry run previews them as if resumed).
@@ -531,7 +564,7 @@ class Mirror:
 
     def summary(self):
         pos = [dict(inst=p['instId'], side=p.get('posSide', 'net'), contracts=p.get('pos'), avgPx=p.get('avgPx'), markPx=p.get('markPx'),
-                    upl=p.get('upl'), uplRatio=p.get('uplRatio'), lever=p.get('lever'), margin=p.get('margin'), ctVal=self.spec(p['instId'])['ctVal'],
+                    upl=p.get('upl'), uplRatio=p.get('uplRatio'), lever=p.get('lever'), margin=p.get('margin') or p.get('imr'), mgnMode=p.get('mgnMode'), ctVal=self.spec(p['instId'])['ctVal'],
                     ours=any(m['status'] == 'open' and m['inst'] == p['instId'] for m in self.s['mirrored'].values()))
                for p in getattr(self, 'all_positions', self.positions).values()]
         return dict(updated_at=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), equity=self.equity, available=self.available,

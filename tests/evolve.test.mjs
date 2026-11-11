@@ -55,7 +55,7 @@ test('paper account, home card and data caption', () => {
   for (const t of d.team) assert.match(paperMarkup(d), new RegExp(`data-node="${t.id}"`));
   assert.match(paperMarkup({ ...d, champion: null }), /还没有样本外合格的策略/);
   const pm = paperMarkup(d);
-  assert.match(pm, /最短任期 7 天/); assert.match(pm, /已有持仓不强平/); assert.match(pm, /连续 3 次样本外合格/); assert.match(pm, /补入空位/); assert.match(pm, /席位 1 ·/);
+  assert.match(pm, /最短任期 7 天/); assert.match(pm, /已有持仓不强平/); assert.match(pm, /连续 3 次样本外合格/); assert.match(pm, /补入空位|沿用原冠军/); assert.match(pm, /席位 1 ·/);
   assert.match(pm, /同一物种最多 2 个/); assert.match(homeCardMarkup(d), /冠军组合 5 个/);
   assert.match(pm, /挑战者[\s\S]*连续合格 <b>\d+<\/b> \/ 3/);
   assert.match(homeCardMarkup(d), new RegExp(`第 ${d.generation} 代`));
@@ -135,7 +135,7 @@ test('team table shows each member\'s direction and the rules mention the direct
 
 test('paper positions and trades show contract details: leverage, margin, liquidation, funding', () => {
   const t0 = Date.parse(d.updated_at);
-  const paper = { ...d.paper,
+  const paper = { ...d.paper, mode: 'isolated',
     positions: [{ inst: 'PEPE-USDT-SWAP', side: -1, entry: .00001, stop: .0000105, target: null, opened: t0, lever: 10, margin: 123.45, liq: .0000109, funding: -.5, champion: 's1' }],
     trades: [{ inst: 'BTC-USDT-SWAP', side: 1, pnl: -200, reason: 'liquidation', closed: t0, lever: 10, funding: 1.25, champion: 's1' }] };
   const html = paperMarkup({ ...d, paper });
@@ -155,4 +155,17 @@ test('the leader is shown with its bigger size and the rules explain it', async 
   assert.match(html, /其他成员每笔 1%–5%/); assert.match(html, /升为第一名（加大仓位）/);
   const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, leader_risk: .2, leader_leverage: 50, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
   assert.match(text, /每笔止损风险 1%–5%（按策略）/); assert.match(text, /第一名每笔 20%、最高 50×/); assert.match(text, /日亏 10% 停手/);
+});
+
+test('shared cross-margin account: members show what they contributed, positions say 全仓, rules list the shared limits', () => {
+  const html = paperMarkup(d);
+  assert.equal(d.paper.mode, 'cross');
+  assert.match(html, /<th>贡献盈亏<\/th><th>占账户<\/th>/); assert.match(html, /共用一个账户（全仓）/);
+  assert.match(html, /每笔开仓都带止损/); assert.match(html, /同方向已有 3 个以上持仓时新开仓风险减半，6 个以上减到四分之一/);
+  assert.match(html, /当日亏损达 10% 时其他成员全部平仓/); assert.match(html, /同样按整个账户算/);
+  const t0 = Date.parse(d.updated_at);
+  const one = paperMarkup({ ...d, paper: { ...d.paper, halted: true, positions: [{ inst: 'BTC-USDT-SWAP', side: 1, entry: 100, stop: 95, target: null, opened: t0, lever: 16, margin: 50, funding: 0, champion: 's1', boost: true }],
+    trades: [{ inst: 'ETH-USDT-SWAP', side: 1, pnl: -30, reason: 'daily_halt', closed: t0, lever: 10, funding: 0, champion: 's2' }] } });
+  assert.match(one, /16x 全仓 · 保证金 50\.00 U · <b>第一名仓位<\/b>/); assert.doesNotMatch(one, /强平 —/);
+  assert.match(one, /日亏停手平仓/); assert.match(one, /今日已停手/);
 });
