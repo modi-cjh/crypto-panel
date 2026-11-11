@@ -53,3 +53,4 @@
 {"ts": "2026-11-11T01:21:13Z", "action": "skip", "inst": "XRP-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-11T01:21:13Z", "action": "open", "inst": "ICP-USDT-SWAP", "dry_run": false, "side": 1, "strategy": "evolved", "contracts": "67700.3", "price": 2.581, "stop": "2.364", "target": "2.713", "leverage": 9, "risk_usdt": 147.11}
 {"ts": "2026-11-11T01:21:13Z", "action": "skip", "inst": "SPX-USDT-SWAP", "dry_run": false, "reason": "no_price"}
+{"ts": "2026-11-11T01:21:59Z", "action": "skip", "inst": "SPX-USDT-SWAP", "dry_run": false, "reason": "no_price"}

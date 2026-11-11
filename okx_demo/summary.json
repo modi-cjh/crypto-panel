@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-11T01:21:13Z",
+ "updated_at": "2026-11-11T01:21:59Z",
  "equity": 7355.261875686954,
  "available": 6892.452385509177,
  "day_start": 7349.095254455455,
@@ -574,6 +574,10 @@
   [
    1794360073212,
    7355.26
+  ],
+  [
+   1794360119275,
+   7355.26
   ]
  ],
  "closed_trades": 8,
@@ -982,6 +986,13 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-11T01:21:59Z",
+   "action": "skip",
+   "inst": "SPX-USDT-SWAP",
+   "dry_run": false,
+   "reason": "no_price"
+  },
+  {
    "ts": "2026-11-11T01:21:13Z",
    "action": "skip",
    "inst": "BTC-USDT-SWAP",
@@ -1263,19 +1274,6 @@
    "target": "1.1181",
    "leverage": 10,
    "risk_usdt": 55.94
-  },
-  {
-   "ts": "2026-11-04T20:19:47Z",
-   "action": "close",
-   "inst": "XAU-USDT-SWAP",
-   "dry_run": false,
-   "strategy": "breakout_long",
-   "reason": "paper_closed",
-   "pnl": -57.8895257,
-   "price_pnl": -45.6558,
-   "funding": 0.0,
-   "close_price": 4082.546907388833,
-   "fee": -12.2337257
   }
  ],
  "execution_test_trades": 1
