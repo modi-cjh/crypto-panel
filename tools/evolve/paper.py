@@ -1,21 +1,21 @@
-"""Paper trading for the champion team, using the SAME simulate() as the backtests (同源执行).
+"""Paper trading for the champion team: ONE shared account, cross margin (全仓), run by execution.simulate_account().
 
-The account is split into TEAM_SIZE equal slots. Each slot is a chain of segments, one per member that held the seat;
-each run replays every slot's current segment from the bar it started on up to the latest closed bar, so the paper
-result is exactly what the backtest engine produces on live bars. When a seat changes hands, the old member stops taking
-new signals but its open positions are NOT closed: they wind down to their own stop / target / time exit (slot['winding']),
-and what they make or lose from then on is added to the slot. The new member starts with the slot's equity at the change.
-The account equity is the slots' sum.
-
-The team leader (rank 1, state['champion']) trades bigger, as the user chose: every trade risks LEADER_RISK of the WHOLE
-account (its own slot plus the other slots' equity at that bar) with up to LEADER_LEVERAGE× leverage. Its segment carries
-boost=True; when the title moves, the old leader's boosted segment winds down and it continues with a normal one.
+The team's strategies all trade the same account: every position is sized on the whole account's equity (risk gene × equity;
+the leader: 20 %), margin is shared, one position per coin, and the same-side cap and the daily halt are the OKX mirror's
+(tools/okx_demo_trader.py). Each run replays the account from its start bar with the full seat history, so the result is
+exactly what the engine produces on live bars:
+  account = dict(from_ts, start_equity, segs=[dict(id, champion, slot, genes, species, from_ts, wind_ts, boosts, reason)])
+- a member that loses its seat gets wind_ts: no new signals, its open positions run to their own exits;
+- `boosts` are the [from_ts, to_ts] ranges in which the member was the team leader (rank 1, state['champion']).
+Before this, the account was five separate slots of 1/5 each; that history (curve, trades, seat changes) is kept as
+paper['legacy'] and the shared account starts from the slots' total equity. The slot code below `_legacy_update` only
+serves that one-time conversion.
 """
-from execution import simulate, stop_distance, START_EQUITY
+from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES
 from evolution import TEAM_SIZE
 
 HOUR = 3600_000
-LEADER_RISK, LEADER_LEVERAGE = .20, 50
+LEADER_RISK, LEADER_LEVERAGE = ACCOUNT_RULES['leader_risk'], ACCOUNT_RULES['leader_lever']
 _CTX = dict(extra={})        # per update(): {slot index: {ts: equity of the other slots}} for boosted segments
 
 
@@ -142,8 +142,8 @@ def _sum_curves(curves, starts):
     return out
 
 
-def update(state, series, changes):
-    """Apply this run's seat changes, advance every slot, and return (dashboard view, mirror signals)."""
+def _legacy_update(state, series, changes):
+    """The five-slot account (before the shared account): only used once, to read its final state for the conversion."""
     nodes, s = state['nodes'], next(iter(series.values()))
     last_ts = s.ts[-1]
     paper = state['paper'] = _migrate(state.get('paper') or dict(start_equity=START_EQUITY), series)
@@ -221,4 +221,101 @@ def update(state, series, changes):
                 curve=curve[-400:], trades=trades[:50], positions=positions, pending=pending,
                 leader=dict(id=leader, risk=LEADER_RISK, leverage=LEADER_LEVERAGE) if leader else None,
                 members=sorted(members, key=lambda m: m['rank']), segments=(segments + paper.get('legacy_segments', [])[::-1])[:30])
+    return view, signals
+
+
+def _convert(state, series, last_ts):
+    """Five slots → one shared account, starting now with the slots' total equity (open slot positions count at market)."""
+    old = state.get('paper') or {}
+    start, legacy = old.get('start_equity', START_EQUITY), dict(curve=[], trades=[], segments=[])
+    equity = start
+    if old.get('slots') or old.get('segments'):
+        view, _ = _legacy_update(state, series, [])
+        equity, legacy = view['equity'], dict(curve=view['curve'], trades=view['trades'], segments=view['segments'])
+    state['paper'] = dict(start_equity=start, legacy=legacy, account=dict(from_ts=last_ts, start_equity=round(equity, 2), segs=[], next=0))
+    return state['paper']
+
+
+def update(state, series, changes):
+    """Apply this run's seat and leader changes, replay the shared account, and return (dashboard view, mirror signals)."""
+    nodes, s = state['nodes'], next(iter(series.values()))
+    last_ts = s.ts[-1]
+    paper = state.get('paper') or {}
+    if 'account' not in paper:
+        paper = _convert(state, series, last_ts)
+    acc, team, leader = paper['account'], state.get('team', []), state.get('champion')
+    seated = lambda slot_i: next((g for g in acc['segs'] if g['slot'] == slot_i and g['wind_ts'] is None), None)
+
+    def wind(g):
+        g['wind_ts'] = last_ts
+        if g['boosts'] and g['boosts'][-1][1] is None:
+            g['boosts'][-1][1] = last_ts
+
+    def seat(slot_i, nid, reason):
+        cur = seated(slot_i)
+        if cur:
+            wind(cur)
+        acc['next'] += 1
+        acc['segs'].append(dict(id=f"a{acc['next']}", champion=nid, slot=slot_i, genes=nodes[nid]['genes'], species=nodes[nid]['species'],
+                                from_ts=last_ts, wind_ts=None, boosts=[], reason=reason))
+
+    for slot_i, old, new, reason in changes:
+        seat(slot_i, new, reason)
+    for slot_i, m in enumerate(team):                    # a seated member without a running segment (first run, conversion) starts one
+        cur = seated(slot_i)
+        if not cur or cur['champion'] != m['id']:
+            seat(slot_i, m['id'], 'carry')
+    for g in acc['segs']:                                # a seat that no longer exists
+        if g['wind_ts'] is None and (g['slot'] >= len(team) or team[g['slot']]['id'] != g['champion']):
+            wind(g)
+    for g in acc['segs']:                                # the leader title
+        if g['wind_ts'] is None:
+            is_leader = bool(g['boosts']) and g['boosts'][-1][1] is None
+            if g['champion'] == leader and not is_leader:
+                g['boosts'].append([last_ts, None])
+            elif g['champion'] != leader and is_leader:
+                g['boosts'][-1][1] = last_ts
+    idx = lambda ts: _index(series, ts)
+    segs = [dict(id=g['id'], genes=g['genes'], from_i=idx(g['from_ts']), wind_i=idx(g['wind_ts']) if g['wind_ts'] is not None else None,
+                 boosts=[(idx(a), idx(b) if b is not None else None) for a, b in g['boosts']]) for g in acc['segs']]
+    res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'])
+    by = {g['id']: g for g in acc['segs']}
+    rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
+    who = lambda sid: by[sid]['champion']
+    tag = lambda x: dict({k: v for k, v in x.items() if k != 'seg'}, champion=who(x['seg']), slot=by[x['seg']]['slot'])
+    positions = [dict(tag(p), **({'winding': True} if by[p['seg']]['wind_ts'] is not None else {})) for p in res['positions']]
+    trades = [tag(t) for t in res['trades']]
+    pending = [dict(inst=inst, side=d, champion=who(sid)) for sid, inst, d, dist, b in res['pending']]
+    members = []
+    for g in acc['segs']:
+        if g['wind_ts'] is None:
+            since = next((m['since'] for m in team if m['id'] == g['champion']), None)
+            pnl = res['pnl'][g['id']]
+            members.append(dict(slot=g['slot'], id=g['champion'], species=g['species'], since=since, rank=rank.get(g['champion'], 99) + 1,
+                                pnl=round(pnl, 2), ret=round(pnl / acc['start_equity'] * 100, 3),
+                                positions=sum(1 for p in res['positions'] if p['seg'] == g['id']), trades=sum(1 for t in res['trades'] if t['seg'] == g['id']),
+                                boost=bool(g['boosts']) and g['boosts'][-1][1] is None))
+    # Mirror signals: one per coin (the account holds one position per coin). 'rank' orders the mirror's entries.
+    signals = {}
+    size = lambda boost, risk: dict(risk=LEADER_RISK, leverage=LEADER_LEVERAGE, leader=True) if boost else dict(risk=risk, leverage=ACCOUNT_RULES['lever'])
+    for p in res['positions']:
+        signals[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], opened=p['opened'], strategy='evolved',
+                                  champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1, **size(p['boost'], p['risk']))
+    for sid, inst, d, dist, b in res['pending']:
+        g = by[sid]
+        signals.setdefault(inst, dict(_signal_from_pending(inst, d, g['genes'], series, last_ts, g['champion']), rank=rank.get(g['champion'], 99) + 1,
+                                      **size(b, g['genes']['risk'])))
+    legacy = paper.get('legacy') or {}
+    seats = [dict(champion=g['champion'], slot=g['slot'], species=g['species'], reason=g['reason'], from_ts=g['from_ts'], to_ts=g['wind_ts']) for g in acc['segs']]
+    seats += [dict(champion=g['champion'], slot=g['slot'], species=g['species'], reason='leader', from_ts=a, to_ts=b) for g in acc['segs'] for a, b in g['boosts']]
+    seats.sort(key=lambda x: (x['from_ts'], x['reason'] == 'leader'), reverse=True)
+    equity = round(res['equity'], 2)
+    view = dict(equity=equity, start_equity=paper['start_equity'], ret=round((equity / paper['start_equity'] - 1) * 100, 3),
+                mode='cross', account_from=acc['from_ts'], account_start=acc['start_equity'], halted=res['halted'],
+                rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever']),
+                curve=([p for p in legacy.get('curve') or [] if p[0] < acc['from_ts']] + [list(p) for p in res['curve']])[-400:],
+                trades=sorted(trades + (legacy.get('trades') or []), key=lambda t: t['closed'], reverse=True)[:50],
+                positions=positions, pending=pending,
+                leader=dict(id=leader, risk=LEADER_RISK, leverage=LEADER_LEVERAGE) if leader else None,
+                members=sorted(members, key=lambda m: m['rank']), segments=(seats + (legacy.get('segments') or []))[:30])
     return view, signals
