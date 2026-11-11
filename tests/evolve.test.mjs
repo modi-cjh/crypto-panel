@@ -130,3 +130,17 @@ test('team table shows each member\'s direction and the rules mention the direct
   assert.match(paperMarkup({ ...d, champion_rules: { ...d.champion_rules, direction_cap: 3 } }), /只做多、只做空各最多 3 个/);
   assert.match(paperMarkup({ ...d, paper: { ...d.paper, segments: [{ slot: 4, champion: 's1', species: 'trend', reason: 'balance', from_ts: Date.parse(d.updated_at), to_ts: null }] } }), /方向配额调整/);
 });
+
+test('paper positions and trades show contract details: leverage, margin, liquidation, funding', () => {
+  const t0 = Date.parse(d.updated_at);
+  const paper = { ...d.paper,
+    positions: [{ inst: 'PEPE-USDT-SWAP', side: -1, entry: .00001, stop: .0000105, target: null, opened: t0, lever: 10, margin: 123.45, liq: .0000109, funding: -.5, champion: 's1' }],
+    trades: [{ inst: 'BTC-USDT-SWAP', side: 1, pnl: -200, reason: 'liquidation', closed: t0, lever: 10, funding: 1.25, champion: 's1' }] };
+  const html = paperMarkup({ ...d, paper });
+  assert.match(html, /10x 逐仓 · 保证金 123\.45 U · 强平/);
+  assert.match(html, /资金费 \+0\.50 U/);
+  assert.match(html, /强平 · 10x · 资金费 -1\.25/);
+  assert.match(html, /保证金占用<\/span><strong class="">123\.45 U/);
+  assert.match(html, /纸面交易按 OKX 合约规则计算/);
+  assert.doesNotMatch(paperMarkup(d), /undefinedx/);                           // older dashboards without contract fields
+});
