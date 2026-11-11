@@ -1,12 +1,41 @@
 {
- "updated_at": "2026-11-11T05:12:23Z",
- "equity": 6927.080085673964,
- "available": 6927.080085673964,
+ "updated_at": "2026-11-11T09:07:07Z",
+ "equity": 6925.077145864464,
+ "available": 6506.209180150178,
  "day_start": 7349.095254455455,
  "paused": false,
  "halted": false,
  "dry_run": false,
- "positions": [],
+ "positions": [
+  {
+   "inst": "ICP-USDT-SWAP",
+   "side": "short",
+   "contracts": "51585.6",
+   "avgPx": "2.5340009983406222",
+   "markPx": "2.535",
+   "upl": "-0.5153410000001815",
+   "uplRatio": "-0.0027596720049543",
+   "lever": "7",
+   "margin": "186.81356571428572",
+   "mgnMode": "cross",
+   "ctVal": 0.01,
+   "ours": true
+  },
+  {
+   "inst": "GRASS-USDT-SWAP",
+   "side": "short",
+   "contracts": "254",
+   "avgPx": "0.4567",
+   "markPx": "0.4568",
+   "upl": "-0.253999999999972",
+   "uplRatio": "-0.0010948105977659",
+   "lever": "5",
+   "margin": "232.0544",
+   "mgnMode": "cross",
+   "ctVal": 10.0,
+   "ours": true
+  }
+ ],
  "stop_control": null,
  "execution_profile": {
   "mode": "evolved",
@@ -109,7 +138,44 @@
   "leader_leverage": 50,
   "margin_mode": "cross"
  },
- "open_mirrors": [],
+ "open_mirrors": [
+  {
+   "inst": "GRASS-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "254",
+   "stop": 0.5209269058416525,
+   "target": 0.2825758142275384,
+   "leverage": 5,
+   "entry": 0.4572,
+   "clOrdId": "evgrass1794384000",
+   "opened_at": 1794388027504,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "cross",
+   "ordId": "4089803076357574656",
+   "key": "GRASS-USDT-SWAP|1794384000000"
+  },
+  {
+   "inst": "ICP-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "51585.6",
+   "stop": 2.8045660479949635,
+   "target": 2.221997940486245,
+   "leverage": 7,
+   "entry": 2.536,
+   "clOrdId": "evicp1794384000",
+   "opened_at": 1794388027504,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "cross",
+   "ordId": "4089803106053246976",
+   "key": "ICP-USDT-SWAP|1794384000000"
+  }
+ ],
  "start_equity": 5000.0,
  "history": [
   [
@@ -515,6 +581,10 @@
   [
    1794373943183,
    6927.08
+  ],
+  [
+   1794388027504,
+   6925.08
   ]
  ],
  "closed_trades": 13,
@@ -923,6 +993,52 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-11T09:07:07Z",
+   "action": "skip",
+   "inst": "H-USDT-SWAP",
+   "dry_run": false,
+   "reason": "stop_too_close_or_crossed",
+   "price": 0.04477,
+   "stop": 0.04295659390126718
+  },
+  {
+   "ts": "2026-11-11T09:07:07Z",
+   "action": "open",
+   "inst": "GRASS-USDT-SWAP",
+   "dry_run": false,
+   "side": -1,
+   "strategy": "evolved",
+   "contracts": "254",
+   "price": 0.4572,
+   "stop": "0.5209",
+   "target": "0.2826",
+   "leverage": 5,
+   "risk_usdt": 162.09
+  },
+  {
+   "ts": "2026-11-11T09:07:07Z",
+   "action": "open",
+   "inst": "ICP-USDT-SWAP",
+   "dry_run": false,
+   "side": -1,
+   "strategy": "evolved",
+   "contracts": "51585.6",
+   "price": 2.536,
+   "stop": "2.805",
+   "target": "2.222",
+   "leverage": 7,
+   "risk_usdt": 138.54
+  },
+  {
+   "ts": "2026-11-11T09:07:07Z",
+   "action": "skip",
+   "inst": "BARD-USDT-SWAP",
+   "dry_run": false,
+   "reason": "stop_too_close_or_crossed",
+   "price": 0.126,
+   "stop": 0.09990215669064673
+  },
+  {
    "ts": "2026-11-11T05:12:23Z",
    "action": "close",
    "inst": "H-USDT-SWAP",
@@ -1183,49 +1299,6 @@
    "inst": "DOGE-USDT-SWAP",
    "dry_run": false,
    "reason": "paper_entry_too_old"
-  },
-  {
-   "ts": "2026-11-06T21:17:55Z",
-   "action": "open",
-   "inst": "XRP-USDT-SWAP",
-   "dry_run": false,
-   "side": -1,
-   "strategy": "evolved",
-   "contracts": "124.34",
-   "price": 1.22,
-   "stop": "1.2382",
-   "target": "0.9672",
-   "leverage": 10,
-   "risk_usdt": 226.42
-  },
-  {
-   "ts": "2026-11-06T17:18:09Z",
-   "action": "skip",
-   "inst": "SOL-USDT-SWAP",
-   "dry_run": false,
-   "reason": "paper_entry_too_old"
-  },
-  {
-   "ts": "2026-11-06T17:18:09Z",
-   "action": "open",
-   "inst": "BTC-USDT-SWAP",
-   "dry_run": false,
-   "side": 1,
-   "strategy": "evolved",
-   "contracts": "1.81",
-   "price": 75900.0,
-   "stop": "73401.3",
-   "target": "83448.6",
-   "leverage": 10,
-   "risk_usdt": 45.3
-  },
-  {
-   "ts": "2026-11-06T05:33:59Z",
-   "action": "close",
-   "inst": "XRP-USDT-SWAP",
-   "dry_run": false,
-   "strategy": "evolved",
-   "reason": "daily_halt"
   }
  ],
  "largest_close": {
