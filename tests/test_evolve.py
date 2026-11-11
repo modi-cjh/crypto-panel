@@ -437,21 +437,26 @@ class EvolutionTests(unittest.TestCase):
         self.assertFalse(E.one_sided(dict(up=5, down=-3, up_days=40, down_days=5)))     # too few falling days to judge
 
     def test_a_member_that_loses_its_seat_winds_down_instead_of_closing_at_market(self):
+        ref = lambda sr: [setattr(v, 'ref', sr['BTC-USDT-SWAP']) for k, v in sr.items() if k != 'BTC-USDT-SWAP']
+        ref(self.sr)
         st = E.init_state(5, self.sr, self.split)
         for nid in st['population'][:10]: st['nodes'][nid]['qualified'] = True
         E.update_hall(st)
         n = self.sr['BTC-USDT-SWAP'].n
-        cut = {k: X.Series(k, v.ts[:n - 150], v.o[:n - 150], v.h[:n - 150], v.l[:n - 150], v.c[:n - 150]) for k, v in self.sr.items()}
-        cut['ETH-USDT-SWAP'].ref = cut['BTC-USDT-SWAP']
         E.choose_team(st, 0)
-        st['paper'] = dict(start_equity=10000.0, slots=[P._new_slot(2000.0) for _ in range(E.TEAM_SIZE)])
-        t0 = cut['BTC-USDT-SWAP'].ts[200]
-        for i, m in enumerate(st['team']):
-            node = st['nodes'][m['id']]
-            st['paper']['slots'][i]['segments'].append(dict(champion=m['id'], slot=i, genes=node['genes'], species=node['species'], from_ts=t0, reason='first',
-                                                            start_equity=2000.0, to_ts=None, end_equity=None))
-        view, _ = P.update(st, cut, [])
-        held = [m for m in view['members'] if m['positions']]
+        t0 = self.sr['BTC-USDT-SWAP'].ts[200]
+        for back in range(100, 500, 10):                                # find a bar where some member holds a position
+            cut = {k: X.Series(k, v.ts[:n - back], v.o[:n - back], v.h[:n - back], v.l[:n - back], v.c[:n - back]) for k, v in self.sr.items()}
+            ref(cut)
+            st['paper'] = dict(start_equity=10000.0, slots=[P._new_slot(2000.0) for _ in range(E.TEAM_SIZE)])
+            for i, m in enumerate(st['team']):
+                node = st['nodes'][m['id']]
+                st['paper']['slots'][i]['segments'].append(dict(champion=m['id'], slot=i, genes=node['genes'], species=node['species'], from_ts=t0,
+                                                                reason='first', start_equity=2000.0, to_ts=None, end_equity=None))
+            view, _ = P.update(st, cut, [])
+            held = [m for m in view['members'] if m['positions']]
+            if held:
+                break
         self.assertTrue(held, 'need a member holding a position at the cut')
         slot_i, old = held[0]['slot'], held[0]['id']
         before = view['equity']
@@ -465,7 +470,7 @@ class EvolutionTests(unittest.TestCase):
         self.assertFalse([t for t in view2['trades'] if t['reason'] == 'switch'])
         view3, _ = P.update(st, self.sr, [])                                           # 150 bars later
         slot = st['paper']['slots'][slot_i]
-        late = [t for t in view3['trades'] if t.get('champion') == old and t['closed'] > cut['BTC-USDT-SWAP'].ts[-1]]
+        late = [t for t in slot['closed_trades'] if t.get('champion') == old and t['closed'] > cut['BTC-USDT-SWAP'].ts[-1]]
         self.assertTrue(late or slot['winding'])                                       # exits by its own stop / target / time
         self.assertFalse([t for t in late if t['reason'] == 'switch'])
         self.assertAlmostEqual(view3['equity'], sum(m['equity'] for m in view3['members']), places=1)
