@@ -36,9 +36,12 @@ from runtime_guard import entries_allowed, atomic_json
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
-RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # daily loss halt: 10 % below the day's starting equity (legacy modes)
-EVOLVED_DAILY_HALT = .20                         # following the evolution champions: halt at 20 % (chosen by the user)
-RISK_RANGE = (.02, .05)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
+RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # daily loss halt: 10 % below the day's starting equity
+EVOLVED_DAILY_HALT = .10                         # following the evolution champions: 10 % too, counted WITHOUT the leader's result
+RISK_RANGE = (.01, .05)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
+# The team leader (signals with leader=True; chosen by the user): 20 % of the whole account per trade, up to 50× leverage
+# (never more than the coin allows), outside the same-side cap and outside the daily halt.
+LEADER_RISK, LEADER_LEVERAGE = .20, 50
 SAME_SIDE_CAP = .05
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
@@ -56,13 +59,14 @@ def configure_evolved(universe=None):
     """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply. `universe` is the
     coin list the evolution trades (signals.json 'instruments', the top-100 perpetuals); without it, the five majors."""
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT
-    # Chosen by the user: each order risks its strategy's own risk gene (2–5 %), at most 20 % in one direction (the five
-    # coins move together, so same-side signals are one bet), and a 20 % daily loss flattens everything until tomorrow.
+    # Chosen by the user: each order risks its strategy's own risk gene (1–5 %), at most 20 % in one direction, and a
+    # 10 % daily loss (the leader's result not counted) closes the other members' positions until tomorrow. The leader: see LEADER_RISK.
     INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], .20, EVOLVED_DAILY_HALT
     if isinstance(universe, list) and universe and len(set(universe)) == len(universe) and all(
             isinstance(i, str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', i) for i in universe):
         INSTRUMENTS = list(universe)
-    ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT)
+    ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT,
+                          leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE)
     return ACTIVE_PROFILE
 
 
@@ -277,7 +281,8 @@ class Mirror:
         if inst not in self.specs:
             r = self.c.request('GET', f'/api/v5/public/instruments?instType=SWAP&instId={inst}')
             d = (r.get('data') or [{}])[0]
-            self.specs[inst] = dict(ctVal=float(d.get('ctVal') or 0), lotSz=d.get('lotSz') or '1', minSz=float(d.get('minSz') or 0), tickSz=d.get('tickSz') or '0.0001')
+            self.specs[inst] = dict(ctVal=float(d.get('ctVal') or 0), lotSz=d.get('lotSz') or '1', minSz=float(d.get('minSz') or 0), tickSz=d.get('tickSz') or '0.0001',
+                                    maxLever=int(float(d.get('lever') or 0)))
         return self.specs[inst]
 
     def price(self, inst):
@@ -315,11 +320,17 @@ class Mirror:
         if not sp['ctVal']:
             return self.log('skip', inst, reason='no_instrument_spec')
         r = RISK
-        if ACTIVE_PROFILE and ACTIVE_PROFILE.get('mode') == 'evolved' and p.get('risk') is not None:
+        evolved = bool(ACTIVE_PROFILE and ACTIVE_PROFILE.get('mode') == 'evolved')
+        leader = evolved and bool(p.get('leader'))
+        if leader:
+            r = LEADER_RISK
+        elif evolved and p.get('risk') is not None:
             r = min(RISK_RANGE[1], max(RISK_RANGE[0], float(p['risk'])))
         risk = r * self.equity
         same_risk = 0.0
         for existing_key, m in self.s['mirrored'].items():
+            if leader or m.get('leader'):          # the leader is outside the same-side cap, both ways
+                continue
             if m.get('status') != 'open' or m.get('side') != side:
                 continue
             if existing_key in self.new_order_risk:
@@ -332,12 +343,13 @@ class Mirror:
             if avg <= 0 or not m.get('stop'):
                 return self.log('skip', inst, reason='existing_risk_unknown')
             same_risk += max((avg - float(m['stop'])) * side, 0) * abs(float(held['pos'])) * self.spec(m['inst'])['ctVal']
-        if same_risk + risk > SAME_SIDE_CAP * self.equity * (1 + 1e-9):
+        if not leader and same_risk + risk > SAME_SIDE_CAP * self.equity * (1 + 1e-9):
             return self.log('skip', inst, reason='same_side_risk')
         contracts = quantize(risk / (px * dist) / sp['ctVal'], sp['lotSz'])
         if float(contracts) < sp['minSz'] or contracts <= 0:
             return self.log('skip', inst, reason='size_below_minimum', contracts=fmt(contracts), min=sp['minSz'])
-        lever = max(1, min(MAX_LEVERAGE, int(p.get('leverage') or MAX_LEVERAGE), int(.8 / dist)))
+        cap = LEADER_LEVERAGE if leader else MAX_LEVERAGE
+        lever = max(1, min(cap, int(p.get('leverage') or cap), int(.8 / dist), sp.get('maxLever') or cap))
         margin = float(contracts) * sp['ctVal'] * px / lever
         if margin > self.available * .95:
             return self.log('skip', inst, reason='insufficient_margin', margin=round(margin, 4), available=round(self.available, 4))
@@ -357,12 +369,12 @@ class Mirror:
         if not ok(r):
             return self.log('error', inst, step='order', detail=first_error(r), size=fmt(contracts))
         self.s['mirrored'][key] = dict(inst=inst, side=side, posSide=pos_side or 'net', strategy=p.get('strategy'), contracts=fmt(contracts),
-                                       stop=p['stop'], target=p.get('tp'), leverage=lever, entry=px, clOrdId=cl, opened_at=self.now_ms, status='open',
+                                       stop=p['stop'], target=p.get('tp'), leverage=lever, entry=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader,
                                        ordId=(r.get('data') or [{}])[0].get('ordId'))
         self.new_order_risk[key] = float(contracts) * sp['ctVal'] * abs(px - p['stop'])
         self.available -= margin
         self.log('open', inst, side=side, strategy=p.get('strategy'), contracts=fmt(contracts), price=px, stop=algo['slTriggerPx'],
-                 target=algo.get('tpTriggerPx'), leverage=lever, risk_usdt=round(risk, 2))
+                 target=algo.get('tpTriggerPx'), leverage=lever, risk_usdt=round(risk, 2), **({'leader': True} if leader else {}))
 
     def fill_result(self, inst, pos_side='net', since_ms=0, until_ms=None):
         """Realised result of the latest close of `inst` from OKX position history (read only), or None."""
@@ -402,6 +414,7 @@ class Mirror:
         except OKXError:
             res = None
         extra = {k: res[k] for k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee')} if res else {}
+        self.book_leader(m, res)
         self.log('close', m['inst'], strategy=m.get('strategy'), reason=reason, **extra)
 
     def amend_stop(self, key, m, new_stop):
@@ -414,8 +427,26 @@ class Mirror:
             return self.log('error', m['inst'], step='amend_stop', detail=first_error(r))
         self.log('amend_stop', m['inst'], old=m['stop'], new=new_stop); m['stop'] = new_stop
 
-    def flatten(self, reason):
+    def leader_upl(self):
+        """Floating PnL of the leader's open positions, and remember each one's so a later close can be booked."""
+        total = 0.0
+        for m in self.s['mirrored'].values():
+            if m.get('status') == 'open' and m.get('leader'):
+                held = self.held(m['inst'], m['side'])
+                if held:
+                    m['last_upl'] = float(held.get('upl') or 0); total += m['last_upl']
+        return total
+
+    def book_leader(self, m, res):
+        """A leader position closed: its result leaves the daily-halt arithmetic (exchange result, else the last floating PnL)."""
+        if m.get('leader'):
+            pnl = (res or {}).get('pnl')
+            self.s['leader_realized'] = float(self.s.get('leader_realized') or 0) + float(pnl if pnl is not None else m.get('last_upl') or 0)
+
+    def flatten(self, reason, keep_leader=False):
         for key, m in self.s['mirrored'].items():
+            if keep_leader and m.get('leader'):
+                continue
             if m['status'] == 'open' and self.held(m['inst'], m['side']):
                 self.close(key, m, reason)
             elif m['status'] == 'open':
@@ -425,8 +456,9 @@ class Mirror:
     def run(self, action='run'):
         self.load()
         day = local_day(self.now)
+        leader_upl = self.leader_upl()
         if self.s.get('day') != day:
-            self.s.update(day=day, day_start=self.equity, halted=False)
+            self.s.update(day=day, day_start=self.equity, halted=False, leader_realized=0.0, leader_upl_start=leader_upl)
         if action == 'pause':
             self.s['paused'] = True; self.log('pause', '-')
         elif action == 'resume':
@@ -441,10 +473,14 @@ class Mirror:
         elif action == 'flatten':
             self.s['paused'] = True; self.flatten('manual_flatten'); self.log('flatten', '-')
             return
-        if not self.s['halted'] and self.s.get('day_start') and self.equity <= self.s['day_start'] * (1 - DAILY_HALT):
-            self.s['halted'] = True; self.log('daily_halt', '-', equity=self.equity, day_start=self.s['day_start'])
-            self.flatten('daily_halt')
-            return
+        # Daily halt, counted without the leader: today's change in equity minus what the leader's positions made or lost
+        # today. It closes and blocks the other members only; the leader keeps trading.
+        leader_day = float(self.s.get('leader_realized') or 0) + leader_upl - float(self.s.get('leader_upl_start') or 0)
+        others_day = self.equity - (self.s.get('day_start') or self.equity) - leader_day
+        if not self.s['halted'] and self.s.get('day_start') and others_day <= -self.s['day_start'] * DAILY_HALT:
+            self.s['halted'] = True
+            self.log('daily_halt', '-', equity=self.equity, day_start=self.s['day_start'], others_day=round(others_day, 2), leader_day=round(leader_day, 2))
+            self.flatten('daily_halt', keep_leader=True)
         paper_positions = self.paper.get('positions', {})
         # Closes and stop updates for what we mirrored.
         for key, m in self.s['mirrored'].items():
@@ -461,19 +497,22 @@ class Mirror:
                     res = {}
                 if res.get('pnl') is not None:
                     m['realized_pnl'] = res['pnl']
+                self.book_leader(m, res)
                 self.log('closed_on_exchange', m['inst'], strategy=m.get('strategy'), **res)
             elif not same:
                 self.close(key, m, 'paper_closed')
             elif abs(p['stop'] - m['stop']) / m['stop'] > AMEND_TOLERANCE and (p['stop'] - m['stop']) * m['side'] > 0:
                 self.amend_stop(key, m, p['stop'])
         # New entries (a dry run previews them as if resumed).
-        if (self.s['paused'] and not self.dry) or self.s['halted']:
+        if self.s['paused'] and not self.dry:
             return
         # Priority when the same-side cap fills up: the higher-ranked team member first (rank 1 = leader), then the coin list order.
         order = lambda kv: (kv[1].get('rank', 99), INSTRUMENTS.index(kv[0]) if kv[0] in INSTRUMENTS else 99, kv[0])
         for inst, p in sorted(paper_positions.items(), key=order):
             key = f"{inst}|{int(p['opened'])}"
             if key in self.s['mirrored'] or inst not in INSTRUMENTS:
+                continue
+            if self.s['halted'] and not p.get('leader'):       # halted for the day: only the leader still opens
                 continue
             if self.held(inst, p['side']) or any(k[0] == inst for k in self.positions):
                 self.log('skip', inst, reason='exchange_position_exists_not_ours'); self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net')

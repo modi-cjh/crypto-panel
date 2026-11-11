@@ -146,3 +146,13 @@ test('paper positions and trades show contract details: leverage, margin, liquid
   assert.match(html, /纸面交易按 OKX 合约规则计算/);
   assert.doesNotMatch(paperMarkup(d), /undefinedx/);                           // older dashboards without contract fields
 });
+
+test('the leader is shown with its bigger size and the rules explain it', async () => {
+  const { executionProfileText } = await import('../assets/control.mjs');
+  const html = paperMarkup(d);
+  assert.match(html, /第一名<br><small class="muted">加大仓位<\/small>/);
+  assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）加大仓位[\\s\\S]*整个账户的 20%[\\s\\S]*杠杆上限 50×[\\s\\S]*不计入同方向上限[\\s\\S]*日亏停手`));
+  assert.match(html, /其他成员每笔 1%–5%/); assert.match(html, /升为第一名（加大仓位）/);
+  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, leader_risk: .2, leader_leverage: 50, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
+  assert.match(text, /每笔止损风险 1%–5%（按策略）/); assert.match(text, /第一名每笔 20%、最高 50×/); assert.match(text, /日亏 10% 停手/);
+});
