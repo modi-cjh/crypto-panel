@@ -10,7 +10,7 @@ export function executionProfileText(data, now = Date.now()) {
   const until = p.active && Number.isFinite(Date.parse(p.until))
     ? new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Bangkok',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(Date.parse(p.until)) : '';
   const count = p.scan_limit > p.instruments.length ? `${p.instruments.length}/${p.scan_limit} 币（等待全量扫描）` : `${p.instruments.length} 币`;
-  return `${data.paused ? '已暂停 · ' : ''}${name} · 每笔止损风险 ${(p.risk*100).toFixed(0)}%${p.risk_max > p.risk ? `–${(p.risk_max*100).toFixed(0)}%（按策略）` : ''} · 同向上限 ${(p.same_side_cap*100).toFixed(0)}% · ${count}${until ? ` · ${until} 到期（UTC+7）` : ''}`;
+  return `${data.paused ? '已暂停 · ' : ''}${name} · 每笔止损风险 ${(p.risk*100).toFixed(0)}%${p.risk_max > p.risk ? `–${(p.risk_max*100).toFixed(0)}%（按策略）` : ''} · 同向上限 ${(p.same_side_cap*100).toFixed(0)}%${Number.isFinite(p.leader_risk) ? ` · 第一名每笔 ${(p.leader_risk*100).toFixed(0)}%、最高 ${p.leader_leverage}×（不计入同向上限和日亏停手）` : ''}${Number.isFinite(p.daily_halt) ? ` · 日亏 ${(p.daily_halt*100).toFixed(0)}% 停手` : ''} · ${count}${until ? ` · ${until} 到期（UTC+7）` : ''}`;
 }
 
 export function stopControlText(data) {
