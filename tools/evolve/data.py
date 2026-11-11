@@ -8,6 +8,9 @@
 - All instruments share one timeline (timestamps present for every instrument).
 - Each row keeps the quote volume (USDT); caches written before volume was stored are back-filled again once.
 - Every series except BTC gets BTC as its `ref` (relative-strength species).
+- Contract mode: each series carries its OKX contract spec (ctVal, lotSz, minSz; kept in universe.json) and its funding
+  rates {ts: rate}. OKX serves about 3 months of funding history, so the cache keeps every rate it has seen; hours
+  before the oldest known rate use the default FUNDING_DEFAULT every 8 hours.
 - The window is split by time: the first TRAIN_SHARE for training, the rest is out-of-sample.
 """
 import json
@@ -27,6 +30,7 @@ TRAIN_SHARE = .7
 WARMUP = 250          # bars used only to warm indicators up before the training window
 HOUR = 3600_000
 REF = 'BTC-USDT-SWAP'
+FUNDING_DEFAULT = .0001   # OKX's base funding rate per 8 hours, used where no history exists
 _next = 0.0
 _lock = threading.Lock()
 
@@ -95,25 +99,63 @@ def select_universe(now_ms, get=okx_get, size=UNIVERSE_SIZE):
     return picked
 
 
-def universe(data_dir, now_ms, get=okx_get):
-    """The fixed coin list in <data>/evolve/universe.json; chosen on first use."""
+def universe(data_dir, now_ms, get=okx_get, with_specs=False):
+    """The fixed coin list in <data>/evolve/universe.json; chosen on first use. with_specs: also (list, {inst: spec}),
+    the contract specs being fetched once and kept in the same file."""
     path = Path(data_dir) / 'evolve' / 'universe.json'
-    if path.exists():
-        return json.loads(path.read_text())['instruments']
-    picked = select_universe(now_ms, get)
+    u = json.loads(path.read_text()) if path.exists() else None
+    if not u:
+        u = dict(chosen_at=now_ms, rule=f'top {UNIVERSE_SIZE} USDT perpetuals by 24h volume, listed ≥ {WINDOW_DAYS} days',
+                 instruments=select_universe(now_ms, get))
+    if with_specs and not u.get('specs'):
+        meta = {d['instId']: d for d in get('public/instruments?instType=SWAP')}
+        u['specs'] = {k: [float(meta[k]['ctVal']), float(meta[k]['lotSz']), float(meta[k]['minSz'])] for k in u['instruments'] if k in meta}
+    if not path.exists() or with_specs:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(u, indent=1))
+    return (u['instruments'], u.get('specs', {})) if with_specs else u['instruments']
+
+
+def update_funding(cache_dir, inst, now_ms, get=okx_get):
+    """Cached settled funding rates [[ts, rate]] for inst, topped up with the newest pages from OKX."""
+    path = Path(cache_dir) / 'funding' / f'{inst}.json'
+    rows = json.loads(path.read_text())['rows'] if path.exists() else []
+    have = {r[0] for r in rows}
+    last = rows[-1][0] if rows else 0
+    after, fresh = None, []
+    for _ in range(12):                                   # about 3 months is all OKX keeps
+        page = get(f'public/funding-rate-history?instId={inst}&limit=100' + (f'&after={after}' if after else ''))
+        got = [[int(r['fundingTime']), float(r.get('realizedRate') or r['fundingRate'])] for r in page if int(r['fundingTime']) <= now_ms]
+        fresh += got
+        if not page or len(page) < 100 or min(int(r['fundingTime']) for r in page) <= last:
+            break
+        after = min(int(r['fundingTime']) for r in page)
+    rows = sorted({r[0]: r for r in rows + [r for r in fresh if r[0] not in have]}.values())
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(dict(chosen_at=now_ms, rule=f'top {UNIVERSE_SIZE} USDT perpetuals by 24h volume, listed ≥ {WINDOW_DAYS} days',
-                                    instruments=picked), indent=1))
-    return picked
+    path.write_text(json.dumps(dict(inst=inst, rows=rows), separators=(',', ':')))
+    return rows
+
+
+def funding_map(rows, ts):
+    """{ts: rate} for the bars in ts: the recorded rates, and FUNDING_DEFAULT every 8 hours before the first record."""
+    first = rows[0][0] if rows else float('inf')
+    out = {t: FUNDING_DEFAULT for t in ts if t < first and t % (8 * HOUR) == 0}
+    known = dict(rows)
+    out.update({t: known[t] for t in ts if t in known})
+    return out
 
 
 def load_series(data_dir, now_ms, get=okx_get, instruments=None, cache_dir=None):
     """Update every instrument and return {inst: Series} on the shared timeline. Coins whose candles stopped
     (delisted, suspended) more than 3 hours before the freshest coin are left out."""
-    instruments = instruments or universe(data_dir, now_ms, get)
+    contracts = instruments is None                       # the real universe trades in contract mode; fixed test lists do not
+    specs = {}
+    if contracts:
+        instruments, specs = universe(data_dir, now_ms, get, with_specs=True)
     cache = Path(cache_dir) if cache_dir else Path(data_dir) / 'evolve' / 'candles'
     with ThreadPoolExecutor(WORKERS) as pool:
         got = dict(zip(instruments, pool.map(lambda inst: _safe_update(cache, inst, now_ms, get), instruments)))
+        funding = dict(zip(instruments, pool.map(lambda inst: _safe_funding(cache, inst, now_ms, get), instruments))) if contracts else {}
     per = {k: v for k, v in got.items() if v}
     newest = max(rows[-1][0] for rows in per.values())
     per = {k: v for k, v in per.items() if v[-1][0] >= newest - 3 * HOUR}
@@ -122,8 +164,10 @@ def load_series(data_dir, now_ms, get=okx_get, instruments=None, cache_dir=None)
     out = {}
     for inst, rows in per.items():
         rows = [r for r in rows if r[0] in keep]
-        out[inst] = Series(inst, [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows], [r[4] for r in rows],
-                           [r[5] for r in rows])
+        ts = [r[0] for r in rows]
+        out[inst] = Series(inst, ts, [r[1] for r in rows], [r[2] for r in rows], [r[3] for r in rows], [r[4] for r in rows],
+                           [r[5] for r in rows], spec=tuple(specs[inst]) if inst in specs else None,
+                           funding=funding_map(funding[inst], ts) if contracts and funding.get(inst) is not None else None)
     ref = out.get(REF)
     for inst, s in out.items():
         if inst != REF:
@@ -136,6 +180,14 @@ def _safe_update(cache, inst, now_ms, get):
         return update_candles(cache, inst, now_ms, get)
     except RuntimeError as e:             # one coin failing must not stop the run
         print(f'跳过 {inst}: {e}')
+        return []
+
+
+def _safe_funding(cache, inst, now_ms, get):
+    try:
+        return update_funding(cache, inst, now_ms, get)
+    except RuntimeError as e:
+        print(f'资金费率跳过 {inst}: {e}')
         return []
 
 

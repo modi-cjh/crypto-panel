@@ -83,9 +83,46 @@ class ExecutionTests(unittest.TestCase):
         r2 = X.simulate(g, {'BTC-USDT-SWAP': s}, 30, s.n)
         self.assertEqual(r2['trades'][-1]['reason'], 'stop')
         self.assertAlmostEqual(r2['trades'][-1]['exit'], p['stop'] * (1 - X.SLIP))
-        gap = series_from(closes + [80.0], opens=[closes[0]] + closes[:-1] + [80.0])   # opens below the stop
+        below = p['stop'] * .995                                                          # opens below the stop, above liquidation
+        self.assertGreater(below, p['liq'])
+        gap = series_from(closes + [below], opens=[closes[0]] + closes[:-1] + [below])
         r3 = X.simulate(g, {'BTC-USDT-SWAP': gap}, 30, gap.n)
-        self.assertEqual(r3['trades'][-1]['reason'], 'stop'); self.assertAlmostEqual(r3['trades'][-1]['exit'], 80.0 * (1 - X.SLIP))
+        self.assertEqual(r3['trades'][-1]['reason'], 'stop'); self.assertAlmostEqual(r3['trades'][-1]['exit'], below * (1 - X.SLIP))
+        crash = series_from(closes + [80.0], opens=[closes[0]] + closes[:-1] + [80.0])    # −27 %: through the liquidation price
+        r4 = X.simulate(g, {'BTC-USDT-SWAP': crash}, 30, crash.n)
+        t = r4['trades'][-1]
+        self.assertEqual(t['reason'], 'liquidation')
+        self.assertAlmostEqual(t['pnl'] + p['qty'] * t['exit'] * X.FEE + p['qty'] * p['entry'] * X.FEE, -p['margin'], places=3)   # loses exactly the margin (+ fees)
+
+    def test_contract_mode_lots_leverage_margin_and_funding(self):
+        closes = [100.0] * 40 + [110.0] + [111.0] * 30
+        s = series_from(closes)
+        g = base_genes(risk=.05)
+        free = X.simulate(g, {'BTC-USDT-SWAP': s}, 30, len(closes))['positions'][0]
+        s2 = series_from(closes); s2.spec = (0.1, 1.0, 1.0)                     # 0.1 coin per contract, whole contracts
+        p = X.simulate(g, {'BTC-USDT-SWAP': s2}, 30, len(closes))['positions'][0]
+        self.assertAlmostEqual(p['qty'] / .1, round(p['qty'] / .1)); self.assertLessEqual(p['qty'], free['qty'])
+        dist = (p['entry'] - p['stop']) / p['entry']
+        self.assertEqual(p['lever'], max(1, min(X.LEVERAGE, int(.8 / dist))))
+        self.assertAlmostEqual(p['margin'], p['qty'] * p['entry'] / p['lever'], places=3)
+        self.assertAlmostEqual(p['liq'], p['entry'] * (1 - (1 / p['lever'] - X.MMR)))
+        s3 = series_from(closes); s3.spec = (1000.0, 1.0, 1.0)                  # one contract is bigger than the risk allows: no trade
+        self.assertEqual(X.simulate(g, {'BTC-USDT-SWAP': s3}, 30, len(closes))['positions'], [])
+        s4 = series_from(closes); s4.funding = {t: .001 for t in s4.ts if t % (8 * H) == 0}   # longs pay 0.1 % every 8 h
+        r4 = X.simulate(g, {'BTC-USDT-SWAP': s4}, 30, len(closes))
+        p4 = r4['positions'][0]
+        paid = sum(free['qty'] * s4.o[i] * .001 for i in range(len(closes)) if s4.ts[i] in s4.funding and s4.ts[i] > p4['opened'])
+        self.assertGreater(paid, 0); self.assertAlmostEqual(p4['funding'], round(paid, 4), places=3)
+        r1 = X.simulate(g, {'BTC-USDT-SWAP': series_from(closes)}, 30, len(closes))
+        self.assertAlmostEqual(r1['equity'] - r4['equity'], paid, places=6)
+
+    def test_funding_map_defaults_before_history(self):
+        ts = [T0 + i * H for i in range(48)]
+        eight = [t for t in ts if t % (8 * H) == 0]
+        rows = [[eight[-1], -.0003]]
+        m = D.funding_map(rows, ts)
+        self.assertEqual(m[eight[-1]], -.0003)
+        self.assertEqual({t: v for t, v in m.items() if t != eight[-1]}, {t: D.FUNDING_DEFAULT for t in eight[:-1]})
 
     def test_time_exit_and_metrics(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 10

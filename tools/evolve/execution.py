@@ -2,8 +2,13 @@
 
 Rules (identical in every caller):
 - Signals are computed on a closed bar; the order fills at the NEXT bar's open, with slippage and a taker fee.
-- One position per instrument and at most MAX_POSITIONS at once; size = equity × risk ÷ stop distance, notional capped at
-  MAX_NOTIONAL × equity.
+- One position per instrument and at most MAX_POSITIONS at once; size = equity × risk ÷ stop distance.
+- Contract mode (the same rules as the OKX mirror, tools/okx_demo_trader.py): the size is rounded down to whole lots of
+  the coin's contract (`Series.spec` = ctVal, lotSz, minSz) and skipped below the minimum; leverage = min(10, 0.8 ÷ stop
+  distance %), isolated margin = notional ÷ leverage, and an entry is skipped when its margin exceeds 95 % of the free
+  margin (equity − margin in use); stops closer than 0.2 % are skipped. A gap through the liquidation price loses the
+  whole isolated margin. Funding (`Series.funding`, {ts: rate}) is paid / received on every funding time a position is
+  held: notional × rate, longs pay positive rates.
 - Stop and target are checked inside each later bar; if a bar touches both, the stop is assumed first (conservative);
   a gap through the stop fills at the open. Positions also exit at the close after `max_hold` bars.
 - Equity is marked to market at every close; max drawdown is measured on that curve.
@@ -15,7 +20,10 @@ import math
 
 FEE = .0005          # taker fee per side
 SLIP = .0002         # slippage per fill
-MAX_NOTIONAL = 3.0   # per position, × equity
+LEVERAGE = 10        # most leverage per position (the OKX mirror's MAX_LEVERAGE)
+MMR = .005           # maintenance margin rate used for the liquidation price
+MARGIN_USE = .95     # an entry may use at most this share of the free margin
+MIN_STOP_DIST = .002 # stops closer than this (fraction of price) are skipped, as on OKX
 START_EQUITY = 10000.0
 MAX_HOLD_H = 720     # longest hold in hours, whatever the timeframe
 MAX_POSITIONS = 3    # open positions per strategy at the same time; extra signals wait until one closes
@@ -26,9 +34,10 @@ HOUR = 3600_000
 class Series:
     """One instrument's 1H candles (volume optional) with lazily cached indicators. `ref` is the BTC series on the
     same timeline (relative strength); the BTC series itself has no ref."""
-    def __init__(self, inst, ts, o, h, l, c, v=None, ref=None):
+    def __init__(self, inst, ts, o, h, l, c, v=None, ref=None, spec=None, funding=None):
         self.inst, self.ts, self.o, self.h, self.l, self.c = inst, ts, o, h, l, c
         self.v, self.ref = v, ref
+        self.spec, self.funding = spec, funding     # (ctVal, lotSz, minSz) and {ts: funding rate}; None = continuous size / no funding
         self.n = len(ts)
         self._cache = {}
 
@@ -283,6 +292,14 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     rr, trail = g['target_rr'], g.get('trail', 0)
     hold = min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H)
     for i in range(start, end):
+        # 0) funding at this hour, on positions held into it
+        for inst, p in pos.items():
+            f = series[inst].funding
+            if f:
+                rate = f.get(ts0[i])
+                if rate:
+                    pay = p['qty'] * series[inst].o[i] * rate * p['side']
+                    cash -= pay; p['funding'] += pay
         # 1) fills at this bar's open for signals decided on the previous close
         for inst, d in pending.items():
             s = series[inst]
@@ -290,20 +307,33 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
             if dist <= 0 or inst in pos or len(pos) >= MAX_POSITIONS:
                 continue
             px = s.o[i] * (1 + SLIP * d)
+            if dist / px < MIN_STOP_DIST:
+                continue
             mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items())
-            qty = min(mark * g['risk'] / dist, mark * MAX_NOTIONAL / px)
-            if qty <= 0:
+            qty = mark * g['risk'] / dist
+            if s.spec:
+                ct, lot, mn = s.spec
+                qty = math.floor(qty / ct / lot + 1e-9) * lot
+                if qty <= 0 or qty < mn - 1e-12:
+                    continue
+                qty *= ct
+            lever = max(1, min(LEVERAGE, int(.8 / (dist / px))))
+            margin = qty * px / lever
+            if qty <= 0 or margin > (mark - sum(p['margin'] for p in pos.values())) * MARGIN_USE:
                 continue
             cash -= qty * px * FEE
             pos[inst] = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None,
-                             opened=s.ts[i], bar=i, fee=qty * px * FEE, dist=dist)
+                             opened=s.ts[i], bar=i, fee=qty * px * FEE, dist=dist, lever=lever, margin=margin,
+                             liq=px * (1 - d * (1 / lever - MMR)), funding=0.0)
         pending, dists = {}, {}
         # 2) exits inside this bar
         for inst in list(pos):
             p, s = pos[inst], series[inst]
             o, h, l, c = s.o[i], s.h[i], s.l[i], s.c[i]
             exit_px, why = None, None
-            if p['side'] == 1:
+            if (o - p['liq']) * p['side'] <= 0:               # gapped through the liquidation price: the isolated margin is gone
+                exit_px, why = p['entry'] - p['side'] * p['margin'] / p['qty'], 'liquidation'
+            elif p['side'] == 1:
                 if o <= p['stop']: exit_px, why = o, 'stop'
                 elif l <= p['stop']: exit_px, why = p['stop'], 'stop'
                 elif p['target'] and o >= p['target']: exit_px, why = o, 'target'
@@ -318,12 +348,13 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
             if exit_px is None and close_at_end and i == end - 1:
                 exit_px, why = c, 'switch'
             if exit_px is not None:
-                exit_px *= (1 - SLIP * p['side'])
+                if why != 'liquidation':
+                    exit_px *= (1 - SLIP * p['side'])
                 fee = p['qty'] * exit_px * FEE
                 pnl = p['qty'] * (exit_px - p['entry']) * p['side'] - fee
                 cash += pnl
                 trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=exit_px, opened=p['opened'], closed=s.ts[i],
-                                   pnl=pnl - p['fee'], reason=why))
+                                   pnl=pnl - p['fee'] - p['funding'], funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why))
                 del pos[inst]
             elif trail:                                     # after the bar: follow the best price, never loosen
                 p['stop'] = max(p['stop'], h - p['dist']) if p['side'] == 1 else min(p['stop'], l + p['dist'])
@@ -345,7 +376,8 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     metrics = dict(ret=round((eq / equity - 1) * 100, 3), max_dd=round(max_dd * 100, 3), trades=len(trades),
                    win_rate=round(wins / len(trades) * 100, 1) if trades else 0.0,
                    profit_factor=round(gross_win / gross_loss, 3) if gross_loss > 0 else (None if not trades else 99.0))
-    open_positions = [dict(inst=k, side=p['side'], entry=p['entry'], qty=p['qty'], stop=p['stop'], target=p['target'], opened=p['opened'])
+    open_positions = [dict(inst=k, side=p['side'], entry=p['entry'], qty=p['qty'], stop=p['stop'], target=p['target'], opened=p['opened'],
+                           lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4))
                       for k, p in pos.items()]
     return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, metrics=metrics, pending=pending)
 
