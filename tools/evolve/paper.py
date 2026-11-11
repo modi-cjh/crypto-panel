@@ -95,6 +95,9 @@ def _new_slot(equity):
     return dict(start_equity=round(equity, 2), segments=[], closed_trades=[], curve_done=[])
 
 
+LEGACY_SLOTS = 5          # the old account had five slots of 1/5 each
+
+
 def _migrate(paper, series):
     """Single-champion paper account → team slots. The old account's equity is split equally across the slots."""
     if 'slots' in paper:
@@ -104,7 +107,7 @@ def _migrate(paper, series):
         seg = paper['segments'][-1]
         equity = run_segment(seg, seg['genes'], series, close_at_end=True)['equity']
     legacy = [{k: v for k, v in sg.items() if k != 'genes'} for sg in paper.get('segments', [])]
-    return dict(start_equity=paper.get('start_equity', START_EQUITY), slots=[_new_slot(equity / TEAM_SIZE) for _ in range(TEAM_SIZE)],
+    return dict(start_equity=paper.get('start_equity', START_EQUITY), slots=[_new_slot(equity / LEGACY_SLOTS) for _ in range(LEGACY_SLOTS)],
                 legacy_segments=legacy, legacy_trades=paper.get('closed_trades', []))
 
 
@@ -149,8 +152,8 @@ def _legacy_update(state, series, changes):
     last_ts = s.ts[-1]
     paper = state['paper'] = _migrate(state.get('paper') or dict(start_equity=START_EQUITY), series)
     slots, team = paper['slots'], state.get('team', [])
-    while len(slots) < TEAM_SIZE:
-        slots.append(_new_slot(paper['start_equity'] / TEAM_SIZE))
+    while len(slots) < LEGACY_SLOTS:
+        slots.append(_new_slot(paper['start_equity'] / LEGACY_SLOTS))
     leader = state.get('champion')
     _CTX['extra'] = _others_equity(slots, series)
     for slot_i, old, new, reason in changes:
@@ -237,8 +240,9 @@ def _convert(state, series, last_ts):
     return state['paper']
 
 
-def update(state, series, changes):
-    """Apply this run's seat and leader changes, replay the shared account, and return (dashboard view, mirror signals)."""
+def update(state, series, changes, price_off=None):
+    """price_off: data.price_check ranges {inst: [[from_ts, to_ts or None]]} — coins that take no new entry in those ranges.
+    Apply this run's seat and leader changes, replay the shared account, and return (dashboard view, mirror signals)."""
     nodes, s = state['nodes'], next(iter(series.values()))
     last_ts = s.ts[-1]
     paper = state.get('paper') or {}
@@ -279,7 +283,9 @@ def update(state, series, changes):
     idx = lambda ts: _index(series, ts)
     segs = [dict(id=g['id'], genes=g['genes'], from_i=idx(g['from_ts']), wind_i=idx(g['wind_ts']) if g['wind_ts'] is not None else None,
                  boosts=[(idx(a), idx(b) if b is not None else None) for a, b in g['boosts']]) for g in acc['segs']]
-    res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'])
+    blocked = {inst: [(idx(a), idx(b) if b is not None else None) for a, b in rs] for inst, rs in (price_off or {}).items()}
+    off_now = {inst for inst, rs in (price_off or {}).items() if rs and rs[-1][1] is None}
+    res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked)
     by = {g['id']: g for g in acc['segs']}
     rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     who = lambda sid: by[sid]['champion']
@@ -288,7 +294,7 @@ def update(state, series, changes):
     trades = [tag(t) for t in res['trades']]
     pending, seen = [], set()
     for sid, inst, d, dist, b in sorted(res['pending'], key=lambda x: not x[4]):     # one per coin: the order the account fills them in
-        if inst not in seen:
+        if inst not in seen and inst not in off_now:
             seen.add(inst); pending.append(dict(inst=inst, side=d, champion=who(sid)))
     members = []
     for g in acc['segs']:
@@ -306,6 +312,8 @@ def update(state, series, changes):
         signals[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], opened=p['opened'], strategy='evolved',
                                   champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1, **size(p['boost'], by[p['seg']]['genes']['risk']))   # the base risk: the mirror applies the majors / crowding steps itself
     for sid, inst, d, dist, b in res['pending']:
+        if inst in off_now:                              # the account will not fill it, so the mirror must not either
+            continue
         g = by[sid]
         signals.setdefault(inst, dict(_signal_from_pending(inst, d, g['genes'], series, last_ts, g['champion']), rank=rank.get(g['champion'], 99) + 1,
                                       **size(b, g['genes']['risk'])))
@@ -315,7 +323,7 @@ def update(state, series, changes):
     seats.sort(key=lambda x: (x['from_ts'], x['reason'] == 'leader'), reverse=True)
     equity = round(res['equity'], 2)
     view = dict(equity=equity, start_equity=paper['start_equity'], ret=round((equity / paper['start_equity'] - 1) * 100, 3),
-                mode='cross', account_from=acc['from_ts'], account_start=acc['start_equity'], halted=res['halted'],
+                price_off=sorted(off_now), mode='cross', account_from=acc['from_ts'], account_start=acc['start_equity'], halted=res['halted'],
                 rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
                            majors=list(ACCOUNT_RULES['majors']), major_factor=ACCOUNT_RULES['major_factor']),
                 curve=([p for p in legacy.get('curve') or [] if p[0] < acc['from_ts']] + [list(p) for p in res['curve']])[-400:],

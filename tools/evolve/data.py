@@ -187,6 +187,43 @@ def load_series(data_dir, now_ms, get=okx_get, instruments=None, cache_dir=None)
     return out
 
 
+PRICE_TOLERANCE = .01     # a coin whose OKX demo price is further than this from the real price takes no new entry
+
+
+def price_check(data_dir, bar_ts, get=okx_get, demo_get=None):
+    """Compare every universe coin's OKX demo price with the real market. The demo order book is its own market: small
+    coins there can sit 40 % or more away from the real price, so a paper signal cannot be followed. Coins further than
+    PRICE_TOLERANCE away are blocked for new entries from `bar_ts` until they are back in line; the ranges are kept in
+    universe.json ('price_off': {inst: [[from_ts, to_ts or None], ...]}) so the paper account replays the same way.
+    Returns (ranges, {inst: deviation} for the coins blocked now)."""
+    path = Path(data_dir) / 'evolve' / 'universe.json'
+    u = json.loads(path.read_text())
+    demo_get = demo_get or (lambda p: okx_get(p, demo=True))
+    last = lambda rows: {t['instId']: float(t.get('last') or 0) for t in rows}
+    try:
+        live, demo = last(get('market/tickers?instType=SWAP')), last(demo_get('market/tickers?instType=SWAP'))
+    except RuntimeError as e:                     # keep the previous state when the check itself fails
+        print(f'模拟盘价格检查跳过: {e}')
+        return u.get('price_off', {}), u.get('price_off_now', {})
+    ranges, now_off = u.setdefault('price_off', {}), {}
+    for inst in u['instruments']:
+        lp, dp = live.get(inst, 0), demo.get(inst, 0)
+        dev = dp / lp - 1 if lp > 0 and dp > 0 else None
+        off = dev is None or abs(dev) > PRICE_TOLERANCE
+        rs = ranges.setdefault(inst, [])
+        if off:
+            now_off[inst] = round(dev, 4) if dev is not None else None
+            if not rs or rs[-1][1] is not None:
+                rs.append([bar_ts, None])
+        elif rs and rs[-1][1] is None:
+            rs[-1][1] = bar_ts
+        if not rs:
+            ranges.pop(inst)
+    u['price_off_now'] = now_off
+    path.write_text(json.dumps(u, indent=1))
+    return ranges, now_off
+
+
 def _safe_update(cache, inst, now_ms, get):
     try:
         return update_candles(cache, inst, now_ms, get)

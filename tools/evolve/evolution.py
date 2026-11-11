@@ -11,7 +11,7 @@ from execution import simulate, entries
 from genome import random_genome, crossover, mutate, fix, SPECIES
 import data as D
 
-POPULATION, ELITES, TOURNAMENT, CROSSOVER, IMMIGRANTS = 40, 4, 3, .7, 2
+POPULATION, ELITES, TOURNAMENT, CROSSOVER, IMMIGRANTS = 60, 6, 3, .7, 3
 MIN_PER_SPECIES = 3     # diversity floor: every species keeps at least this many members each generation
 HALL_SIZE, KEEP_GENERATIONS, CURVE_POINTS = 20, 12, 40
 HALL_PER_DIRECTION = 3   # besides the top HALL_SIZE, the hall keeps the best qualified long-only / short-only / both
@@ -32,11 +32,12 @@ STREAK = 3
 RETAIN = dict(min_ret=-5.0, max_dd=30.0)
 # The paper account is run by a team: the top TEAM_SIZE qualified strategies (at most TEAM_SPECIES_CAP per species), each
 # with an equal share of capital, so one quiet strategy does not leave the whole account idle.
-TEAM_SIZE, TEAM_SPECIES_CAP = 5, 2
+TEAM_SIZE, TEAM_SPECIES_CAP = 8, 2      # 8 seats (5 before): more trades a day, so the paper record says something sooner
 # Direction quota: at most this many seats for long-only or for short-only strategies ('both' is not limited). The
 # training window can be one long trend (2025-11 → 2026-07 fell 31–56 %), which breeds a population of short sellers;
 # the quota keeps seats for qualified strategies of the other direction, so a trend reversal does not hit every seat.
-TEAM_DIRECTION_CAP = 3
+TEAM_DIRECTION_CAP = 5
+UNQUALIFIED_RUNS = 3      # a member that failed the gates this many runs in a row gives its seat to a qualified candidate
 
 
 def downsample(curve, n=CURVE_POINTS):
@@ -330,6 +331,17 @@ def choose_team(state, now_ms):
             pick = (candidates(ready, m['id']) or candidates(state['hall'], m['id']) or [None])[0]
             if pick:
                 changes.append((slot, m['id'], pick, 'breakdown')); team[slot] = dict(id=pick, since=now_ms)
+    # Members that stopped qualifying: after UNQUALIFIED_RUNS runs in a row the seat goes to a qualified candidate (one per
+    # run, tenure or fitness do not protect it). Without a candidate the member stays rather than leave the seat empty.
+    unq = state.get('unqualified', {})
+    state['unqualified'] = unq = {m['id']: unq.get(m['id'], 0) + 1 for m in team if not nodes[m['id']].get('qualified')}
+    if not changes:
+        for slot, m in enumerate(team):
+            if unq.get(m['id'], 0) >= UNQUALIFIED_RUNS:
+                pick = (candidates(ready, m['id']) or [None])[0]
+                if pick:
+                    changes.append((slot, m['id'], pick, 'unqualified')); team[slot] = dict(id=pick, since=now_ms)
+                    break
     while len(team) < TEAM_SIZE:                               # empty seats are filled with the best qualified;
         ids = {m['id'] for m in team}                           # the species cap is a preference, not a reason to leave a seat empty
         pick = (candidates(state['hall']) or [nid for nid in state['hall'] if nid not in ids and nid in nodes and direction_ok(nid)]

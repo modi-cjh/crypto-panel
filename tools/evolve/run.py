@@ -102,7 +102,11 @@ def main(argv=None):
     obs = obs or D.observe_volatility(series)
     changes = E.choose_team(state, now)
     champion, switched = state['champion'], bool(changes)
-    paper_view, signals = P.update(state, series, changes)
+    real_universe = (out / 'universe.json').exists()          # offline tests trade a fixed list and have no demo market to compare with
+    price_off, off_now = D.price_check(args.data, next(iter(series.values())).ts[-1]) if real_universe else ({}, {})
+    if off_now:
+        print('模拟盘价格偏离真实行情 > 1%，暂停开新仓：' + '、'.join(f"{k.split('-')[0]} {v * 100:+.0f}%" if v is not None else k.split('-')[0] for k, v in off_now.items()))
+    paper_view, signals = P.update(state, series, changes, price_off)
     E.prune(state)
     timing = dict(seconds=round(time.time() - t0, 1), generations=len(rows), switched=switched, changes=[dict(slot=c[0], old=c[1], new=c[2], reason=c[3]) for c in changes])
     state_path.write_text(json.dumps(state, separators=(',', ':')))

@@ -46,6 +46,7 @@ RISK_RANGE = (.01, .05)   # evolved mode: each order risks its strategy's own ri
 LEADER_RISK, LEADER_LEVERAGE = .05, 50
 MARGIN_MODE = 'isolated'          # evolved mode: 'cross' (全仓) — the team shares one account and its margin, like the paper account
 MAJORS, MAJOR_FACTOR = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'), 2.0   # majors risk twice as much (execution.ACCOUNT_RULES)
+PRICE_TOLERANCE = .01             # no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
 CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
 SAME_SIDE_CAP = .05
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
@@ -86,6 +87,16 @@ def configure_volume_test(now=None, universe=None):
         p['instruments'] = INSTRUMENTS
     SAME_SIDE_CAP = p['same_side_cap']
     return p
+
+
+def real_price(inst):
+    """Last price on the real OKX market (public, no keys, no demo header), or None. The demo order book is a separate
+    market: small coins there can sit far from the real price the strategies trade on."""
+    try:
+        out = subprocess.run(['curl', '-sS', '-m', '10', f'{BASE}/api/v5/market/ticker?instId={inst}'], capture_output=True, text=True).stdout
+        return float(json.loads(out)['data'][0]['last']) or None
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
 
 
 class OKXError(RuntimeError):
@@ -237,6 +248,7 @@ class Mirror:
     def __init__(self, client, state, paper, now, dry_run=False):
         self.c, self.s, self.paper, self.now, self.dry = client, state, paper, now, dry_run
         self.actions = []
+        self.live = None                  # set to real_price when following the evolution champions
         self.new_order_risk = {}
         self.now_ms = int(now.timestamp() * 1000)
 
@@ -317,6 +329,10 @@ class Mirror:
         side = p['side']
         if not px:
             return self.log('skip', inst, reason='no_price')
+        if self.live:                          # the paper signal was made on real prices: do not trade a demo price that is somewhere else
+            real = self.live(inst)
+            if real and abs(px / real - 1) > PRICE_TOLERANCE:
+                return self.log('skip', inst, reason='demo_price_off', price=px, real_price=real)
         dist = (px - p['stop']) / px * side
         if dist < MIN_STOP_DIST:
             return self.log('skip', inst, reason='stop_too_close_or_crossed', price=px, stop=p['stop'])
@@ -623,6 +639,8 @@ def main():
     state = json.loads(state_path.read_text()) if state_path.exists() else new_state()
     dry = args.action == 'dry-run'
     mirror = Mirror(OKX(*creds), json.loads(json.dumps(state)) if dry else state, paper, datetime.now(timezone.utc), dry)
+    if applied.get('mode') == 'evolved':
+        mirror.live = real_price
     error = None
     try:
         if args.action == 'snapshot':
