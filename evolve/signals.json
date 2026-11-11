@@ -1,12 +1,12 @@
 {
- "updated_at": "2026-11-11T01:21:27Z",
- "champion": "s12821",
+ "updated_at": "2026-11-11T02:47:32Z",
+ "champion": "s13164",
  "team": [
   "s9127",
   "s12407",
   "s12473",
   "s12821",
-  "s8560"
+  "s13164"
  ],
  "instruments": [
   "BTC-USDT-SWAP",
@@ -110,68 +110,5 @@
   "PEOPLE-USDT-SWAP",
   "MINA-USDT-SWAP"
  ],
- "positions": {
-  "BTC-USDT-SWAP": {
-   "side": -1,
-   "entry": 73162.8645,
-   "stop": 76270.1625910956,
-   "tp": 70708.09900803446,
-   "opened": 1794326400000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s8560",
-   "rank": 2,
-   "risk": 0.0163
-  },
-  "SOL-USDT-SWAP": {
-   "side": -1,
-   "entry": 82.213554,
-   "stop": 87.98856346123318,
-   "tp": 77.65129652562578,
-   "opened": 1794326400000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s8560",
-   "rank": 2,
-   "risk": 0.0163
-  },
-  "XRP-USDT-SWAP": {
-   "side": -1,
-   "entry": 1.04109174,
-   "stop": 1.1201153054223327,
-   "tp": 0.9786631233163571,
-   "opened": 1794326400000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s8560",
-   "rank": 2,
-   "risk": 0.0163
-  },
-  "ICP-USDT-SWAP": {
-   "side": 1,
-   "entry": 2.559,
-   "stop": 2.3637022788469233,
-   "tp": 2.7132851997109313,
-   "opened": 1794358800000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s8560",
-   "pending": true,
-   "rank": 2,
-   "risk": 0.0163
-  },
-  "SPX-USDT-SWAP": {
-   "side": 1,
-   "entry": 0.3669,
-   "stop": 0.32683744703283746,
-   "tp": 0.3985494168440584,
-   "opened": 1794358800000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s8560",
-   "pending": true,
-   "rank": 2,
-   "risk": 0.0163
-  }
- }
+ "positions": {}
 }

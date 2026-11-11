@@ -394,6 +394,10 @@
   [
    1794360073212,
    7355.26
+  ],
+  [
+   1794365346318,
+   7337.03
   ]
  ],
  "mirrored": {
@@ -645,8 +649,9 @@
    "entry": 83.29,
    "clOrdId": "evsol1794326400",
    "opened_at": 1794344377703,
-   "status": "open",
-   "ordId": "4088338427011387392"
+   "status": "done",
+   "ordId": "4088338427011387392",
+   "closed_reason": "paper_closed"
   },
   "BTC-USDT-SWAP|1794326400000": {
    "inst": "BTC-USDT-SWAP",
@@ -674,8 +679,9 @@
    "entry": 2.581,
    "clOrdId": "evicp1794358800",
    "opened_at": 1794360073212,
-   "status": "open",
-   "ordId": "4088865074894589952"
+   "status": "done",
+   "ordId": "4088865074894589952",
+   "closed_reason": "paper_closed"
   }
  },
  "paused": false,
@@ -723,6 +729,20 @@
    "funding": 664.6544356233742,
    "close_price": 1.0407978044072703,
    "fee": -14.05537995
+  },
+  "2026-11-11T02:49:06Z|SOL-USDT-SWAP": {
+   "pnl": 3.12969084,
+   "price_pnl": 3.597,
+   "funding": 0.11733414,
+   "close_price": 89.12,
+   "fee": -0.5846433
+  },
+  "2026-11-11T02:49:06Z|ICP-USDT-SWAP": {
+   "pnl": -3.7759842325,
+   "price_pnl": -2.031009,
+   "funding": 0.0,
+   "close_price": 2.576,
+   "fee": -1.7449752325
   }
  }
 }

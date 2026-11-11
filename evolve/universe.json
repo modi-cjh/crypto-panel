@@ -102,5 +102,507 @@
   "PENDLE-USDT-SWAP",
   "PEOPLE-USDT-SWAP",
   "MINA-USDT-SWAP"
- ]
+ ],
+ "specs": {
+  "BTC-USDT-SWAP": [
+   0.01,
+   0.01,
+   0.01
+  ],
+  "ETH-USDT-SWAP": [
+   0.1,
+   0.01,
+   0.01
+  ],
+  "SOL-USDT-SWAP": [
+   1.0,
+   0.01,
+   0.01
+  ],
+  "PEPE-USDT-SWAP": [
+   10000000.0,
+   0.1,
+   0.1
+  ],
+  "XRP-USDT-SWAP": [
+   100.0,
+   0.01,
+   0.01
+  ],
+  "INIT-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "HYPE-USDT-SWAP": [
+   0.1,
+   1.0,
+   1.0
+  ],
+  "DOGE-USDT-SWAP": [
+   1000.0,
+   0.01,
+   0.01
+  ],
+  "NEAR-USDT-SWAP": [
+   10.0,
+   0.1,
+   0.1
+  ],
+  "UNI-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "PUMP-USDT-SWAP": [
+   1000.0,
+   1.0,
+   1.0
+  ],
+  "ONE-USDT-SWAP": [
+   100.0,
+   1.0,
+   1.0
+  ],
+  "WLD-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "TRUMP-USDT-SWAP": [
+   0.1,
+   1.0,
+   1.0
+  ],
+  "ARB-USDT-SWAP": [
+   10.0,
+   0.1,
+   0.1
+  ],
+  "SUI-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "LINK-USDT-SWAP": [
+   1.0,
+   0.1,
+   0.1
+  ],
+  "ENA-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "AAVE-USDT-SWAP": [
+   0.1,
+   0.1,
+   0.1
+  ],
+  "BNB-USDT-SWAP": [
+   0.01,
+   1.0,
+   1.0
+  ],
+  "AVAX-USDT-SWAP": [
+   1.0,
+   0.1,
+   0.1
+  ],
+  "FIL-USDT-SWAP": [
+   0.1,
+   1.0,
+   1.0
+  ],
+  "BCH-USDT-SWAP": [
+   0.1,
+   0.1,
+   0.1
+  ],
+  "ONDO-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "ADA-USDT-SWAP": [
+   100.0,
+   0.1,
+   0.1
+  ],
+  "INJ-USDT-SWAP": [
+   0.1,
+   1.0,
+   1.0
+  ],
+  "LTC-USDT-SWAP": [
+   1.0,
+   0.1,
+   0.1
+  ],
+  "OKB-USDT-SWAP": [
+   0.01,
+   1.0,
+   1.0
+  ],
+  "PENGU-USDT-SWAP": [
+   100.0,
+   1.0,
+   1.0
+  ],
+  "TAO-USDT-SWAP": [
+   0.01,
+   1.0,
+   1.0
+  ],
+  "STRK-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "ACT-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "MERL-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "XPL-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "DOT-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "USELESS-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "ZRO-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "XLM-USDT-SWAP": [
+   100.0,
+   0.1,
+   0.1
+  ],
+  "TIA-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "OP-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "TRX-USDT-SWAP": [
+   1000.0,
+   0.01,
+   0.01
+  ],
+  "ETHFI-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "ASTER-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "PARTI-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "APT-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "WLFI-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "CRV-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "SOPH-USDT-SWAP": [
+   100.0,
+   1.0,
+   1.0
+  ],
+  "PI-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "SHIB-USDT-SWAP": [
+   1000000.0,
+   0.1,
+   0.1
+  ],
+  "ICP-USDT-SWAP": [
+   0.01,
+   1.0,
+   1.0
+  ],
+  "HBAR-USDT-SWAP": [
+   100.0,
+   0.1,
+   0.1
+  ],
+  "SAND-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "H-USDT-SWAP": [
+   100.0,
+   0.1,
+   0.1
+  ],
+  "AERO-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "RSR-USDT-SWAP": [
+   100.0,
+   1.0,
+   1.0
+  ],
+  "ETC-USDT-SWAP": [
+   10.0,
+   0.01,
+   0.01
+  ],
+  "JUP-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "APR-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "GRASS-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "HUMA-USDT-SWAP": [
+   100.0,
+   1.0,
+   1.0
+  ],
+  "BAT-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "MET-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "PYTH-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "RAY-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "CORE-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "STX-USDT-SWAP": [
+   10.0,
+   0.1,
+   0.1
+  ],
+  "WIF-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "MON-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "BOME-USDT-SWAP": [
+   1000.0,
+   1.0,
+   1.0
+  ],
+  "JTO-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "ATOM-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "FARTCOIN-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "AR-USDT-SWAP": [
+   0.1,
+   1.0,
+   1.0
+  ],
+  "POL-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "MUBARAK-USDT-SWAP": [
+   100.0,
+   1.0,
+   1.0
+  ],
+  "ALGO-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "BONK-USDT-SWAP": [
+   100000.0,
+   1.0,
+   1.0
+  ],
+  "RENDER-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "LDO-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "ORDI-USDT-SWAP": [
+   0.1,
+   1.0,
+   1.0
+  ],
+  "MAGIC-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "KAITO-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "VIRTUAL-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "DOOD-USDT-SWAP": [
+   1000.0,
+   1.0,
+   1.0
+  ],
+  "BERA-USDT-SWAP": [
+   0.1,
+   1.0,
+   1.0
+  ],
+  "BARD-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "PNUT-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "ZK-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "SPX-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "APE-USDT-SWAP": [
+   0.1,
+   1.0,
+   1.0
+  ],
+  "GALA-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "SOON-USDT-SWAP": [
+   10.0,
+   0.1,
+   0.1
+  ],
+  "W-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "EIGEN-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "HOME-USDT-SWAP": [
+   100.0,
+   1.0,
+   1.0
+  ],
+  "2Z-USDT-SWAP": [
+   10.0,
+   1.0,
+   1.0
+  ],
+  "PENDLE-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "PEOPLE-USDT-SWAP": [
+   100.0,
+   1.0,
+   1.0
+  ],
+  "MINA-USDT-SWAP": [
+   1.0,
+   1.0,
+   1.0
+  ]
+ }
 }
