@@ -357,9 +357,21 @@ def choose_team(state, now_ms):
                 changes.append((slot, weakest['id'], nid, 'challenger')); team[slot] = dict(id=nid, since=now_ms)
                 break
     state['team'] = team
-    leader = max(team, key=lambda m: nodes[m['id']]['fitness'], default=None)
-    state['champion'] = leader['id'] if leader else None
-    state['champion_since'] = leader['since'] if leader else None
+    # The leader (rank 1) trades with the boosted size (paper.LEADER_RISK), so it must not flip between members from run
+    # to run: it keeps the title while it is on the team, until MIN_TENURE has passed AND another member's fitness is
+    # clearly higher (SWITCH_MARGIN).
+    best = max(team, key=lambda m: nodes[m['id']]['fitness'], default=None)
+    cur = next((m for m in team if m['id'] == state.get('champion')), None)
+    since = state.get('leader_since') or (cur or {}).get('since') or now_ms
+    if cur and best and best['id'] != cur['id']:
+        fc, fb = nodes[cur['id']]['fitness'], nodes[best['id']]['fitness']
+        if not (now_ms - since >= MIN_TENURE and fb > max(fc * SWITCH_MARGIN, fc + .01)):
+            best = cur
+    if best and (not cur or best['id'] != cur['id']):
+        since = now_ms
+    state['champion'] = best['id'] if best else None
+    state['champion_since'] = best['since'] if best else None
+    state['leader_since'] = since if best else None
     return changes
 
 

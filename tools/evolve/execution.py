@@ -277,11 +277,15 @@ def _species_signal(g, s, i):
 
 
 # ----------------------------------------------------------------- the engine
-def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, curve_every=24, events=None, stop_entries_at=None):
+def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, curve_every=24, events=None, stop_entries_at=None,
+             risk=None, lever_cap=None, extra_equity=None):
     """Run genome g over bar indexes [start, end) of every series (all series share the same timeline).
     `events` = entries(g, series), when the caller already computed them.
     `stop_entries_at`: from this bar index on no new signals are taken; open positions run to their own exits
     (a member that lost its seat winds down instead of being closed at market).
+    `risk` / `lever_cap` override the genome's risk and the LEVERAGE cap, and `extra_equity` ({ts: USDT}, carried forward)
+    is equity outside this run that sizing and the margin check may count on: the team leader sizes against the whole
+    account, not only its own slot (paper.py).
 
     Returns dict(equity, trades, curve, positions, metrics). `positions` are still open at `end` unless close_at_end.
     """
@@ -292,8 +296,12 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     cash, pos, trades, curve = equity, {}, [], []
     peak, max_dd, pending, dists = equity, 0.0, {}, {}
     rr, trail = g['target_rr'], g.get('trail', 0)
+    risk = g['risk'] if risk is None else risk
+    cap, extra = lever_cap or LEVERAGE, 0.0
     hold = min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H)
     for i in range(start, end):
+        if extra_equity is not None:
+            extra = extra_equity.get(ts0[i], extra)
         # 0) funding at this hour, on positions held into it
         for inst, p in pos.items():
             f = series[inst].funding
@@ -311,15 +319,15 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
             px = s.o[i] * (1 + SLIP * d)
             if dist / px < MIN_STOP_DIST:
                 continue
-            mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items())
-            qty = mark * g['risk'] / dist
+            mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items()) + extra
+            qty = mark * risk / dist
             if s.spec:
                 ct, lot, mn = s.spec
                 qty = math.floor(qty / ct / lot + 1e-9) * lot
                 if qty <= 0 or qty < mn - 1e-12:
                     continue
                 qty *= ct
-            lever = max(1, min(LEVERAGE, int(.8 / (dist / px))))
+            lever = max(1, min(cap, int(.8 / (dist / px))))
             margin = qty * px / lever
             if qty <= 0 or margin > (mark - sum(p['margin'] for p in pos.values())) * MARGIN_USE:
                 continue

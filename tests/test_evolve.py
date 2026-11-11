@@ -475,6 +475,43 @@ class EvolutionTests(unittest.TestCase):
         self.assertFalse([t for t in late if t['reason'] == 'switch'])
         self.assertAlmostEqual(view3['equity'], sum(m['equity'] for m in view3['members']), places=1)
 
+    def test_leader_sizes_against_the_whole_account_and_the_title_is_sticky(self):
+        closes = [100.0] * 40 + [110.0] + [111.0] * 30
+        s = series_from(closes); g = base_genes(risk=.02)
+        extra = {t: 8000.0 for t in s.ts}                                             # the other four slots
+        normal = X.simulate(g, {'BTC-USDT-SWAP': s}, 30, len(closes), equity=2000.0)['positions'][0]
+        lead = X.simulate(g, {'BTC-USDT-SWAP': series_from(closes)}, 30, len(closes), equity=2000.0, risk=P.LEADER_RISK, lever_cap=P.LEADER_LEVERAGE,
+                          extra_equity=extra)['positions'][0]
+        dist = lead['entry'] - lead['stop']
+        self.assertAlmostEqual(lead['qty'] * dist, 10000.0 * P.LEADER_RISK, delta=5)   # a stop costs 20 % of the whole account
+        self.assertAlmostEqual(normal['qty'] * dist, 2000.0 * .02, delta=.5)           # a normal member: 2 % of its own slot
+        self.assertEqual(lead['lever'], max(1, min(P.LEADER_LEVERAGE, int(.8 / (dist / lead['entry'])))))
+        self.assertGreater(lead['lever'], X.LEVERAGE)
+        self.assertLess((lead['entry'] - lead['liq']), lead['entry']); self.assertLess(lead['liq'], lead['stop'])   # the stop still comes before liquidation
+        # the title: stays with the leader while it is on the team, moves only after tenure and a clear lead
+        st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10), (2.0, True, 3, 10), (1.0, True, 3, 10)])
+        for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % 4]
+        E.update_hall(st); E.choose_team(st, T0)
+        self.assertEqual(st['champion'], ids[0])
+        st['nodes'][ids[1]]['fitness'] = 9.0
+        E.choose_team(st, T0 + 3600_000)
+        self.assertEqual(st['champion'], ids[0])                                      # better fitness, but tenure has not passed
+        E.choose_team(st, T0 + E.MIN_TENURE + 3600_000)
+        self.assertEqual(st['champion'], ids[1])
+        # paper: the leader's segment is boosted and its signals carry the leader size; a title change starts new segments
+        view, signals = P.update(st, self.sr, [(i, None, m['id'], 'first') for i, m in enumerate(st['team'])])
+        segs = {sl['segments'][-1]['champion']: sl['segments'][-1] for sl in st['paper']['slots'] if sl['segments']}
+        self.assertTrue(segs[ids[1]]['boost']); self.assertFalse(any(sg['boost'] for k, sg in segs.items() if k != ids[1]))
+        self.assertEqual(view['leader'], dict(id=ids[1], risk=.20, leverage=50)); self.assertEqual(view['members'][0]['id'], ids[1])
+        for sig in signals.values():
+            if sig['champion'] == ids[1]: self.assertEqual((sig['risk'], sig['leverage'], sig['leader']), (.20, 50, True))
+            else: self.assertEqual(sig['leverage'], 10); self.assertNotIn('leader', sig)
+        st['champion'] = ids[2]
+        P.update(st, self.sr, [])
+        slot_of = {sl['segments'][-1]['champion']: sl for sl in st['paper']['slots']}
+        self.assertEqual([slot_of[ids[1]]['segments'][-1]['reason'], slot_of[ids[1]]['segments'][-1]['boost']], ['demoted', False])
+        self.assertEqual([slot_of[ids[2]]['segments'][-1]['reason'], slot_of[ids[2]]['segments'][-1]['boost']], ['leader', True])
+
     def test_team_paper_slots_sum_and_mirror_signals_do_not_collide(self):
         st = E.init_state(5, self.sr, self.split)
         for nid in st['population'][:6]: st['nodes'][nid]['qualified'] = True

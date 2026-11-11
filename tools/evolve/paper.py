@@ -6,11 +6,17 @@ result is exactly what the backtest engine produces on live bars. When a seat ch
 new signals but its open positions are NOT closed: they wind down to their own stop / target / time exit (slot['winding']),
 and what they make or lose from then on is added to the slot. The new member starts with the slot's equity at the change.
 The account equity is the slots' sum.
+
+The team leader (rank 1, state['champion']) trades bigger, as the user chose: every trade risks LEADER_RISK of the WHOLE
+account (its own slot plus the other slots' equity at that bar) with up to LEADER_LEVERAGE× leverage. Its segment carries
+boost=True; when the title moves, the old leader's boosted segment winds down and it continues with a normal one.
 """
 from execution import simulate, stop_distance, START_EQUITY
 from evolution import TEAM_SIZE
 
 HOUR = 3600_000
+LEADER_RISK, LEADER_LEVERAGE = .20, 50
+_CTX = dict(extra={})        # per update(): {slot index: {ts: equity of the other slots}} for boosted segments
 
 
 def _index(series, ts):
@@ -26,8 +32,29 @@ def run_segment(seg, genes, series, close_at_end=False, wind_ts=None):
     start = _index(series, seg['from_ts'])
     if start >= s.n:
         return dict(equity=seg['start_equity'], trades=[], curve=[(seg['from_ts'], seg['start_equity'])], positions=[], pending={}, metrics=None)
+    boost = dict(risk=LEADER_RISK, lever_cap=LEADER_LEVERAGE, extra_equity=_CTX['extra'].get(seg.get('slot'), {})) if seg.get('boost') else {}
     return simulate(genes, series, start, s.n, equity=seg['start_equity'], close_at_end=close_at_end, curve_every=1,
-                    stop_entries_at=_index(series, wind_ts) if wind_ts is not None else None)
+                    stop_entries_at=_index(series, wind_ts) if wind_ts is not None else None, **boost)
+
+
+def _others_equity(slots, series):
+    """{slot index: {ts: summed equity of the OTHER slots}} on the series timeline, from each slot's finished curve and
+    its running normal (not boosted) segment. Boosted segments are left out so the leader's size never depends on itself."""
+    ts = next(iter(series.values())).ts
+    per = []
+    for slot in slots:
+        pts = [list(p) for p in slot['curve_done']]
+        seg = slot['segments'][-1] if slot['segments'] and slot['segments'][-1]['to_ts'] is None else None
+        if seg and not seg.get('boost'):
+            pts += [[t, e] for t, e in run_segment(seg, seg['genes'], series)['curve']]
+        out, k, last = [], 0, slot['start_equity']
+        for t in ts:
+            while k < len(pts) and pts[k][0] <= t:
+                last = pts[k][1]; k += 1
+            out.append(last)
+        per.append(out)
+    total = [sum(col) for col in zip(*per)] if per else []
+    return {i: {t: total[j] - per[i][j] for j, t in enumerate(ts)} for i in range(len(slots))}
 
 
 def _winding(slot, series):
@@ -58,8 +85,8 @@ def _retire(slot, series, last_ts):
         w['base'] = r['equity']
     slot['carry'] = 0.0
     if res['positions']:
-        slot['winding'].append(dict(champion=seg['champion'], species=seg['species'], genes=seg['genes'], from_ts=seg['from_ts'],
-                                    start_equity=seg['start_equity'], wind_ts=last_ts, base=res['equity']))
+        slot['winding'].append(dict(champion=seg['champion'], species=seg['species'], genes=seg['genes'], from_ts=seg['from_ts'], slot=seg.get('slot'),
+                                    start_equity=seg['start_equity'], wind_ts=last_ts, base=res['equity'], boost=bool(seg.get('boost'))))
     return res['equity'] + offset
 
 
@@ -123,20 +150,30 @@ def update(state, series, changes):
     slots, team = paper['slots'], state.get('team', [])
     while len(slots) < TEAM_SIZE:
         slots.append(_new_slot(paper['start_equity'] / TEAM_SIZE))
+    leader = state.get('champion')
+    _CTX['extra'] = _others_equity(slots, series)
     for slot_i, old, new, reason in changes:
         slot = slots[slot_i]
         equity = _retire(slot, series, last_ts) if slot['segments'] and slot['segments'][-1]['to_ts'] is None else _idle_equity(slot)
         node = nodes[new]
         slot['segments'].append(dict(champion=new, slot=slot_i, genes=node['genes'], species=node['species'], from_ts=last_ts, reason=reason,
-                                     start_equity=round(equity, 2), to_ts=None, end_equity=None))
+                                     start_equity=round(equity, 2), to_ts=None, end_equity=None, boost=new == leader))
     for slot_i, m in enumerate(team):        # a seated member whose slot has no running segment (e.g. after migration) starts one
         slot = slots[slot_i]
         if not (slot['segments'] and slot['segments'][-1]['to_ts'] is None and slot['segments'][-1]['champion'] == m['id']):
             equity = _retire(slot, series, last_ts) if slot['segments'] and slot['segments'][-1]['to_ts'] is None else _idle_equity(slot)
             node = nodes[m['id']]
             slot['segments'].append(dict(champion=m['id'], slot=slot_i, genes=node['genes'], species=node['species'], from_ts=last_ts,
-                                         reason='carry', start_equity=round(equity, 2), to_ts=None, end_equity=None))
-    rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: nodes[m['id']]['fitness'], reverse=True))}
+                                         reason='carry', start_equity=round(equity, 2), to_ts=None, end_equity=None, boost=m['id'] == leader))
+    for slot_i, m in enumerate(team):        # the leader title moved: the member continues in a new segment with the other size
+        slot, seg = slots[slot_i], slots[slot_i]['segments'][-1]
+        if bool(seg.get('boost')) != (m['id'] == leader):
+            equity = _retire(slot, series, last_ts)
+            slot['segments'].append(dict(champion=m['id'], slot=slot_i, genes=seg['genes'], species=seg['species'], from_ts=last_ts,
+                                         reason='leader' if m['id'] == leader else 'demoted', start_equity=round(equity, 2), to_ts=None, end_equity=None,
+                                         boost=m['id'] == leader))
+    _CTX['extra'] = _others_equity(slots, series)
+    rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     members, curves, trades, positions, pending, signals = [], [], [], [], [], {}
     order = []
     idle = 0.0
@@ -145,7 +182,7 @@ def update(state, series, changes):
         for w, r in live:                       # positions of members that lost the seat, still running to their exits
             positions += [dict(p, champion=w['champion'], slot=slot_i, winding=True) for p in r['positions']]
             trades += [dict(t, champion=w['champion']) for t in r['trades'] if t['closed'] > w['wind_ts']]
-            order.append((99, dict(champion=w['champion'], genes=w['genes']), dict(r, pending={})))
+            order.append((99, dict(champion=w['champion'], genes=w['genes'], boost=w.get('boost')), dict(r, pending={})))
         seg = slot['segments'][-1] if slot['segments'] and slot['segments'][-1]['to_ts'] is None else None
         if not seg:
             base = slot['segments'][-1]['end_equity'] if slot['segments'] else slot['start_equity']
@@ -157,29 +194,31 @@ def update(state, series, changes):
         member = seg['champion']
         curves.append(slot['curve_done'] + [[t, round(e + offset, 2)] for t, e in res['curve']])
         trades += slot['closed_trades'] + [dict(t, champion=member) for t in res['trades']]
-        positions += [dict(p, champion=member, slot=slot_i) for p in res['positions']]
+        positions += [dict(p, champion=member, slot=slot_i, **({'boost': True} if seg.get('boost') else {})) for p in res['positions']]
         pending += [dict(inst=k, side=v, champion=member) for k, v in (res.get('pending') or {}).items()]
         since = next((m['since'] for m in team if m['id'] == member), None)
         equity = res['equity'] + offset
         members.append(dict(slot=slot_i, id=member, species=seg['species'], since=since, rank=rank.get(member, 99) + 1,
                             start_equity=slot['start_equity'], equity=round(equity, 2),
                             ret=round((equity / slot['start_equity'] - 1) * 100, 3),
-                            positions=len(res['positions']), trades=len(slot['closed_trades']) + len(res['trades'])))
+                            positions=len(res['positions']), trades=len(slot['closed_trades']) + len(res['trades']), boost=bool(seg.get('boost'))))
         order.append((rank.get(member, 99), seg, res))
     # Mirror signals: one per coin; when several members hold the same coin, the higher-ranked member wins.
     # 'rank' (1 = leader) also orders the OKX mirror's entries when its same-side risk cap fills up.
     for r, seg, res in sorted(order, key=lambda x: x[0]):
         member = seg['champion']
+        size = dict(risk=LEADER_RISK, leverage=LEADER_LEVERAGE, leader=True) if seg.get('boost') else dict(risk=seg['genes']['risk'], leverage=10)
         for p in res['positions']:
             signals.setdefault(p['inst'], dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], opened=p['opened'],
-                                               strategy='evolved', leverage=10, champion=member, rank=r + 1, risk=seg['genes']['risk']))
+                                               strategy='evolved', champion=member, rank=r + 1, **size))
         for inst, d in (res.get('pending') or {}).items():
-            signals.setdefault(inst, dict(_signal_from_pending(inst, d, seg['genes'], series, last_ts, member), rank=r + 1, risk=seg['genes']['risk']))
+            signals.setdefault(inst, dict(_signal_from_pending(inst, d, seg['genes'], series, last_ts, member), rank=r + 1, **size))
     curve = _sum_curves(curves, [sl['start_equity'] for sl in slots])
     equity = round(sum(m['equity'] for m in members) + idle, 2)
     segments = sorted(({**{k: v for k, v in sg.items() if k != 'genes'}} for sl in slots for sg in sl['segments']), key=lambda x: x['from_ts'], reverse=True)
     trades = sorted(trades + paper.get('legacy_trades', []), key=lambda t: t['closed'], reverse=True)
     view = dict(equity=equity, start_equity=paper['start_equity'], ret=round((equity / paper['start_equity'] - 1) * 100, 3),
                 curve=curve[-400:], trades=trades[:50], positions=positions, pending=pending,
+                leader=dict(id=leader, risk=LEADER_RISK, leverage=LEADER_LEVERAGE) if leader else None,
                 members=sorted(members, key=lambda m: m['rank']), segments=(segments + paper.get('legacy_segments', [])[::-1])[:30])
     return view, signals
