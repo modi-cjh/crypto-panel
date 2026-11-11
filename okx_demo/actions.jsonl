@@ -60,3 +60,6 @@
 {"ts": "2026-11-11T04:24:24Z", "action": "skip", "inst": "BARD-USDT-SWAP", "dry_run": false, "reason": "stop_too_close_or_crossed", "price": 0.126, "stop": 0.10071398707925419}
 {"ts": "2026-11-11T04:24:24Z", "action": "open", "inst": "PEPE-USDT-SWAP", "dry_run": false, "side": 1, "strategy": "evolved", "contracts": "19.4", "price": 5.36e-06, "stop": "0.0000046", "target": "0.00000634", "leverage": 5, "risk_usdt": 146.74}
 {"ts": "2026-11-11T04:24:24Z", "action": "open", "inst": "ICP-USDT-SWAP", "dry_run": false, "side": 1, "strategy": "evolved", "contracts": "59602.5", "price": 2.572, "stop": "2.326", "target": "2.9", "leverage": 8, "risk_usdt": 146.74}
+{"ts": "2026-11-11T05:12:23Z", "action": "close", "inst": "H-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-11T05:12:23Z", "action": "close", "inst": "PEPE-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-11T05:12:23Z", "action": "close", "inst": "ICP-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}

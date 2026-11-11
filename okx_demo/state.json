@@ -402,6 +402,10 @@
   [
    1794371064486,
    7111.68
+  ],
+  [
+   1794373943183,
+   6927.08
   ]
  ],
  "mirrored": {
@@ -699,9 +703,11 @@
    "entry": 0.03547,
    "clOrdId": "evh1794369600",
    "opened_at": 1794371064486,
-   "status": "open",
+   "status": "done",
    "leader": true,
-   "ordId": "4089233884575158272"
+   "ordId": "4089233884575158272",
+   "last_upl": 35.464240000009355,
+   "closed_reason": "paper_closed"
   },
   "PEPE-USDT-SWAP|1794369600000": {
    "inst": "PEPE-USDT-SWAP",
@@ -715,9 +721,10 @@
    "entry": 5.36e-06,
    "clOrdId": "evpepe1794369600",
    "opened_at": 1794371064486,
-   "status": "open",
+   "status": "done",
    "leader": false,
-   "ordId": "4089233922558775296"
+   "ordId": "4089233922558775296",
+   "closed_reason": "paper_closed"
   },
   "ICP-USDT-SWAP|1794369600000": {
    "inst": "ICP-USDT-SWAP",
@@ -731,9 +738,10 @@
    "entry": 2.572,
    "clOrdId": "evicp1794369600",
    "opened_at": 1794371064486,
-   "status": "open",
+   "status": "done",
    "leader": false,
-   "ordId": "4089233952891981824"
+   "ordId": "4089233952891981824",
+   "closed_reason": "paper_closed"
   }
  },
  "paused": false,
@@ -766,11 +774,33 @@
    "funding": 0.11733414,
    "close_price": 89.12,
    "fee": -0.5846433
+  },
+  "2026-11-11T05:12:23Z|H-USDT-SWAP": {
+   "pnl": -389.33151915999065,
+   "price_pnl": -297.7312399999907,
+   "funding": -85.7498805,
+   "close_price": 0.0355758616640871,
+   "fee": -5.85039866
+  },
+  "2026-11-11T05:12:23Z|PEPE-USDT-SWAP": {
+   "pnl": -18.49305,
+   "price_pnl": -17.46,
+   "funding": 0.0,
+   "close_price": 5.28e-06,
+   "fee": -1.03305
+  },
+  "2026-11-11T05:12:23Z|ICP-USDT-SWAP": {
+   "pnl": -2.1243205889999976,
+   "price_pnl": -0.5916419999999976,
+   "funding": 0.0,
+   "close_price": 2.571004182710457,
+   "fee": -1.532678589
   }
  },
  "largest_close": {
   "ts": "2026-11-10T16:37:46Z",
   "inst": "XRP-USDT-SWAP",
   "pnl": 2878.799155673374
- }
+ },
+ "leader_realized": 35.464240000009355
 }

@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-11T04:16:49Z",
+ "updated_at": "2026-11-11T05:11:34Z",
  "champion": "s13164",
  "team": [
   "s13215",
@@ -96,60 +96,5 @@
   "USDC-USDT-SWAP",
   "LQTY-USDT-SWAP"
  ],
- "positions": {
-  "H-USDT-SWAP": {
-   "side": -1,
-   "entry": 0.0341,
-   "stop": 0.0441717540475185,
-   "tp": null,
-   "opened": 1794369600000,
-   "strategy": "evolved",
-   "leverage": 50,
-   "champion": "s13164",
-   "pending": true,
-   "rank": 1,
-   "risk": 0.2,
-   "leader": true
-  },
-  "BARD-USDT-SWAP": {
-   "side": -1,
-   "entry": 0.0877,
-   "stop": 0.10071398707925419,
-   "tp": null,
-   "opened": 1794369600000,
-   "strategy": "evolved",
-   "leverage": 50,
-   "champion": "s13164",
-   "pending": true,
-   "rank": 1,
-   "risk": 0.2,
-   "leader": true
-  },
-  "PEPE-USDT-SWAP": {
-   "side": 1,
-   "entry": 5.3794e-06,
-   "stop": 4.603673325835214e-06,
-   "tp": 6.341301075964335e-06,
-   "opened": 1794369600000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s12821",
-   "pending": true,
-   "rank": 3,
-   "risk": 0.02
-  },
-  "ICP-USDT-SWAP": {
-   "side": 1,
-   "entry": 2.582,
-   "stop": 2.325801486774654,
-   "tp": 2.8996861563994285,
-   "opened": 1794369600000,
-   "strategy": "evolved",
-   "leverage": 10,
-   "champion": "s12821",
-   "pending": true,
-   "rank": 3,
-   "risk": 0.02
-  }
- }
+ "positions": {}
 }
