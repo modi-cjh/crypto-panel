@@ -43,7 +43,7 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
   await page.locator(`#evolve-graph [data-node="${child.id}"]`).dispatchEvent('click');
   await page.waitForFunction(id => document.querySelector('#evolve-detail h3').textContent.includes(id), child.id);
   const detail = await page.locator('#evolve-detail').innerText();
-  assert.match(detail, /训练集 70%/); assert.match(detail, /样本外 30%/); assert.match(detail, /基因/);
+  assert.match(detail, /训练集 60%/); assert.match(detail, /样本外 20%/); assert.match(detail, /终审 20%/); assert.match(detail, /基因/);
   assert.ok(await page.locator(`#evolve-graph [data-node="${child.id}"].sel`).count() === 1);
   assert.ok(await page.locator('#evolve-graph .evo-edge.hot').count() >= 2);                     // lineage highlighted
   // Parent buttons in the detail navigate the lineage.

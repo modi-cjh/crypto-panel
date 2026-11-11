@@ -763,7 +763,7 @@ function notesSummary(d,quote,now=Date.now()){
 // ---- 策略进化 (tools/evolve → paper-data/evolve/dashboard.json) ----
 let evolveData=null,evolveBusy=false,evolveSel=null;
 async function refreshEvolve(){
- if(evolveBusy || !['home','evolve'].includes(route))return;evolveBusy=true;
+ if(evolveBusy || !['home','evolve','sim'].includes(route))return;evolveBusy=true;
  try{
   const r=await fetch(`${EVOLVE_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});
   if(!r.ok)throw new Error(r.status===404?'尚未生成':'读取失败');const d=await r.json();if(!validEvolve(d))throw new Error('格式不对');
