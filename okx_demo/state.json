@@ -398,6 +398,10 @@
   [
    1794365346318,
    7337.03
+  ],
+  [
+   1794371064486,
+   7111.68
   ]
  ],
  "mirrored": {
@@ -682,46 +686,72 @@
    "status": "done",
    "ordId": "4088865074894589952",
    "closed_reason": "paper_closed"
+  },
+  "H-USDT-SWAP|1794369600000": {
+   "inst": "H-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "16863.3",
+   "stop": 0.0441717540475185,
+   "target": null,
+   "leverage": 3,
+   "entry": 0.03547,
+   "clOrdId": "evh1794369600",
+   "opened_at": 1794371064486,
+   "status": "open",
+   "leader": true,
+   "ordId": "4089233884575158272"
+  },
+  "PEPE-USDT-SWAP|1794369600000": {
+   "inst": "PEPE-USDT-SWAP",
+   "side": 1,
+   "posSide": "long",
+   "strategy": "evolved",
+   "contracts": "19.4",
+   "stop": 4.603673325835214e-06,
+   "target": 6.341301075964335e-06,
+   "leverage": 5,
+   "entry": 5.36e-06,
+   "clOrdId": "evpepe1794369600",
+   "opened_at": 1794371064486,
+   "status": "open",
+   "leader": false,
+   "ordId": "4089233922558775296"
+  },
+  "ICP-USDT-SWAP|1794369600000": {
+   "inst": "ICP-USDT-SWAP",
+   "side": 1,
+   "posSide": "long",
+   "strategy": "evolved",
+   "contracts": "59602.5",
+   "stop": 2.325801486774654,
+   "target": 2.8996861563994285,
+   "leverage": 8,
+   "entry": 2.572,
+   "clOrdId": "evicp1794369600",
+   "opened_at": 1794371064486,
+   "status": "open",
+   "leader": false,
+   "ordId": "4089233952891981824"
   }
  },
  "paused": false,
  "start_equity": 5000.0,
- "close_results_v2": {
-  "2026-11-04T01:33:13Z|XRP-USDT-SWAP": {
-   "pnl": -11.278650950000063,
-   "price_pnl": 5.688099999999936,
-   "funding": -14.979585,
-   "close_price": 1.2558999367088608,
-   "fee": -1.98716595,
-   "outcome": "target"
+ "close_results_v3": {
+  "2026-11-11T02:49:06Z|SOL-USDT-SWAP": {
+   "pnl": -8.2902948,
+   "price_pnl": -5.9432,
+   "funding": 0.2605624,
+   "close_price": 83.46,
+   "fee": -2.6076572
   },
-  "2026-11-04T20:19:47Z|XAU-USDT-SWAP": {
-   "pnl": -57.8895257,
-   "price_pnl": -45.6558,
+  "2026-11-11T02:49:06Z|ICP-USDT-SWAP": {
+   "pnl": -3.7759842325,
+   "price_pnl": -2.031009,
    "funding": 0.0,
-   "close_price": 4082.546907388833,
-   "fee": -12.2337257
-  },
-  "2026-11-06T03:32:16Z|DOGE-USDT-SWAP": {
-   "pnl": -0.4882919669635372,
-   "price_pnl": 0.28874300000028,
-   "funding": -0.0705326724638172,
-   "close_price": 0.0720773390816327,
-   "fee": -0.7065022945
-  },
-  "2026-11-06T05:33:59Z|SOL-USDT-SWAP": {
-   "pnl": 3.12969084,
-   "price_pnl": 3.597,
-   "funding": 0.11733414,
-   "close_price": 89.12,
-   "fee": -0.5846433
-  },
-  "2026-11-06T05:33:59Z|XRP-USDT-SWAP": {
-   "pnl": -11.278650950000063,
-   "price_pnl": 5.688099999999936,
-   "funding": -14.979585,
-   "close_price": 1.2558999367088608,
-   "fee": -1.98716595
+   "close_price": 2.576,
+   "fee": -1.7449752325
   },
   "2026-11-10T16:37:46Z|XRP-USDT-SWAP": {
    "pnl": 2878.799155673374,
@@ -730,19 +760,17 @@
    "close_price": 1.0407978044072703,
    "fee": -14.05537995
   },
-  "2026-11-11T02:49:06Z|SOL-USDT-SWAP": {
+  "2026-11-06T05:33:59Z|SOL-USDT-SWAP": {
    "pnl": 3.12969084,
    "price_pnl": 3.597,
    "funding": 0.11733414,
    "close_price": 89.12,
    "fee": -0.5846433
-  },
-  "2026-11-11T02:49:06Z|ICP-USDT-SWAP": {
-   "pnl": -3.7759842325,
-   "price_pnl": -2.031009,
-   "funding": 0.0,
-   "close_price": 2.576,
-   "fee": -1.7449752325
   }
+ },
+ "largest_close": {
+  "ts": "2026-11-10T16:37:46Z",
+  "inst": "XRP-USDT-SWAP",
+  "pnl": 2878.799155673374
  }
 }
