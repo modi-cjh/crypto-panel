@@ -285,7 +285,10 @@ def update(state, series, changes):
     tag = lambda x: dict({k: v for k, v in x.items() if k != 'seg'}, champion=who(x['seg']), slot=by[x['seg']]['slot'])
     positions = [dict(tag(p), **({'winding': True} if by[p['seg']]['wind_ts'] is not None else {})) for p in res['positions']]
     trades = [tag(t) for t in res['trades']]
-    pending = [dict(inst=inst, side=d, champion=who(sid)) for sid, inst, d, dist, b in res['pending']]
+    pending, seen = [], set()
+    for sid, inst, d, dist, b in sorted(res['pending'], key=lambda x: not x[4]):     # one per coin: the order the account fills them in
+        if inst not in seen:
+            seen.add(inst); pending.append(dict(inst=inst, side=d, champion=who(sid)))
     members = []
     for g in acc['segs']:
         if g['wind_ts'] is None:

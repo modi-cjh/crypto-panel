@@ -24,11 +24,11 @@ const px = v => finite(v) ? v.toLocaleString('zh-CN', { minimumFractionDigits: 0
 const coin = inst => String(inst).split('-')[0];
 const STRATEGIES = { mean_reversion: '均值回归', breakout_long: '趋势突破只做多', breakout_daily: '日线趋势突破', execution_test: '模拟成交测试' , evolved: '进化冠军' };
 const ACTIONS = { open: '开仓', close: '平仓', amend_stop: '上移止损', closed_on_exchange: '交易所止损 / 止盈触发', skip: '跳过', daily_halt: '日亏停手',
-  pause: '暂停跟单', resume: '恢复跟单', follow_current: '手动跟进当前持仓', flatten: '全部平仓并暂停', error: '出错' };
+  restore_stop: '补挂止损', pause: '暂停跟单', resume: '恢复跟单', follow_current: '手动跟进当前持仓', flatten: '全部平仓并暂停', error: '出错' };
 const SKIPS = { paper_entry_too_old: '信号太旧，价格已离开入场区间', stop_too_close_or_crossed: '价格已接近或越过止损', target_already_reached: '价格已到止盈',
   size_below_minimum: '仓位小于最小下单量', insufficient_margin: '保证金不足', exchange_position_exists_not_ours: '交易所已有非本程序的仓位',
   no_price: '取不到价格', no_instrument_spec: '取不到合约信息', same_side_risk: '达到同向风险上限', existing_risk_unknown: '现有仓位风险暂时无法确认' };
-const CLOSES = { paper_closed: '策略信号平仓', daily_halt: '日亏停手平仓', manual_flatten: '手动全部平仓', execution_test: '模拟成交测试 · 成交后立即平仓' };
+const CLOSES = { stop_missing_price_beyond_stop: '止损单缺失且价格已越过止损，直接平仓', paper_closed: '策略信号平仓', daily_halt: '日亏停手平仓', manual_flatten: '手动全部平仓', execution_test: '模拟成交测试 · 成交后立即平仓' };
 
 export function validOkx(d) {
   return d !== null && typeof d === 'object' && stamp(d.updated_at) && finite(d.equity) && Array.isArray(d.positions) &&
@@ -159,6 +159,7 @@ function actionDetail(a) {
   if (a.action === 'skip') return SKIPS[a.reason] || a.reason || '';
   if (a.action === 'open') return `${STRATEGIES[a.strategy] ? STRATEGIES[a.strategy] + ' · ' : ''}${a.side === 1 ? '多' : '空'} ${a.contracts} 张 @ ${a.price} · 止损 ${a.stop}${a.target ? ' · 止盈 ' + a.target : ''} · ${a.leverage}×`;
   if (a.action === 'amend_stop') return `止损 ${a.old} → ${a.new}`;
+  if (a.action === 'restore_stop') return `持仓在交易所没有止损单，已按 ${a.stop} 补挂`;
   if (a.action === 'close') return a.execution_test ? `${CLOSES.execution_test} · ${a.contracts} 张 @ ${a.price} · 净损益 ${signed(num(a.net_pnl), 4)} USDT（含手续费）` : [CLOSES[a.reason] || a.reason || '', finite(num(a.close_price)) ? `平仓价 ${px(num(a.close_price))}` : '', realised(a)].filter(Boolean).join(' · ');
   if (a.action === 'closed_on_exchange') return [finite(num(a.close_price)) ? `成交价 ${px(num(a.close_price))}` : '', realised(a) || '金额待下次运行从交易所补全'].filter(Boolean).join(' · ');
   if (a.action === 'daily_halt') { const loss = num(a.day_start) > 0 ? (1 - num(a.equity) / num(a.day_start)) * 100 : null;
@@ -168,8 +169,8 @@ function actionDetail(a) {
 }
 
 // Fills and risk events versus housekeeping (pause / resume / skips), so real trades are not buried.
-const TRADE_ACTIONS = new Set(['open', 'close', 'closed_on_exchange', 'amend_stop', 'daily_halt', 'error']);
-const ACTION_TONE = { open: 'open', close: 'close', closed_on_exchange: 'stop', amend_stop: 'info', daily_halt: 'stop', error: 'stop' };
+const TRADE_ACTIONS = new Set(['open', 'close', 'closed_on_exchange', 'amend_stop', 'restore_stop', 'daily_halt', 'error']);
+const ACTION_TONE = { open: 'open', close: 'close', closed_on_exchange: 'stop', amend_stop: 'info', restore_stop: 'info', daily_halt: 'stop', error: 'stop' };
 const toneOf = a => a.action === 'closed_on_exchange' && finite(num(a.pnl)) ? (num(a.pnl) >= 0 ? 'close' : 'stop') : ACTION_TONE[a.action] || 'muted';
 export const isTradeAction = a => TRADE_ACTIONS.has(a.action);
 
