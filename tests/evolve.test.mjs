@@ -16,7 +16,7 @@ test('loop shows the six phases and the generation; stats and fitness chart rend
   const loop = loopSVG(d);
   for (const p of ['观察波动', '交叉 · 突变', '训练集回测', '样本外检验', '选择淘汰', '部署冠军']) assert.match(loop, new RegExp(p));
   assert.match(loop, new RegExp(`>${d.generation}<`));
-  assert.match(statsMarkup(d), /种群[\s\S]*40/); assert.match(statsMarkup(d), /本代样本外合格/);
+  assert.match(statsMarkup(d), /种群[\s\S]*60/); assert.match(statsMarkup(d), /本代样本外合格/);
   const fit = fitnessSVG(d.history);
   assert.equal((fit.match(/<polyline/g) || []).length, 2); assert.match(fit, /第 1 代/);
   assert.match(fitnessSVG([]), /等待第一代/);
@@ -56,7 +56,7 @@ test('paper account, home card and data caption', () => {
   assert.match(paperMarkup({ ...d, champion: null }), /还没有样本外合格的策略/);
   const pm = paperMarkup(d);
   assert.match(pm, /最短任期 7 天/); assert.match(pm, /已有持仓不强平/); assert.match(pm, /连续 3 次样本外合格/); assert.match(pm, /补入空位|沿用原冠军/); assert.match(pm, /席位 1 ·/);
-  assert.match(pm, /同一物种最多 2 个/); assert.match(homeCardMarkup(d), /冠军组合 5 个/);
+  assert.match(pm, /同一物种最多 2 个/); assert.match(homeCardMarkup(d), /冠军组合 8 个/);
   assert.match(pm, /挑战者[\s\S]*连续合格 <b>\d+<\/b> \/ 3/);
   assert.match(homeCardMarkup(d), new RegExp(`第 ${d.generation} 代`));
   assert.match(dataCaption(d), /训练集[\s\S]*60%[\s\S]*样本外[\s\S]*终审[\s\S]*只决定谁能上场/); assert.match(dataCaption(d), /终审：收益 > 0%/); assert.match(dataCaption(d), /交易 ≥ 8 次/);
@@ -181,4 +181,12 @@ test('the rules name the five majors and their doubled risk', async () => {
   assert.match(paperMarkup(d), /BTC \/ ETH \/ SOL \/ XRP \/ DOGE 这 5 个主流币每笔风险 ×2/);
   const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, majors: ['BTC-USDT-SWAP', 'ETH-USDT-SWAP'], major_factor: 2, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
   assert.match(text, /主流币（BTC\/ETH）风险 ×2/);
+});
+
+test('coins whose demo price is off are listed, and a replaced unqualified member is explained', () => {
+  const html = paperMarkup(d);
+  assert.ok(d.paper.price_off.length > 0);
+  assert.match(html, new RegExp(`模拟盘价格偏离真实行情超过 1% 的币暂不开新仓（现在 ${d.paper.price_off.length} 个`));
+  assert.match(html, /原成员连续不合格/); assert.equal(d.champion_rules.team_size, 8);
+  assert.doesNotMatch(paperMarkup({ ...d, paper: { ...d.paper, price_off: [] } }), /暂不开新仓/);
 });
