@@ -399,7 +399,11 @@ def fitness(m):
 
 
 # ----------------------------------------------------------------- the shared (cross-margin) team account
-ACCOUNT_RULES = dict(leader_risk=.05, leader_lever=50, lever=LEVERAGE, same_side_cap=.20, daily_halt=.10, day_shift=7 * HOUR)
+MAJORS = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP')
+# major_factor: a trade on one of the five majors risks this many times the usual amount (chosen by the user; the majors are
+# the most liquid coins and the ones whose OKX demo prices follow the real market).
+ACCOUNT_RULES = dict(leader_risk=.05, leader_lever=50, lever=LEVERAGE, same_side_cap=.20, daily_halt=.10, day_shift=7 * HOUR,
+                     majors=MAJORS, major_factor=2.0)
 CROWD_STEPS = ((6, .25), (3, .5))     # same-side positions already open → risk factor for the next entry on that side
 
 
@@ -423,6 +427,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     - one position per coin for the whole account, at most MAX_POSITIONS per strategy;
     - margin = notional ÷ leverage (leverage = min(cap, 80 % ÷ stop distance), cap = rules['lever'] / 'leader_lever'), and
       a new entry needs it to fit into 95 % of the free margin (equity − margin in use);
+    - a trade on one of rules['majors'] risks rules['major_factor'] times as much;
     - crowding: with 3+ positions already open on a side the next entry on that side risks half, with 6+ a quarter;
     - same-side cap: the open risk of the non-leader positions on one side plus the new one stays within
       rules['same_side_cap'] × equity (leader positions are outside it);
@@ -477,6 +482,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 continue
             mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items())
             r = (rules['leader_risk'] if boost else g['risk']) * crowd_factor(sum(1 for p in pos.values() if p['side'] == d))
+            if inst in rules.get('majors', ()):
+                r *= rules.get('major_factor', 1.0)
             qty = mark * r / dist
             if s.spec:
                 ct, lot, mn = s.spec

@@ -441,7 +441,7 @@ class EvolutionTests(unittest.TestCase):
         return {f'C{k}-USDT-SWAP': series_from(list(closes), f'C{k}-USDT-SWAP') for k in range(coins)}
 
     def test_shared_account_with_one_strategy_matches_the_single_strategy_engine(self):
-        loose = dict(X.ACCOUNT_RULES, same_side_cap=9, daily_halt=9)
+        loose = dict(X.ACCOUNT_RULES, same_side_cap=9, daily_halt=9, major_factor=1.0)
         for k in range(12):
             g = G.random_genome(random.Random(k), G.SPECIES[k % len(G.SPECIES)])
             a = X.simulate(g, self.sr, 60, 900, equity=5000.0, curve_every=1)
@@ -482,6 +482,14 @@ class EvolutionTests(unittest.TestCase):
         w = X.simulate_account([seg(1, wind_i=45)], sr, 30, 71, equity=10000.0)
         self.assertEqual(len(w['positions']), 3)
         self.assertEqual(X.simulate_account([seg(1, wind_i=40)], sr, 30, 71, equity=10000.0)['positions'], [])   # wound before the signal bar
+
+    def test_majors_risk_twice_as_much_in_the_shared_account(self):
+        closes = [100.0] * 40 + [110.0] + [111.0] * 30
+        sr = {k: series_from(list(closes), k) for k in ('BTC-USDT-SWAP', 'PEPE-USDT-SWAP')}
+        r = X.simulate_account([dict(id='m', genes=base_genes(risk=.02), from_i=0, wind_i=None, boosts=[])], sr, 30, 71, equity=10000.0)
+        risk = {p['inst']: round(p['qty'] * (p['entry'] - p['stop']) / 10000.0, 3) for p in r['positions']}
+        self.assertEqual(risk, {'BTC-USDT-SWAP': .04, 'PEPE-USDT-SWAP': .02})
+        self.assertEqual(X.ACCOUNT_RULES['major_factor'], 2.0); self.assertIn('DOGE-USDT-SWAP', X.MAJORS)
 
     def test_daily_halt_closes_the_other_members_and_leaves_the_leader(self):
         closes = [100.0] * 40 + [110.0, 111.0, 111.0] + [104.0] * 20                     # breakout, then a fall that stays above the stops

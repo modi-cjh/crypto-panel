@@ -304,7 +304,7 @@ def update(state, series, changes):
     size = lambda boost, risk: dict(risk=LEADER_RISK, leverage=LEADER_LEVERAGE, leader=True) if boost else dict(risk=risk, leverage=ACCOUNT_RULES['lever'])
     for p in res['positions']:
         signals[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], opened=p['opened'], strategy='evolved',
-                                  champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1, **size(p['boost'], p['risk']))
+                                  champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1, **size(p['boost'], by[p['seg']]['genes']['risk']))   # the base risk: the mirror applies the majors / crowding steps itself
     for sid, inst, d, dist, b in res['pending']:
         g = by[sid]
         signals.setdefault(inst, dict(_signal_from_pending(inst, d, g['genes'], series, last_ts, g['champion']), rank=rank.get(g['champion'], 99) + 1,
@@ -316,7 +316,8 @@ def update(state, series, changes):
     equity = round(res['equity'], 2)
     view = dict(equity=equity, start_equity=paper['start_equity'], ret=round((equity / paper['start_equity'] - 1) * 100, 3),
                 mode='cross', account_from=acc['from_ts'], account_start=acc['start_equity'], halted=res['halted'],
-                rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever']),
+                rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
+                           majors=list(ACCOUNT_RULES['majors']), major_factor=ACCOUNT_RULES['major_factor']),
                 curve=([p for p in legacy.get('curve') or [] if p[0] < acc['from_ts']] + [list(p) for p in res['curve']])[-400:],
                 trades=sorted(trades + (legacy.get('trades') or []), key=lambda t: t['closed'], reverse=True)[:50],
                 positions=positions, pending=pending,
