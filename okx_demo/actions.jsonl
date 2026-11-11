@@ -67,3 +67,5 @@
 {"ts": "2026-11-11T09:07:07Z", "action": "open", "inst": "GRASS-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "254", "price": 0.4572, "stop": "0.5209", "target": "0.2826", "leverage": 5, "risk_usdt": 162.09}
 {"ts": "2026-11-11T09:07:07Z", "action": "open", "inst": "ICP-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "51585.6", "price": 2.536, "stop": "2.805", "target": "2.222", "leverage": 7, "risk_usdt": 138.54}
 {"ts": "2026-11-11T09:07:07Z", "action": "skip", "inst": "BARD-USDT-SWAP", "dry_run": false, "reason": "stop_too_close_or_crossed", "price": 0.126, "stop": 0.09990215669064673}
+{"ts": "2026-11-11T09:49:16Z", "action": "skip", "inst": "BARD-USDT-SWAP", "dry_run": false, "reason": "stop_too_close_or_crossed", "price": 0.126, "stop": 0.09990215669064673}
+{"ts": "2026-11-11T09:49:16Z", "action": "skip", "inst": "H-USDT-SWAP", "dry_run": false, "reason": "stop_too_close_or_crossed", "price": 0.04477, "stop": 0.04295659390126718}

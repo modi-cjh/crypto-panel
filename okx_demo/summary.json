@@ -1,7 +1,7 @@
 {
- "updated_at": "2026-11-11T09:07:07Z",
- "equity": 6925.077145864464,
- "available": 6506.209180150178,
+ "updated_at": "2026-11-11T09:49:16Z",
+ "equity": 6921.227865864464,
+ "available": 6501.73743157875,
  "day_start": 7349.095254455455,
  "paused": false,
  "halted": false,
@@ -12,11 +12,11 @@
    "side": "short",
    "contracts": "51585.6",
    "avgPx": "2.5340009983406222",
-   "markPx": "2.535",
-   "upl": "-0.5153410000001815",
-   "uplRatio": "-0.0027596720049543",
+   "markPx": "2.54",
+   "upl": "-3.0946210000001266",
+   "uplRatio": "-0.016571821259401",
    "lever": "7",
-   "margin": "186.81356571428572",
+   "margin": "187.18203428571428",
    "mgnMode": "cross",
    "ctVal": 0.01,
    "ours": true
@@ -26,11 +26,11 @@
    "side": "short",
    "contracts": "254",
    "avgPx": "0.4567",
-   "markPx": "0.4568",
-   "upl": "-0.253999999999972",
-   "uplRatio": "-0.0010948105977659",
+   "markPx": "0.4573",
+   "upl": "-1.5239999999999732",
+   "uplRatio": "-0.006568863586599",
    "lever": "5",
-   "margin": "232.0544",
+   "margin": "232.30839999999998",
    "mgnMode": "cross",
    "ctVal": 10.0,
    "ours": true
@@ -134,7 +134,7 @@
   "risk_max": 0.05,
   "same_side_cap": 0.2,
   "daily_halt": 0.1,
-  "leader_risk": 0.2,
+  "leader_risk": 0.05,
   "leader_leverage": 50,
   "margin_mode": "cross"
  },
@@ -585,6 +585,10 @@
   [
    1794388027504,
    6925.08
+  ],
+  [
+   1794390556311,
+   6921.23
   ]
  ],
  "closed_trades": 13,
@@ -993,6 +997,24 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-11T09:49:16Z",
+   "action": "skip",
+   "inst": "BARD-USDT-SWAP",
+   "dry_run": false,
+   "reason": "stop_too_close_or_crossed",
+   "price": 0.126,
+   "stop": 0.09990215669064673
+  },
+  {
+   "ts": "2026-11-11T09:49:16Z",
+   "action": "skip",
+   "inst": "H-USDT-SWAP",
+   "dry_run": false,
+   "reason": "stop_too_close_or_crossed",
+   "price": 0.04477,
+   "stop": 0.04295659390126718
+  },
+  {
    "ts": "2026-11-11T09:07:07Z",
    "action": "skip",
    "inst": "H-USDT-SWAP",
@@ -1238,32 +1260,6 @@
    "inst": "ETH-USDT-SWAP",
    "dry_run": false,
    "reason": "paper_entry_too_old"
-  },
-  {
-   "ts": "2026-11-10T16:37:46Z",
-   "action": "closed_on_exchange",
-   "inst": "BTC-USDT-SWAP",
-   "dry_run": false,
-   "strategy": "evolved",
-   "pnl": -59.65288372774462,
-   "price_pnl": -45.247285,
-   "funding": -13.054434180244627,
-   "close_price": 73400.05,
-   "fee": -1.3511645475,
-   "outcome": "stop"
-  },
-  {
-   "ts": "2026-11-10T16:37:46Z",
-   "action": "close",
-   "inst": "XRP-USDT-SWAP",
-   "dry_run": false,
-   "strategy": "evolved",
-   "reason": "paper_closed",
-   "pnl": 2878.799155673374,
-   "price_pnl": 2228.2001,
-   "funding": 664.6544356233742,
-   "close_price": 1.0407978044072703,
-   "fee": -14.05537995
   },
   {
    "ts": "2026-11-10T16:37:46Z",
