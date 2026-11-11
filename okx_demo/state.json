@@ -1,6 +1,6 @@
 {
- "day": "2026-11-11",
- "day_start": 7349.095254455455,
+ "day": "2026-11-12",
+ "day_start": 6878.296020913912,
  "halted": false,
  "history": [
   [
@@ -418,6 +418,10 @@
   [
    1794403450928,
    6914.76
+  ],
+  [
+   1794416842966,
+   6878.55
   ]
  ],
  "mirrored": {
@@ -761,7 +765,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "254",
-   "stop": 0.5155269058416524,
+   "stop": 0.5144269058416524,
    "target": 0.2825758142275384,
    "leverage": 5,
    "entry": 0.4572,
@@ -879,5 +883,6 @@
   "inst": "XRP-USDT-SWAP",
   "pnl": 2878.799155673374
  },
- "leader_realized": 35.464240000009355
+ "leader_realized": 0.0,
+ "leader_upl_start": 0.0
 }

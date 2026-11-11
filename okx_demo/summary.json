@@ -1,8 +1,8 @@
 {
- "updated_at": "2026-11-11T13:24:10Z",
- "equity": 6914.763410162063,
- "available": 6408.086694733493,
- "day_start": 7349.095254455455,
+ "updated_at": "2026-11-11T17:07:22Z",
+ "equity": 6878.550020913912,
+ "available": 6365.476987771055,
+ "day_start": 6878.296020913912,
  "paused": false,
  "halted": false,
  "dry_run": false,
@@ -12,11 +12,11 @@
    "side": "short",
    "contracts": "8.6",
    "avgPx": "0.000005",
-   "markPx": "0.000005",
-   "upl": "0",
-   "uplRatio": "0",
+   "markPx": "0.00000497",
+   "upl": "2.580000000000048",
+   "uplRatio": "0.0300000000000006",
    "lever": "5",
-   "margin": "86.00000000000001",
+   "margin": "85.484",
    "mgnMode": "cross",
    "ctVal": 10000000.0,
    "ours": true
@@ -26,11 +26,11 @@
    "side": "short",
    "contracts": "51585.6",
    "avgPx": "2.5340009983406222",
-   "markPx": "2.543",
-   "upl": "-4.642189000000185",
-   "uplRatio": "-0.0248591108120713",
+   "markPx": "2.572",
+   "upl": "-19.60201300000014",
+   "uplRatio": "-0.1049695764878673",
    "lever": "7",
-   "margin": "187.40311542857145",
+   "margin": "189.54023314285715",
    "mgnMode": "cross",
    "ctVal": 0.01,
    "ours": true
@@ -40,11 +40,11 @@
    "side": "short",
    "contracts": "254",
    "avgPx": "0.4567",
-   "markPx": "0.4592",
-   "upl": "-6.350000000000006",
-   "uplRatio": "-0.0273702649441643",
+   "markPx": "0.4686",
+   "upl": "-30.226000000000056",
+   "uplRatio": "-0.1302824611342235",
    "lever": "5",
-   "margin": "233.2736",
+   "margin": "238.04880000000003",
    "mgnMode": "cross",
    "ctVal": 10.0,
    "ours": true
@@ -150,7 +150,15 @@
   "daily_halt": 0.1,
   "leader_risk": 0.05,
   "leader_leverage": 50,
-  "margin_mode": "cross"
+  "margin_mode": "cross",
+  "majors": [
+   "BTC-USDT-SWAP",
+   "ETH-USDT-SWAP",
+   "SOL-USDT-SWAP",
+   "XRP-USDT-SWAP",
+   "DOGE-USDT-SWAP"
+  ],
+  "major_factor": 2.0
  },
  "open_mirrors": [
   {
@@ -159,7 +167,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "254",
-   "stop": 0.5155269058416524,
+   "stop": 0.5144269058416524,
    "target": 0.2825758142275384,
    "leverage": 5,
    "entry": 0.4572,
@@ -625,6 +633,10 @@
   [
    1794403450928,
    6914.76
+  ],
+  [
+   1794416842966,
+   6878.55
   ]
  ],
  "closed_trades": 13,
@@ -1033,6 +1045,14 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-11T17:07:22Z",
+   "action": "amend_stop",
+   "inst": "GRASS-USDT-SWAP",
+   "dry_run": false,
+   "old": 0.5155269058416524,
+   "new": 0.5144269058416524
+  },
+  {
    "ts": "2026-11-11T13:24:10Z",
    "action": "amend_stop",
    "inst": "GRASS-USDT-SWAP",
@@ -1330,13 +1350,6 @@
    "ts": "2026-11-10T17:23:35Z",
    "action": "skip",
    "inst": "ETH-USDT-SWAP",
-   "dry_run": false,
-   "reason": "paper_entry_too_old"
-  },
-  {
-   "ts": "2026-11-10T16:37:46Z",
-   "action": "skip",
-   "inst": "DOGE-USDT-SWAP",
    "dry_run": false,
    "reason": "paper_entry_too_old"
   }

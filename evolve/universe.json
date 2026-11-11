@@ -521,5 +521,65 @@
    1.0,
    1.0
   ]
+ },
+ "price_off": {
+  "ARB-USDT-SWAP": [
+   [
+    1794412800000,
+    null
+   ]
+  ],
+  "ASTER-USDT-SWAP": [
+   [
+    1794412800000,
+    null
+   ]
+  ],
+  "BARD-USDT-SWAP": [
+   [
+    1794412800000,
+    null
+   ]
+  ],
+  "HOME-USDT-SWAP": [
+   [
+    1794412800000,
+    null
+   ]
+  ],
+  "SPK-USDT-SWAP": [
+   [
+    1794412800000,
+    null
+   ]
+  ],
+  "SKY-USDT-SWAP": [
+   [
+    1794412800000,
+    null
+   ]
+  ],
+  "COAI-USDT-SWAP": [
+   [
+    1794412800000,
+    null
+   ]
+  ],
+  "BRETT-USDT-SWAP": [
+   [
+    1794412800000,
+    null
+   ]
+  ]
+ },
+ "price_off_now": {
+  "ARB-USDT-SWAP": -0.1111,
+  "ASTER-USDT-SWAP": 0.0191,
+  "BARD-USDT-SWAP": 0.4789,
+  "HOME-USDT-SWAP": -0.0136,
+  "SPK-USDT-SWAP": 1.188,
+  "SKY-USDT-SWAP": -0.9657,
+  "COAI-USDT-SWAP": 0.4668,
+  "BRETT-USDT-SWAP": -0.012
  }
 }

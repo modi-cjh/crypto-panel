@@ -1,12 +1,15 @@
 {
- "updated_at": "2026-11-11T13:23:22Z",
+ "updated_at": "2026-11-11T17:06:24Z",
  "champion": "s13164",
  "team": [
   "s13215",
   "s12407",
   "s12473",
   "s12821",
-  "s13164"
+  "s13164",
+  "s14155",
+  "s13827",
+  "s13190"
  ],
  "instruments": [
   "BTC-USDT-SWAP",
@@ -105,7 +108,7 @@
    "opened": 1794384000000,
    "strategy": "evolved",
    "champion": "s13164",
-   "rank": 3,
+   "rank": 6,
    "risk": 0.05,
    "leverage": 50,
    "leader": true
@@ -113,7 +116,7 @@
   "GRASS-USDT-SWAP": {
    "side": -1,
    "entry": 0.45760846,
-   "stop": 0.5155269058416524,
+   "stop": 0.5144269058416524,
    "tp": 0.2825758142275384,
    "opened": 1794384000000,
    "strategy": "evolved",
@@ -130,7 +133,7 @@
    "opened": 1794384000000,
    "strategy": "evolved",
    "champion": "s12821",
-   "rank": 2,
+   "rank": 5,
    "risk": 0.02,
    "leverage": 10
   },
@@ -142,8 +145,8 @@
    "opened": 1794384000000,
    "strategy": "evolved",
    "champion": "s12821",
-   "rank": 2,
-   "risk": 0.01,
+   "rank": 5,
+   "risk": 0.02,
    "leverage": 10
   },
   "PEPE-USDT-SWAP": {
@@ -154,8 +157,8 @@
    "opened": 1794398400000,
    "strategy": "evolved",
    "champion": "s12821",
-   "rank": 2,
-   "risk": 0.01,
+   "rank": 5,
+   "risk": 0.02,
    "leverage": 10
   }
  }

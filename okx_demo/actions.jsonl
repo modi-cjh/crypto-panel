@@ -73,3 +73,4 @@
 {"ts": "2026-11-11T13:24:10Z", "action": "open", "inst": "PEPE-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "8.6", "price": 5.01e-06, "stop": "0.00000581", "target": "0.00000397", "leverage": 5, "risk_usdt": 69.15}
 {"ts": "2026-11-11T13:24:10Z", "action": "skip", "inst": "BARD-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-11T13:24:10Z", "action": "skip", "inst": "H-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
+{"ts": "2026-11-11T17:07:22Z", "action": "amend_stop", "inst": "GRASS-USDT-SWAP", "dry_run": false, "old": 0.5155269058416524, "new": 0.5144269058416524}
