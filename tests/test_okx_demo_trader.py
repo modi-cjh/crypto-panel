@@ -87,9 +87,12 @@ class MirrorTests(unittest.TestCase):
         self.assertEqual(order['attachAlgoOrds'][0]['tpTriggerPx'], '1.23')
 
     def test_old_or_crossed_entries_are_skipped_without_orders(self):
-        fake = FakeOKX()
+        fake = FakeOKX(prices={'BTC-USDT-SWAP': 71500.0})          # old entry and the price has run away (2× the stop distance)
         _, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=360)}))
         self.assertEqual(fake.posts, []); self.assertEqual(list(state['mirrored'].values())[0]['status'], 'skipped')
+        fake = FakeOKX(prices={'BTC-USDT-SWAP': 69200.0})          # old entry, more than half way to the stop
+        m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=360)}))
+        self.assertEqual(fake.posts, []); self.assertEqual(m.actions[-1]['reason'], 'paper_entry_too_old')
         fake = FakeOKX(prices={'BTC-USDT-SWAP': 68500.0})          # already below the stop
         m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
         self.assertEqual(fake.posts, []); self.assertEqual(m.actions[-1]['reason'], 'stop_too_close_or_crossed')
@@ -184,8 +187,33 @@ class MirrorTests(unittest.TestCase):
         odt.enrich_closes(m, state, again)
         self.assertEqual(again[0]['pnl'], 5.9); self.assertEqual(fake.history_calls, calls)   # cached
 
+    def test_a_close_never_takes_the_result_of_an_older_close_of_the_same_coin(self):
+        fake = FakeOKX(); m, state = run(fake, paper())
+        ts = '2026-11-11T02:49:06Z'; t = int(odt.datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp() * 1000)
+        day = 86400_000
+        state['mirrored']['SOL-USDT-SWAP|1'] = dict(inst='SOL-USDT-SWAP', side=-1, posSide='short', status='done', opened_at=t - 6 * day)
+        state['mirrored']['SOL-USDT-SWAP|2'] = dict(inst='SOL-USDT-SWAP', side=-1, posSide='short', status='done', opened_at=t - 6 * 3600_000)
+        old = dict(instId='SOL-USDT-SWAP', posSide='short', realizedPnl='3.13', closeAvgPx='89.12', type='2', uTime=str(t - 5 * day))
+        fake.history = [old]                                               # today's close is not in the exchange history yet
+        actions = [dict(ts=ts, action='close', inst='SOL-USDT-SWAP')]
+        odt.enrich_closes(m, state, actions)
+        self.assertNotIn('pnl', actions[0])                                # waits instead of showing the 5-day-old result
+        fake.history = [old, dict(instId='SOL-USDT-SWAP', posSide='short', realizedPnl='-1.4', closeAvgPx='83.5', type='2', uTime=str(t + 1000))]
+        odt.enrich_closes(m, state, actions)
+        self.assertEqual((actions[0]['pnl'], actions[0]['close_price']), (-1.4, 83.5))
+        self.assertNotIn('close_results_v2', state)
+
+    def test_old_entry_is_followed_late_while_the_price_is_still_near_the_paper_entry(self):
+        fake = FakeOKX(prices={'BTC-USDT-SWAP': 70300.0})          # 6 h old, price 0.4 % above the paper entry
+        m, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=360)}))
+        order = [b for q, b in fake.posts if q == '/api/v5/trade/order'][-1]
+        self.assertEqual(order['attachAlgoOrds'][0]['slTriggerPx'], '68600')        # the paper stop, size from the distance left
+        opened = [a for a in m.actions if a['action'] == 'open'][-1]
+        self.assertAlmostEqual(opened['risk_usdt'], odt.RISK * 5000, delta=1)
+        self.assertEqual(list(state['mirrored'].values())[0]['status'], 'open')
+
     def test_follow_current_opens_entries_skipped_for_age_but_keeps_price_checks(self):
-        fake = FakeOKX()
+        fake = FakeOKX(prices={'BTC-USDT-SWAP': 71500.0})          # too far from the paper entry for an automatic late follow
         _, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=360)}))
         self.assertEqual(fake.posts, [])                                       # too old for a normal run
         run(fake, paper(**{'BTC-USDT-SWAP': long_btc(opened_ago_min=360)}), state)

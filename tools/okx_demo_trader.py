@@ -42,7 +42,8 @@ RISK_RANGE = (.02, .05)   # evolved mode: each order risks its strategy's own ri
 SAME_SIDE_CAP = .05
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
-OPEN_WINDOW = 5 * 3600_000        # only mirror paper entries that are at most this old (runs are 4 h apart, plus delay)
+OPEN_WINDOW = 5 * 3600_000        # paper entries at most this old are mirrored as they are (runs are 4 h apart, plus delay)
+LATE_BAND = (.5, 1.5)             # older entries are still followed while the price is within this band of the paper stop distance
 MIN_STOP_DIST = .002              # skip entries whose stop is already too close to the current price
 AMEND_TOLERANCE = .001            # amend the exchange stop when the paper stop moved more than 0.1%
 UTC7 = timezone(timedelta(hours=7))
@@ -140,22 +141,26 @@ def new_state():
 def enrich_closes(mirror, state, actions):
     """Fill in realised PnL for closes logged without it (e.g. before this existed), from OKX position history.
     Results are cached in state so each close is looked up once."""
-    state.pop('close_results', None)            # v1 cache had no price / fee / funding breakdown
-    cache = state.setdefault('close_results_v2', {})
+    state.pop('close_results', None); state.pop('close_results_v2', None)   # v2 could attach an older close of the same coin
+    cache = state.setdefault('close_results_v3', {})
     for a in actions:
         if a.get('action') not in ('closed_on_exchange', 'close') or a.get('execution_test') or a.get('pnl') is not None:
-            continue
+            continue                                # (a pnl already there was read from the exchange when the close was logged)
         key = f"{a['ts']}|{a['inst']}"
         if key not in cache:
             ts = int(datetime.fromisoformat(a['ts'].replace('Z', '+00:00')).timestamp() * 1000)
-            m = next((m for m in state.get('mirrored', {}).values() if m.get('inst') == a['inst'] and m.get('status') == 'done'
-                      and int(m.get('opened_at') or 0) <= ts), {})
+            # The mirror this close belongs to: the latest one on that coin opened before the close (not the first ever).
+            done = [m for m in state.get('mirrored', {}).values() if m.get('inst') == a['inst'] and m.get('status') == 'done'
+                    and m.get('opened_at') and int(m['opened_at']) <= ts]
+            m = max(done, key=lambda m: int(m['opened_at']), default=None)
+            if not m:
+                continue
             try:
-                res = mirror.fill_result(a['inst'], m.get('posSide', 'net'), int(m.get('opened_at') or ts - 7 * 86400000), ts + 120000)
+                res = mirror.fill_result(a['inst'], m.get('posSide', 'net'), int(m['opened_at']), ts + 120000)
             except OKXError:
                 continue
             if not res:
-                continue
+                continue                            # not in the exchange history yet: try again next run
             cache[key] = mirror.outcome(m, res) if a['action'] == 'closed_on_exchange' else {k: res[k] for k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee')}
         a.update(cache[key])
 
@@ -278,6 +283,16 @@ class Mirror:
     def price(self, inst):
         r = self.c.request('GET', f'/api/v5/market/ticker?instId={inst}')
         return float((r.get('data') or [{}])[0].get('last') or 0) if ok(r) else 0.0
+
+    def late_ok(self, inst, p):
+        """An entry older than OPEN_WINDOW is still worth following when the price has not moved far from the paper
+        entry: the distance left to the stop is 50–150 % of the paper stop distance (open() sizes by the distance left,
+        so the risk in USDT is the same as for a fresh entry)."""
+        px, entry, stop = self.price(inst), float(p.get('entry') or 0), float(p.get('stop') or 0)
+        if not px or not entry or not stop or entry == stop:
+            return False
+        left = (px - stop) * p['side'] / abs(entry - stop)
+        return LATE_BAND[0] <= left <= LATE_BAND[1]
 
     def held(self, inst, side):
         ps = 'long' if side == 1 else 'short'
@@ -463,7 +478,7 @@ class Mirror:
             if self.held(inst, p['side']) or any(k[0] == inst for k in self.positions):
                 self.log('skip', inst, reason='exchange_position_exists_not_ours'); self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net')
                 continue
-            if self.now_ms - int(p['opened']) > OPEN_WINDOW and action != 'follow-current':
+            if self.now_ms - int(p['opened']) > OPEN_WINDOW and action != 'follow-current' and not self.late_ok(inst, p):
                 self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net', reason='too_old')
                 self.log('skip', inst, reason='paper_entry_too_old')
                 continue
