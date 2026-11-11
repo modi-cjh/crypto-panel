@@ -73,7 +73,7 @@ export function contextTip(c={}){
   if(c.route==='coin')return `你在看 ${coinName(c.coin)}，${c.decision?'会议结论：'+c.decision:'暂无会议结论'}。`;
   if(c.route==='paper')return '这里是账户历史：最大回撤按所选范围从峰值到之后低点计算。';
   if(c.route==='market')return '点任一币种，可以看均值回归入场条件和 K 线。';
-  if(c.route==='sim')return '这里是 OKX 模拟交易账户：三套策略出信号，约每 4 小时检查一次；止损挂在交易所，浮盈按实时价计算。';
+  if(c.route==='sim')return '这里是 OKX 模拟交易账户：跟随策略进化的冠军组合，约每 4 小时检查一次；止损挂在交易所，浮盈按实时价计算。';
   if(c.sim)return `OKX 模拟账户累计 ${signed(c.sim.totals.ret)}%，持仓 ${c.sim.totals.positions} 个；有开平仓我会马上告诉你。`;
   if(c.paused)return '模拟盘暂停中，重新开始后我会第一时间播报开平仓。';
   if(c.positions>0)return `当前 ${c.positions} 个持仓，点持仓行可展开 K 线。`;

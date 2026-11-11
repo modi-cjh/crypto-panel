@@ -11,7 +11,8 @@
 - Contract mode: each series carries its OKX contract spec (ctVal, lotSz, minSz; kept in universe.json) and its funding
   rates {ts: rate}. OKX serves about 3 months of funding history, so the cache keeps every rate it has seen; hours
   before the oldest known rate use the default FUNDING_DEFAULT every 8 hours.
-- The window is split by time: the first TRAIN_SHARE for training, the rest is out-of-sample.
+- The window is split by time: TRAIN_SHARE for training, TEST_SHARE out-of-sample (the gate strategies are bred against),
+  and the last part is the final check: never used for fitness or breeding, only to decide who may join the team.
 """
 import json
 import subprocess
@@ -26,7 +27,8 @@ INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP
 UNIVERSE_SIZE = 100
 WORKERS = 4           # parallel downloads; the shared pacing below keeps the total under OKX's rate limit
 WINDOW_DAYS = 365
-TRAIN_SHARE = .7
+TRAIN_SHARE = .6
+TEST_SHARE = .2         # the rest (20 %) is the final check
 WARMUP = 250          # bars used only to warm indicators up before the training window
 HOUR = 3600_000
 REF = 'BTC-USDT-SWAP'
@@ -35,7 +37,7 @@ _next = 0.0
 _lock = threading.Lock()
 
 
-def okx_get(path, retries=4):
+def okx_get(path, retries=4, demo=False):
     """GET a public OKX endpoint with curl, paced well under the history-candles limit (20 requests / 2 s)."""
     global _next
     for attempt in range(retries):
@@ -46,7 +48,8 @@ def okx_get(path, retries=4):
         if wait > 0:
             time.sleep(wait)
         try:
-            out = subprocess.run(['curl', '-sS', '-m', '20', 'https://www.okx.com/api/v5/' + path], capture_output=True, text=True, check=True).stdout
+            head = ['-H', 'x-simulated-trading: 1'] if demo else []       # demo = OKX demo-trading environment (public data, no keys)
+            out = subprocess.run(['curl', '-sS', '-m', '20', *head, 'https://www.okx.com/api/v5/' + path], capture_output=True, text=True, check=True).stdout
             body = json.loads(out)
             if body.get('code') == '0':
                 return body['data']
@@ -87,10 +90,17 @@ def update_candles(cache_dir, inst, now_ms, get=okx_get):
     return rows
 
 
-def select_universe(now_ms, get=okx_get, size=UNIVERSE_SIZE):
-    """The `size` most traded crypto USDT perpetuals by 24h quote volume, listed for the whole window. BTC always included."""
+UNIVERSE_VERSION = 2      # 2: only coins that also trade on OKX demo trading (the mirror cannot follow the others)
+
+
+def select_universe(now_ms, get=okx_get, size=UNIVERSE_SIZE, demo_get=None):
+    """The `size` most traded crypto USDT perpetuals by 24h quote volume, listed for the whole window. BTC always included.
+    With demo_get (a getter for the OKX demo environment), only coins that are live there too."""
     live = {d['instId']: d for d in get('public/instruments?instType=SWAP')
             if d.get('settleCcy') == 'USDT' and d.get('state') == 'live' and str(d.get('instCategory', '1')) == '1'}
+    if demo_get:
+        demo = {d['instId'] for d in demo_get('public/instruments?instType=SWAP') if d.get('state') == 'live'}
+        live = {k: d for k, d in live.items() if k in demo}
     oldest = now_ms - (WINDOW_DAYS + 14) * 24 * HOUR
     ok = {k for k, d in live.items() if d.get('listTime') and int(d['listTime']) <= oldest}
     vol = {t['instId']: float(t.get('volCcy24h') or 0) * float(t.get('last') or 0) for t in get('market/tickers?instType=SWAP') if t['instId'] in ok}
@@ -104,13 +114,15 @@ def universe(data_dir, now_ms, get=okx_get, with_specs=False):
     the contract specs being fetched once and kept in the same file."""
     path = Path(data_dir) / 'evolve' / 'universe.json'
     u = json.loads(path.read_text()) if path.exists() else None
-    if not u:
-        u = dict(chosen_at=now_ms, rule=f'top {UNIVERSE_SIZE} USDT perpetuals by 24h volume, listed ≥ {WINDOW_DAYS} days',
-                 instruments=select_universe(now_ms, get))
+    real = get is okx_get
+    if not u or (real and u.get('version') != UNIVERSE_VERSION):
+        u = dict(version=UNIVERSE_VERSION, chosen_at=now_ms,
+                 rule=f'top {UNIVERSE_SIZE} USDT perpetuals by 24h volume, listed ≥ {WINDOW_DAYS} days, also on OKX demo trading',
+                 instruments=select_universe(now_ms, get, demo_get=(lambda p: okx_get(p, demo=True)) if real else None))
     if with_specs and not u.get('specs'):
         meta = {d['instId']: d for d in get('public/instruments?instType=SWAP')}
         u['specs'] = {k: [float(meta[k]['ctVal']), float(meta[k]['lotSz']), float(meta[k]['minSz'])] for k in u['instruments'] if k in meta}
-    if not path.exists() or with_specs:
+    if not path.exists() or with_specs or u.get('chosen_at') == now_ms:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(u, indent=1))
     return (u['instruments'], u.get('specs', {})) if with_specs else u['instruments']
@@ -192,11 +204,12 @@ def _safe_funding(cache, inst, now_ms, get):
 
 
 def split(series):
-    """Index ranges on the shared timeline: (train_start, train_end, test_end). Training starts after the warm-up."""
+    """Index ranges on the shared timeline: (train_start, train_end, test_end, final_end). Training starts after the warm-up."""
     n = next(iter(series.values())).n
     start = min(WARMUP, n // 10)
     cut = start + int((n - start) * TRAIN_SHARE)
-    return start, cut, n
+    mid = cut + int((n - start) * TEST_SHARE)
+    return start, cut, mid, n
 
 
 def observe_volatility(series, bars=24):

@@ -16,13 +16,20 @@ MIN_PER_SPECIES = 3     # diversity floor: every species keeps at least this man
 HALL_SIZE, KEEP_GENERATIONS, CURVE_POINTS = 20, 12, 40
 HALL_PER_DIRECTION = 3   # besides the top HALL_SIZE, the hall keeps the best qualified long-only / short-only / both
 GATE = dict(min_ret=0.0, max_dd=25.0, min_trades=8)   # out-of-sample requirements
+# Final check: the newest part of the window is never used for fitness or breeding. 13,000 strategies were screened
+# against one out-of-sample window, so passing it is partly luck; a strategy must also hold up here to be 'qualified'.
+FINAL_GATE = dict(min_ret=0.0, max_dd=25.0, min_trades=4)
+# Regime balance: training days are split by the market trend (BTC against 30 days earlier). A strategy that only makes
+# money in rising or only in falling markets has its fitness halved, so a one-way training window (2025-11 → 2026-07
+# fell) does not breed a population of pure short sellers.
+REGIME_LOOKBACK_H, REGIME_MIN_DAYS, REGIME_FACTOR = 720, 20, .5
 SWITCH_MARGIN = 1.02                                   # a challenger must beat the champion's fitness by 2 %
 # Champion stability: the out-of-sample window moves one bar per hour, so strategies near the gate flip between
 # qualified and not. The champion therefore keeps its seat for MIN_TENURE unless it clearly breaks down (RETAIN gate,
 # looser than the entry GATE), and a challenger must have qualified in STREAK consecutive runs before it can take over.
-MIN_TENURE = 24 * 3600_000
+MIN_TENURE = 7 * 24 * 3600_000     # a week: 38 of the first 52 paper closes were forced by seat changes, not by the strategies
 STREAK = 3
-RETAIN = dict(min_ret=-2.0, max_dd=30.0)
+RETAIN = dict(min_ret=-5.0, max_dd=30.0)
 # The paper account is run by a team: the top TEAM_SIZE qualified strategies (at most TEAM_SPECIES_CAP per species), each
 # with an equal share of capital, so one quiet strategy does not leave the whole account idle.
 TEAM_SIZE, TEAM_SPECIES_CAP = 5, 2
@@ -74,16 +81,53 @@ def robust_fitness(folds, trades):
     return round((mu - .5 * sd - .5 * max(0, losing - 1)) * min(1.0, trades / 30), 4)
 
 
+def regime_returns(curve, ref):
+    """Return (%) made on rising-market days and on falling-market days, from a daily equity curve. The market is
+    'rising' at a time when ref (BTC) closed above its close REGIME_LOOKBACK_H hours earlier."""
+    idx = ref._get(('tsidx',), lambda: {t: i for i, t in enumerate(ref.ts)})
+    out = dict(up=0.0, down=0.0, up_days=0, down_days=0)
+    for (t0, e0), (t1, e1) in zip(curve, curve[1:]):
+        i = idx.get(t0)
+        if i is None or e0 <= 0:
+            continue
+        k = 'up' if ref.c[i] > ref.c[max(0, i - REGIME_LOOKBACK_H)] else 'down'
+        out[k] += (e1 / e0 - 1) * 100; out[k + '_days'] += 1
+    out['up'], out['down'] = round(out['up'], 2), round(out['down'], 2)
+    return out
+
+
+def one_sided(reg):
+    """True when both regimes had enough days and the strategy lost (or made nothing) in one of them."""
+    return min(reg['up_days'], reg['down_days']) >= REGIME_MIN_DAYS and min(reg['up'], reg['down']) <= 0
+
+
+def passes(m, gate):
+    return m['ret'] > gate['min_ret'] and m['max_dd'] < gate['max_dd'] and m['trades'] >= gate['min_trades']
+
+
 def evaluate(genes, series, split):
-    start, cut, end = split
+    """split = (start, cut, end) or (start, cut, mid, end): train [start, cut), out-of-sample [cut, mid), final check
+    [mid, end). 'qualified' = passes the out-of-sample gate and, when there is a final window, the final gate too."""
+    start, cut, mid, end = split if len(split) == 4 else (*split, split[-1])
     ev = entries(genes, series)
     tr = simulate(genes, series, start, cut, curve_every=24, events=ev)
-    te = simulate(genes, series, cut, end, curve_every=24, events=ev)
+    te = simulate(genes, series, cut, mid, curve_every=24, events=ev)
     m = te['metrics']
-    qualified = m['ret'] > GATE['min_ret'] and m['max_dd'] < GATE['max_dd'] and m['trades'] >= GATE['min_trades']
+    out = dict(test=m, test_ok=passes(m, GATE), test_curve=downsample(te['curve']))
+    out['qualified'] = out['test_ok']
+    if end > mid:
+        fi = simulate(genes, series, mid, end, curve_every=24, events=ev)
+        out.update(final=fi['metrics'], final_ok=passes(fi['metrics'], FINAL_GATE), final_curve=downsample(fi['curve']))
+        out['qualified'] = out['test_ok'] and out['final_ok']
     folds = fold_scores(tr, next(iter(series.values())).ts, start, cut)
-    return dict(fitness=robust_fitness(folds, tr['metrics']['trades']), train=dict(tr['metrics'], folds=folds), test=m,
-                qualified=qualified, train_curve=downsample(tr['curve']), test_curve=downsample(te['curve']))
+    fit = robust_fitness(folds, tr['metrics']['trades'])
+    train = dict(tr['metrics'], folds=folds)
+    ref = series.get(D.REF)
+    if ref is not None:
+        train['regimes'] = reg = regime_returns(tr['curve'], ref)
+        if one_sided(reg):
+            fit = round(fit * REGIME_FACTOR if fit > 0 else fit * (2 - REGIME_FACTOR), 4)
+    return dict(out, fitness=fit, train=train, train_curve=downsample(tr['curve']))
 
 
 def add_migrants(state, migrants, series, split):
@@ -217,8 +261,7 @@ def update_streaks(state):
 
 
 def breaks_retain(node):
-    t = node['test']
-    return t['ret'] < RETAIN['min_ret'] or t['max_dd'] > RETAIN['max_dd']
+    return any(t['ret'] < RETAIN['min_ret'] or t['max_dd'] > RETAIN['max_dd'] for t in (node['test'], node.get('final')) if t)
 
 
 def protect_species(state, elites, children, pop, gen, rng, obs, series, split):

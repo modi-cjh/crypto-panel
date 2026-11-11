@@ -353,3 +353,5 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
 @keyframes evo-draw{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}
 .evo-graph.replay .evo-edge.gone{opacity:.12}
 
+
+.okx-outlier{font-size:12px;color:var(--muted);line-height:1.5;margin:.35rem 0 0}.evo-more{margin:.25rem 0}.evo-more>summary{cursor:pointer;font-size:12.5px;color:var(--muted);padding:6px 0;min-height:32px}

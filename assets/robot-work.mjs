@@ -22,7 +22,7 @@ export function workState({ positions = [], equity = NaN, paused = false, halted
   }
   if (paused) return { mode: 'paused', label: '暂停', tone, detail: '新开仓已暂停，等你恢复' };
   const left = nextBarClose(now), sinceClose = HOUR - left;
-  if (sinceClose < SCAN_WINDOW) return { mode: 'scan', label: '扫描信号', tone, detail: '1 小时 K 线刚收盘，正在按三套策略扫描入场信号' };
+  if (sinceClose < SCAN_WINDOW) return { mode: 'scan', label: '扫描信号', tone, detail: '1 小时 K 线刚收盘，进化冠军组合正在扫描入场信号' };
   const mins = Math.max(1, Math.ceil(left / 60000));
   return { mode: 'wait', label: `等信号 · ${mins} 分`, tone, detail: `空仓中，${mins} 分钟后 1 小时 K 线收盘，再扫描一次信号${finite(equity) ? `（权益 ${fmt(equity)} U）` : ''}` };
 }
