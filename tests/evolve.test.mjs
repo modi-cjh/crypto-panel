@@ -175,3 +175,10 @@ test('the bigger size needs a member that passed both gates; without one the pag
   const none = paperMarkup({ ...d, paper: { ...d.paper, leader: null, members: d.paper.members.map(m => ({ ...m, boost: false })) } });
   assert.match(none, /目前没有成员同时通过样本外和终审/); assert.doesNotMatch(none, /加大仓位<\/small>/);
 });
+
+test('the rules name the five majors and their doubled risk', async () => {
+  const { executionProfileText } = await import('../assets/control.mjs');
+  assert.match(paperMarkup(d), /BTC \/ ETH \/ SOL \/ XRP \/ DOGE 这 5 个主流币每笔风险 ×2/);
+  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, majors: ['BTC-USDT-SWAP', 'ETH-USDT-SWAP'], major_factor: 2, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
+  assert.match(text, /主流币（BTC\/ETH）风险 ×2/);
+});

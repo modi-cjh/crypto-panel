@@ -237,6 +237,7 @@ class MirrorTests(unittest.TestCase):
         self.assertFalse(any(p[0] == '/api/v5/trade/close-position' for p in fake.posts))
 
     def test_following_the_evolution_champion_uses_each_strategys_risk_on_its_coins(self):
+        self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0     # majors' extra size is tested on its own
         try:
             p = odt.configure_evolved()
             self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT), ('evolved', .01, .05, .20, .10))
@@ -260,6 +261,7 @@ class MirrorTests(unittest.TestCase):
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
     def test_same_side_signals_stop_at_twenty_percent_of_risk(self):
+        self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0     # majors' extra size is tested on its own
         try:
             odt.configure_evolved()
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
@@ -282,6 +284,7 @@ class MirrorTests(unittest.TestCase):
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
     def test_the_leader_risks_its_own_share_with_up_to_fifty_times_leverage_outside_the_same_side_cap(self):
+        self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0     # majors' extra size is tested on its own
         try:
             odt.configure_evolved()
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
@@ -306,6 +309,7 @@ class MirrorTests(unittest.TestCase):
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
     def test_daily_halt_ignores_the_leaders_result_and_leaves_the_leader_trading(self):
+        self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0     # majors' extra size is tested on its own
         try:
             odt.configure_evolved()
             px = {'BTC-USDT-SWAP': 78000.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
@@ -362,6 +366,20 @@ class MirrorTests(unittest.TestCase):
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
         self.assertEqual(odt.MARGIN_MODE, 'isolated')                                           # the retired strategy engine stays isolated
+
+    def test_the_five_majors_risk_twice_as_much_as_other_coins(self):
+        SPECS.setdefault('PEPE-USDT-SWAP', dict(ctVal='10000000', lotSz='1', minSz='1', tickSz='0.00000001'))
+        try:
+            odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP'])
+            self.assertEqual((odt.MAJORS, odt.MAJOR_FACTOR), (('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'), 2.0))
+            px = {'BTC-USDT-SWAP': 78000.0, 'PEPE-USDT-SWAP': .00000537}
+            sig = {k: dict(strategy='evolved', side=1, entry=v, stop=v * .96, tp=None, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.02) for k, v in px.items()}
+            fake = FakeOKX(equity=100000, prices=px); m, _ = run(fake, paper(**sig))
+            risk = {a['inst']: round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'}
+            self.assertEqual(risk, {'BTC-USDT-SWAP': .04, 'PEPE-USDT-SWAP': .02})
+            self.assertEqual(m.summary()['execution_profile']['major_factor'], 2.0)
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
     def test_positions_opened_this_run_are_in_the_summary_right_away(self):
         fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))

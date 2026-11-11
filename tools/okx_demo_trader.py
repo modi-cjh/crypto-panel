@@ -45,6 +45,7 @@ RISK_RANGE = (.01, .05)   # evolved mode: each order risks its strategy's own ri
 # (never more than the coin allows), outside the same-side cap and outside the daily halt.
 LEADER_RISK, LEADER_LEVERAGE = .05, 50
 MARGIN_MODE = 'isolated'          # evolved mode: 'cross' (全仓) — the team shares one account and its margin, like the paper account
+MAJORS, MAJOR_FACTOR = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'), 2.0   # majors risk twice as much (execution.ACCOUNT_RULES)
 CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
 SAME_SIDE_CAP = .05
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
@@ -71,7 +72,7 @@ def configure_evolved(universe=None):
             isinstance(i, str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', i) for i in universe):
         INSTRUMENTS = list(universe)
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT,
-                          leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE, margin_mode=MARGIN_MODE)
+                          leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE, margin_mode=MARGIN_MODE, majors=list(MAJORS), major_factor=MAJOR_FACTOR)
     return ACTIVE_PROFILE
 
 
@@ -334,6 +335,8 @@ class Mirror:
         if evolved:                                # many positions on one side are one bet: the next one risks less
             crowd = sum(1 for m in self.s['mirrored'].values() if m.get('status') == 'open' and m.get('side') == side)
             r *= next((f for n, f in CROWD_STEPS if crowd >= n), 1.0)
+            if inst in MAJORS:
+                r *= MAJOR_FACTOR
         risk = r * self.equity
         same_risk = 0.0
         for existing_key, m in self.s['mirrored'].items():
