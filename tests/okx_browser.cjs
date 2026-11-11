@@ -44,9 +44,9 @@ let feed = {
   assert.match(await page.locator('#home-okx-positions').innerText(), /趋势突破只做多/);
   // Home shows fills only; housekeeping (skips, pauses) is folded into the run log.
   assert.match(await page.locator('#home-okx-actions').innerText(), /开仓 · BTC/);
-  assert.doesNotMatch(await page.locator('#home-okx-actions').innerText(), /信号已超过 2 小时/);
+  assert.doesNotMatch(await page.locator('#home-okx-actions').innerText(), /信号太旧，价格已离开入场区间/);
   await page.locator('#home-okx-log').evaluate(el => el.closest('details').open = true);
-  assert.match(await page.locator('#home-okx-log').innerText(), /信号已超过 2 小时/);
+  assert.match(await page.locator('#home-okx-log').innerText(), /信号太旧，价格已离开入场区间/);
   // Positions are compact rows: PnL visible, details one tap away.
   assert.equal(await page.locator('#home-okx-pos-count').innerText(), '1');
   assert.equal(await page.locator('#home-okx-positions details[open]').count(), 0);

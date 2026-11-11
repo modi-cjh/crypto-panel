@@ -73,7 +73,7 @@ test('positions and actions are labelled in Chinese and exchange text is escaped
   assert.match(okxPositionsMarkup(summary({ positions: [{ ...summary().positions[0], ours: false }] }), new Map(), NOW), /非本程序仓位/);
   assert.match(okxPositionsMarkup(summary({ positions: [] })), /当前没有持仓/);
   const acts = okxActionsMarkup(summary({ recent_actions: [...summary().recent_actions, { ts: '2026-11-03T07:00:00Z', action: 'error', inst: '-', detail: '<b>bad</b>' }] }));
-  assert.match(acts, /信号已超过 2 小时/); assert.match(acts, /多 3 张 @ 70000/); assert.match(acts, /&lt;b&gt;bad/); assert.doesNotMatch(acts, /<b>bad/);
+  assert.match(acts, /信号太旧，价格已离开入场区间/); assert.match(acts, /多 3 张 @ 70000/); assert.match(acts, /&lt;b&gt;bad/); assert.doesNotMatch(acts, /<b>bad/);
 });
 
 test('confirmed execution-test fills show their source, entry, exit and net costs', () => {
@@ -137,4 +137,20 @@ test('daily halt notice shows the actual loss against the 10 % line', async () =
   const { okxActionsMarkup: acts } = await import('../assets/okx.mjs');
   const html = acts({ recent_actions: [{ ts: '2026-11-05T08:00:00Z', action: 'daily_halt', inst: '-', equity: 4495, day_start: 5000 }] });
   assert.match(html, /当日亏损 10\.1%达到停手线（10%）/);
+});
+
+test('headline return names one outsized trade, and the mirror is compared with the paper book', async () => {
+  const { okxOutlier, okxOutlierNote, mirrorCompareMarkup } = await import('../assets/okx.mjs');
+  const d = { start_equity: 5000, history: [], positions: [{ inst: 'SOL-USDT-SWAP', side: 'short', ours: true }, { inst: 'ICP-USDT-SWAP', side: 'long', ours: true }],
+    recent_actions: [{ action: 'skip', inst: 'BTC-USDT-SWAP', reason: 'paper_entry_too_old' }], largest_close: { ts: '2026-11-10T16:37:46Z', inst: 'XRP-USDT-SWAP', pnl: 2878.8 } };
+  const o = okxOutlier(d, { equity: 7337.03 });
+  assert.equal(o.inst, 'XRP-USDT-SWAP'); assert.ok(Math.abs(o.retWithout - (-10.84)) < .01);
+  assert.match(okxOutlierNote(o), /其中 \+2,878\.80 USDT 来自[\s\S]*XRP[\s\S]*扣除后[\s\S]*-10\.84%/);
+  assert.equal(okxOutlier({ ...d, largest_close: { ts: d.largest_close.ts, inst: 'XRP-USDT-SWAP', pnl: 300 } }, { equity: 5300 }), null);   // an ordinary trade: no note
+  assert.equal(okxOutlierNote(null), '');
+  const evo = { paper: { positions: [{ inst: 'SOL-USDT-SWAP', side: -1 }, { inst: 'BTC-USDT-SWAP', side: -1 }] } };
+  const html = mirrorCompareMarkup(d, evo);
+  assert.match(html, /纸面持仓 <b>2<\/b> 个，OKX 跟上 <b>1<\/b> 个，另有 1 个等待平仓/);
+  assert.match(html, /SOL[\s\S]*已跟上/); assert.match(html, /BTC[\s\S]*没跟上[\s\S]*信号太旧/); assert.match(html, /ICP[\s\S]*纸面已平/);
+  assert.match(mirrorCompareMarkup(d, null), /等待纸面账户/);
 });

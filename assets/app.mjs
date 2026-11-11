@@ -4,7 +4,7 @@ import { runtimeConfig, refreshRuntimeHealth } from './runtime.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { riskProgress } from './history.mjs';
-import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-quotes443';
+import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, okxOutlier, okxOutlierNote, mirrorCompareMarkup, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-quotes443';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261104-quotes443';
@@ -749,7 +749,7 @@ function renderOkxPositions(id,openByDefault){
  box.querySelectorAll('details.okx-pos').forEach(el=>{if(state.has(el.dataset.inst))el.open=state.get(el.dataset.inst);});
 }
 function retLine(t){
- return `累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 今日 <span class="${tone(t.day)}">${Number.isFinite(t.day)?signed(t.day)+' USDT':'—'}</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`;
+ return `累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 今日 <span class="${tone(t.day)}">${Number.isFinite(t.day)?signed(t.day)+' USDT':'—'}</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`+(o=>o?`<br><small class="okx-outlier">${okxOutlierNote(o)}</small>`:'')(okxOutlier(simData,t));
 }
 // One-line digest of the account notices; the full notices sit behind it (tap to expand).
 const PROFILE_SHORT={aggressive:'激进档',volume_test:'增量测试档',standard:'标准档',evolved:'进化冠军'};
@@ -767,7 +767,7 @@ async function refreshEvolve(){
  try{
   const r=await fetch(`${EVOLVE_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});
   if(!r.ok)throw new Error(r.status===404?'尚未生成':'读取失败');const d=await r.json();if(!validEvolve(d))throw new Error('格式不对');
-  evolveData=d;$('evolve-error').hidden=true;renderEvolve();
+  evolveData=d;$('evolve-error').hidden=true;renderEvolve();if(route==='sim')renderSim();
  }catch(e){if(route==='evolve' && !evolveData){$('evolve-error').hidden=false;$('evolve-error').textContent=e.message==='尚未生成'?'进化系统还没有运行过：第一次运行后（约 3 分钟）这里会出现第一代策略。':'进化数据暂时读取失败，稍后自动重试。';}}
  finally{evolveBusy=false;}
 }
@@ -866,6 +866,8 @@ function renderSim(){
  setText($('okx-start'),`起始 ${num(okxStart(simData))} USDT`);
  setHTML($('okx-curve'),okxCurveSVG(simData));
  renderOkxPositions('okx-positions',true);setText($('okx-pos-count'),String(simData.positions.length));
+ setHTML($('okx-compare'),mirrorCompareMarkup(simData,evolveData));
+ setHTML($('okx-outlier'),okxOutlierNote(okxOutlier(simData,t)));$('okx-outlier').hidden=!okxOutlier(simData,t);
  setHTML($('okx-actions'),okxActionsMarkup(simData,30,{kind:'trades'}));setHTML($('okx-log'),okxActionsMarkup(simData,30,{kind:'system'}));
 }
 document.addEventListener('visibilitychange',()=>{

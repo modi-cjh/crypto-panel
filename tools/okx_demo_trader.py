@@ -570,6 +570,11 @@ def main():
             lines = (out / 'actions.jsonl').read_text().splitlines()[-30:]
             summary['recent_actions'], tests_closed = dashboard_actions(out, [json.loads(l) for l in lines])
             enrich_closes(mirror, state, summary['recent_actions'])
+            for a in summary['recent_actions']:      # the biggest single close so far, kept so the dashboard can put the headline return in context
+                if a.get('action') in ('close', 'closed_on_exchange') and isinstance(a.get('pnl'), (int, float)) \
+                        and abs(a['pnl']) > abs((state.get('largest_close') or {}).get('pnl', 0)):
+                    state['largest_close'] = dict(ts=a['ts'], inst=a['inst'], pnl=a['pnl'])
+            summary['largest_close'] = state.get('largest_close')
             atomic_json(state_path, state)  # keep looked-up close results so each is fetched once
             summary['execution_test_trades'] = tests_closed
             summary['closed_trades'] += tests_closed

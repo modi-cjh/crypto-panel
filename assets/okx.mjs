@@ -25,7 +25,7 @@ const coin = inst => String(inst).split('-')[0];
 const STRATEGIES = { mean_reversion: '均值回归', breakout_long: '趋势突破只做多', breakout_daily: '日线趋势突破', execution_test: '模拟成交测试' , evolved: '进化冠军' };
 const ACTIONS = { open: '开仓', close: '平仓', amend_stop: '上移止损', closed_on_exchange: '交易所止损 / 止盈触发', skip: '跳过', daily_halt: '日亏停手',
   pause: '暂停跟单', resume: '恢复跟单', follow_current: '手动跟进当前持仓', flatten: '全部平仓并暂停', error: '出错' };
-const SKIPS = { paper_entry_too_old: '信号已超过 2 小时', stop_too_close_or_crossed: '价格已接近或越过止损', target_already_reached: '价格已到止盈',
+const SKIPS = { paper_entry_too_old: '信号太旧，价格已离开入场区间', stop_too_close_or_crossed: '价格已接近或越过止损', target_already_reached: '价格已到止盈',
   size_below_minimum: '仓位小于最小下单量', insufficient_margin: '保证金不足', exchange_position_exists_not_ours: '交易所已有非本程序的仓位',
   no_price: '取不到价格', no_instrument_spec: '取不到合约信息', same_side_risk: '达到同向风险上限', existing_risk_unknown: '现有仓位风险暂时无法确认' };
 const CLOSES = { paper_closed: '策略信号平仓', daily_halt: '日亏停手平仓', manual_flatten: '手动全部平仓', execution_test: '模拟成交测试 · 成交后立即平仓' };
@@ -54,6 +54,32 @@ export function okxLive(d, marks = new Map(), now = Date.now()) {
   const recorded = d.positions.reduce((s, p) => s + (finite(num(p.upl)) ? num(p.upl) : 0), 0);
   const live = positions.length > 0 && positions.every(p => p.live);
   return { equity: live ? d.equity - recorded + positions.reduce((s, p) => s + p.upl, 0) : d.equity, positions, live };
+}
+
+// One closed trade that made more than 20 % of the starting equity: the headline return is mostly that trade, say so.
+export function okxOutlier(d, t) {
+  const x = d?.largest_close, start = okxStart(d);
+  if (!x || !finite(x.pnl) || !(x.pnl > start * .2) || !t) return null;
+  return { inst: x.inst, pnl: x.pnl, ts: x.ts, retWithout: ((t.equity - x.pnl) / start - 1) * 100 };
+}
+export const okxOutlierNote = o => o ? `其中 ${signed(o.pnl)} USDT 来自 ${time(o.ts).slice(0, 5)} 一笔 ${esc(coin(o.inst))}（单笔占比过大，不代表策略水平）；扣除后 <span class="${o.retWithout > 0 ? 'up' : 'down'}">${signed(o.retWithout)}%</span>` : '';
+
+// Paper book (evolution team) against what the OKX mirror actually holds, coin by coin.
+export function mirrorCompareMarkup(d, evo) {
+  if (!d || !evo?.paper) return '<p class="empty">等待纸面账户与 OKX 账户数据</p>';
+  const paper = new Map((evo.paper.positions || []).map(p => [p.inst, p]));
+  const ours = new Map(d.positions.filter(p => p.ours !== false).map(p => [p.inst, p]));
+  const lastSkip = new Map();
+  for (const a of d.recent_actions || []) if (a.action === 'skip' && a.inst) lastSkip.set(a.inst, a.reason);
+  const side = v => v === 1 || v === 'long' ? '<b class="up">多</b>' : '<b class="down">空</b>';
+  const rows = [...new Set([...paper.keys(), ...ours.keys()])].map(inst => {
+    const p = paper.get(inst), o = ours.get(inst);
+    const state = p && o ? '<span class="up">已跟上</span>' : p ? `<span class="down">没跟上</span> · ${esc(SKIPS[lastSkip.get(inst)] || '等下一次运行')}` : '纸面已平，下次运行平仓';
+    return `<li><span>${coinIcon(inst)}<b>${esc(coin(inst))}</b> · 纸面 ${p ? side(p.side) : '—'} · OKX ${o ? side(o.side) : '—'}</span><span>${state}</span></li>`;
+  }).join('');
+  const both = [...paper.keys()].filter(k => ours.has(k)).length;
+  return `<p class="muted">纸面持仓 <b>${paper.size}</b> 个，OKX 跟上 <b>${both}</b> 个${ours.size > both ? `，另有 ${ours.size - both} 个等待平仓` : ''}。</p>` +
+    `<ul class="evo-list">${rows || '<li class="empty">两边都没有持仓</li>'}</ul>`;
 }
 
 export function okxTotals(d, marks = new Map(), now = Date.now()) {
