@@ -11,7 +11,8 @@
 - Contract mode: each series carries its OKX contract spec (ctVal, lotSz, minSz; kept in universe.json) and its funding
   rates {ts: rate}. OKX serves about 3 months of funding history, so the cache keeps every rate it has seen; hours
   before the oldest known rate use the default FUNDING_DEFAULT every 8 hours.
-- The window is split by time: the first TRAIN_SHARE for training, the rest is out-of-sample.
+- The window is split by time: TRAIN_SHARE for training, TEST_SHARE out-of-sample (the gate strategies are bred against),
+  and the last part is the final check: never used for fitness or breeding, only to decide who may join the team.
 """
 import json
 import subprocess
@@ -26,7 +27,8 @@ INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP
 UNIVERSE_SIZE = 100
 WORKERS = 4           # parallel downloads; the shared pacing below keeps the total under OKX's rate limit
 WINDOW_DAYS = 365
-TRAIN_SHARE = .7
+TRAIN_SHARE = .6
+TEST_SHARE = .2         # the rest (20 %) is the final check
 WARMUP = 250          # bars used only to warm indicators up before the training window
 HOUR = 3600_000
 REF = 'BTC-USDT-SWAP'
@@ -202,11 +204,12 @@ def _safe_funding(cache, inst, now_ms, get):
 
 
 def split(series):
-    """Index ranges on the shared timeline: (train_start, train_end, test_end). Training starts after the warm-up."""
+    """Index ranges on the shared timeline: (train_start, train_end, test_end, final_end). Training starts after the warm-up."""
     n = next(iter(series.values())).n
     start = min(WARMUP, n // 10)
     cut = start + int((n - start) * TRAIN_SHARE)
-    return start, cut, n
+    mid = cut + int((n - start) * TEST_SHARE)
+    return start, cut, mid, n
 
 
 def observe_volatility(series, bars=24):

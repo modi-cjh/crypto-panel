@@ -277,9 +277,11 @@ def _species_signal(g, s, i):
 
 
 # ----------------------------------------------------------------- the engine
-def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, curve_every=24, events=None):
+def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, curve_every=24, events=None, stop_entries_at=None):
     """Run genome g over bar indexes [start, end) of every series (all series share the same timeline).
     `events` = entries(g, series), when the caller already computed them.
+    `stop_entries_at`: from this bar index on no new signals are taken; open positions run to their own exits
+    (a member that lost its seat winds down instead of being closed at market).
 
     Returns dict(equity, trades, curve, positions, metrics). `positions` are still open at `end` unless close_at_end.
     """
@@ -363,7 +365,7 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
         peak = max(peak, eq); max_dd = max(max_dd, (peak - eq) / peak if peak > 0 else 0)
         if curve_every and (i - start) % curve_every == 0:
             curve.append((ts0[i], round(eq, 2)))
-        if i < end - 1 or not close_at_end:
+        if (i < end - 1 or not close_at_end) and (stop_entries_at is None or i < stop_entries_at):
             for inst, d, dist in events.get(i, ()):
                 if inst not in pos:
                     pending[inst], dists[inst] = d, dist

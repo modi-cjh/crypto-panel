@@ -319,7 +319,7 @@ class EvolutionTests(unittest.TestCase):
         st = E.init_state(2, self.sr, self.split)
         nodes, ids = st['nodes'], st['population'][:len(fits)]
         for nid, (fit, ok, ret, dd) in zip(ids, fits):
-            nodes[nid].update(fitness=fit, qualified=ok, test=dict(nodes[nid]['test'], ret=ret, max_dd=dd))
+            nodes[nid].update(fitness=fit, qualified=ok, test=dict(nodes[nid]['test'], ret=ret, max_dd=dd), final=dict(nodes[nid]['test'], ret=ret, max_dd=dd))
         for nid in st['population'][len(fits):]:
             nodes[nid].update(fitness=0.0, qualified=False)
         for nid in st['population']:
@@ -356,10 +356,12 @@ class EvolutionTests(unittest.TestCase):
         E.update_hall(st)
         for k in range(1, 4):                                              # streaks build up, but tenure has not passed
             self.assertEqual(E.choose_team(st, T0 + k * h), [])
-        changes = E.choose_team(st, T0 + 25 * h)                           # one swap only, against the weakest (1.0)
+        self.assertEqual(E.choose_team(st, T0 + 25 * h), [])               # a day is not enough any more: tenure is a week
+        W = E.MIN_TENURE // h
+        changes = E.choose_team(st, T0 + (W + 1) * h)                      # one swap only, against the weakest (1.0)
         self.assertEqual(len(changes), 1); self.assertEqual(changes[0][1], ids[4]); self.assertEqual(changes[0][3], 'challenger')
         self.assertIn(changes[0][2], ids[5:])
-        changes = E.choose_team(st, T0 + 26 * h)                           # next run: the next-weakest seasoned member (2.0)
+        changes = E.choose_team(st, T0 + (W + 2) * h)                      # next run: the next-weakest seasoned member (2.0)
         self.assertEqual(len(changes), 1); self.assertEqual(changes[0][1], ids[3])
 
     def test_direction_quota_keeps_seats_for_the_other_direction_and_rebalances_after_tenure(self):
@@ -376,16 +378,17 @@ class EvolutionTests(unittest.TestCase):
         # A team over the quota (e.g. from before the quota existed) is rebalanced once tenure has passed.
         st['team'] = [dict(id=i, since=T0) for i in ids[:5]]
         self.assertEqual(E.choose_team(st, T0 + h), [])                       # tenure first
-        changes = E.choose_team(st, T0 + 25 * h)
+        W = E.MIN_TENURE // h
+        changes = E.choose_team(st, T0 + (W + 1) * h)
         self.assertEqual(len(changes), 1); self.assertEqual(changes[0][3], 'balance')
         self.assertEqual(changes[0][1], ids[4]); self.assertEqual(changes[0][2], ids[6])   # weakest short → the long
-        self.assertEqual(E.choose_team(st, T0 + 26 * h), [])                  # no other long / both qualified: stays at 4 shorts
+        self.assertEqual(E.choose_team(st, T0 + (W + 2) * h), [])             # no other long / both qualified: stays at 4 shorts
         nodes[st['population'][7]].update(fitness=.5, qualified=True, species='trend'); nodes[st['population'][7]]['genes']['direction'] = 'both'
         E.update_hall(st)
-        changes = E.choose_team(st, T0 + 27 * h)                              # a 'both' strategy qualifies: one more seat moves
+        changes = E.choose_team(st, T0 + (2 * W + 3) * h)                     # a 'both' strategy qualifies: one more seat moves
         self.assertEqual([(c[2], c[3]) for c in changes], [(st['population'][7], 'balance')])
         self.assertEqual(sum(nodes[m['id']]['genes']['direction'] == 'short' for m in st['team']), 3)
-        self.assertEqual(E.choose_team(st, T0 + 28 * h), [])
+        self.assertEqual(E.choose_team(st, T0 + (2 * W + 4) * h), [])
         # The hall keeps the best qualified of each direction even when the top HALL_SIZE are all short.
         st3, ids3 = self._setup([(30 - k, True, 3, 10) for k in range(25)] + [(-1.0, True, 3, 10), (-2.0, True, 3, 10)])
         for nid in ids3[:25]: st3['nodes'][nid]['genes']['direction'] = 'short'
@@ -396,7 +399,7 @@ class EvolutionTests(unittest.TestCase):
         st2, ids2 = self._setup([(9 - k, True, 3, 10) for k in range(5)])
         for nid in ids2: st2['nodes'][nid]['genes']['direction'] = 'short'
         E.update_hall(st2); E.choose_team(st2, T0)
-        self.assertEqual(len(st2['team']), 5); self.assertEqual(E.choose_team(st2, T0 + 25 * h), [])
+        self.assertEqual(len(st2['team']), 5); self.assertEqual(E.choose_team(st2, T0 + (E.MIN_TENURE // h + 1) * h), [])
 
     def test_breakdown_replaces_a_member_at_once_and_migration_keeps_the_old_champion(self):
         st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10)])
@@ -406,15 +409,71 @@ class EvolutionTests(unittest.TestCase):
         st.pop('team', None)
         E.choose_team(st, T0)
         self.assertEqual(st['team'][0], dict(id=ids[1], since=T0 - 5))        # migrated with its tenure
-        st['nodes'][ids[1]]['test'].update(ret=-3.0); st['nodes'][ids[1]]['qualified'] = False; E.update_hall(st)
+        st['nodes'][ids[1]]['test'].update(ret=-6.0); st['nodes'][ids[1]]['qualified'] = False; E.update_hall(st)
         st['nodes'][st['population'][3]].update(fitness=2.0, qualified=True, species='trend'); E.update_hall(st)
         changes = E.choose_team(st, T0 + 3600_000)
         self.assertIn((0, ids[1], st['population'][3], 'breakdown'), changes)
         self.assertFalse(E.breaks_retain(dict(test=dict(ret=0, max_dd=29))))
         self.assertTrue(E.breaks_retain(dict(test=dict(ret=5, max_dd=31))))
+        self.assertFalse(E.breaks_retain(dict(test=dict(ret=-4, max_dd=10))))
+        self.assertTrue(E.breaks_retain(dict(test=dict(ret=5, max_dd=10), final=dict(ret=-6, max_dd=10))))   # the final window counts too
+
+    def test_final_window_is_a_second_gate_and_one_sided_strategies_lose_half_their_fitness(self):
+        r = E.evaluate(base_genes(), self.sr, self.split)
+        self.assertEqual(r['qualified'], r['test_ok'] and r['final_ok'])
+        self.assertIn('trades', r['final']); self.assertIn('regimes', r['train'])
+        three = E.evaluate(base_genes(), self.sr, self.split[:2] + self.split[3:])     # no final window: the old two-way split
+        self.assertNotIn('final', three); self.assertEqual(three['qualified'], three['test_ok'])
+        self.assertFalse(E.passes(dict(ret=5, max_dd=10, trades=3), E.FINAL_GATE)); self.assertTrue(E.passes(dict(ret=5, max_dd=10, trades=4), E.FINAL_GATE))
+        # regime split: equity rises 1 % a day while BTC rises, falls 1 % a day while BTC falls
+        day = 24 * H
+        btc = series_from([100 + i * .01 for i in range(1500)] + [115 - i * .01 for i in range(1500)])
+        curve = [(btc.ts[0] + d * day, 1000 * (1.01 ** min(d, 62)) * (.99 ** max(0, d - 62))) for d in range(125)]
+        reg = E.regime_returns(curve, btc)
+        self.assertGreater(reg['up'], 30); self.assertLess(reg['down'], -20)
+        self.assertGreaterEqual(min(reg['up_days'], reg['down_days']), E.REGIME_MIN_DAYS)
+        self.assertTrue(E.one_sided(reg))
+        self.assertFalse(E.one_sided(dict(up=5, down=3, up_days=40, down_days=40)))
+        self.assertFalse(E.one_sided(dict(up=5, down=-3, up_days=40, down_days=5)))     # too few falling days to judge
+
+    def test_a_member_that_loses_its_seat_winds_down_instead_of_closing_at_market(self):
+        st = E.init_state(5, self.sr, self.split)
+        for nid in st['population'][:10]: st['nodes'][nid]['qualified'] = True
+        E.update_hall(st)
+        n = self.sr['BTC-USDT-SWAP'].n
+        cut = {k: X.Series(k, v.ts[:n - 150], v.o[:n - 150], v.h[:n - 150], v.l[:n - 150], v.c[:n - 150]) for k, v in self.sr.items()}
+        cut['ETH-USDT-SWAP'].ref = cut['BTC-USDT-SWAP']
+        E.choose_team(st, 0)
+        st['paper'] = dict(start_equity=10000.0, slots=[P._new_slot(2000.0) for _ in range(E.TEAM_SIZE)])
+        t0 = cut['BTC-USDT-SWAP'].ts[200]
+        for i, m in enumerate(st['team']):
+            node = st['nodes'][m['id']]
+            st['paper']['slots'][i]['segments'].append(dict(champion=m['id'], slot=i, genes=node['genes'], species=node['species'], from_ts=t0, reason='first',
+                                                            start_equity=2000.0, to_ts=None, end_equity=None))
+        view, _ = P.update(st, cut, [])
+        held = [m for m in view['members'] if m['positions']]
+        self.assertTrue(held, 'need a member holding a position at the cut')
+        slot_i, old = held[0]['slot'], held[0]['id']
+        before = view['equity']
+        new = next(nid for nid in st['population'] if nid not in {m['id'] for m in st['team']})
+        st['team'][slot_i] = dict(id=new, since=0)
+        view2, signals = P.update(st, cut, [(slot_i, old, new, 'challenger')])
+        self.assertAlmostEqual(view2['equity'], before, places=1)                      # nothing is sold: equity is unchanged by the switch
+        wind = [p for p in view2['positions'] if p.get('winding')]
+        self.assertTrue(wind); self.assertEqual({p['champion'] for p in wind}, {old})
+        for p in wind: self.assertIn(p['inst'], signals)                               # the mirror keeps managing them
+        self.assertFalse([t for t in view2['trades'] if t['reason'] == 'switch'])
+        view3, _ = P.update(st, self.sr, [])                                           # 150 bars later
+        slot = st['paper']['slots'][slot_i]
+        late = [t for t in view3['trades'] if t.get('champion') == old and t['closed'] > cut['BTC-USDT-SWAP'].ts[-1]]
+        self.assertTrue(late or slot['winding'])                                       # exits by its own stop / target / time
+        self.assertFalse([t for t in late if t['reason'] == 'switch'])
+        self.assertAlmostEqual(view3['equity'], sum(m['equity'] for m in view3['members']), places=1)
 
     def test_team_paper_slots_sum_and_mirror_signals_do_not_collide(self):
         st = E.init_state(5, self.sr, self.split)
+        for nid in st['population'][:6]: st['nodes'][nid]['qualified'] = True
+        E.update_hall(st)
         E.choose_team(st, self.sr['BTC-USDT-SWAP'].ts[500])
         changes = [(i, None, m['id'], 'first') for i, m in enumerate(st['team'])]
         # start the slots some bars back so they have something to trade
@@ -477,10 +536,11 @@ class DataTests(unittest.TestCase):
             self.assertEqual(rows2[-1][0], now + H); self.assertEqual(len(calls2), 1)   # no history paging needed
             self.assertGreater(n_calls, 10)
 
-    def test_split_is_seventy_thirty_after_warmup(self):
+    def test_split_is_train_test_final_after_warmup(self):
         sr = tiny_market(1250)
-        start, cut, end = D.split(sr)
-        self.assertEqual(start, 125); self.assertEqual(cut - start, int((end - start) * .7))
+        start, cut, mid, end = D.split(sr)
+        self.assertEqual(start, 125); self.assertEqual(cut - start, int((end - start) * .6)); self.assertEqual(mid - cut, int((end - start) * .2))
+        self.assertGreater(end, mid)
 
 
 class RunTests(unittest.TestCase):
@@ -507,14 +567,14 @@ class RunTests(unittest.TestCase):
         try:
             dmod.load_series.__defaults__ = (get, D.INSTRUMENTS, None)
             clock = R.time.time
-            R.time.time = lambda: 1_794_300_000.0            # fixed clock: the population seed comes from it, keep the run reproducible
+            R.time.time = lambda: 1794300021.0            # fixed clock: the population seed comes from it, keep the run reproducible
             self.addCleanup(setattr, R.time, 'time', clock)
             with tempfile.TemporaryDirectory() as tmp:
                 R.main(['--data', tmp, '--generations', '2'])
                 out = Path(tmp) / 'evolve'
                 dash = json.loads((out / 'dashboard.json').read_text())
                 self.assertEqual(dash['generation'], 2); self.assertEqual(len(dash['history']), 2)
-                self.assertTrue(dash['nodes']); self.assertEqual(dash['data']['train_share'], .7)
+                self.assertTrue(dash['nodes']); self.assertEqual(dash['data']['train_share'], .6); self.assertIn('final_from', dash['data'])
                 # Lineage nodes are slim; seated members keep their genes; every node's details are in nodes.json.
                 seated = {m['id'] for m in dash['team']} | {dash['champion']['id']}
                 self.assertEqual(dash['schema'], 1); self.assertEqual(dash['details'], 'nodes.json')   # schema 1: pages from before nodes.json still read it

@@ -25,7 +25,7 @@ def iso(ms):
     return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
 
 
-GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'origin', 'fitness', 'qualified', 'train', 'test')
+GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'origin', 'fitness', 'qualified', 'train', 'test', 'final', 'test_ok', 'final_ok')
 
 
 def node_view(n, curves=False, slim=False):
@@ -48,15 +48,16 @@ def node_details(state):
 
 def dashboard(state, series, split, obs, paper_view, timing):
     s = next(iter(series.values()))
-    start, cut, end = split
+    start, cut, mid, end = split
     nodes, champ = state['nodes'], state['champion']
     seated = {m['id'] for m in state.get('team', [])} | {champ}
     return dict(
         schema=1, details='nodes.json', updated_at=iso(int(time.time() * 1000)), generation=state['generation'], population=state['population'],
         stats=dict(state['stats'], population=len(state['population']), elites=E.ELITES, offspring=E.POPULATION - E.ELITES, hall=len(state['hall'])),
         data=dict(instruments=list(series), bar='1H', bars=s.n, train_from=iso(s.ts[start]), train_to=iso(s.ts[cut - 1]),
-                  test_from=iso(s.ts[cut]), test_to=iso(s.ts[end - 1]), train_share=D.TRAIN_SHARE),
-        gate=E.GATE, volatility=obs, history=state['history'][-500:], timing=timing,
+                  test_from=iso(s.ts[cut]), test_to=iso(s.ts[mid - 1]), final_from=iso(s.ts[mid]), final_to=iso(s.ts[end - 1]),
+                  train_share=D.TRAIN_SHARE, test_share=D.TEST_SHARE),
+        gate=E.GATE, final_gate=E.FINAL_GATE, volatility=obs, history=state['history'][-500:], timing=timing,
         species_names=SPECIES_NAMES, gene_bounds={k: [v[1], v[2]] if v[0] != 'choice' else v[1] for k, v in GENES.items()},
         nodes=[node_view(n, curves=n['id'] == champ, slim=n['id'] not in seated) for n in nodes.values()],
         hall=state['hall'], champion=node_view(nodes[champ], curves=True) if champ in nodes else None,
