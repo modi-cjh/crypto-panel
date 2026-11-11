@@ -74,3 +74,4 @@
 {"ts": "2026-11-11T13:24:10Z", "action": "skip", "inst": "BARD-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-11T13:24:10Z", "action": "skip", "inst": "H-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-11T17:07:22Z", "action": "amend_stop", "inst": "GRASS-USDT-SWAP", "dry_run": false, "old": 0.5155269058416524, "new": 0.5144269058416524}
+{"ts": "2026-11-11T21:46:21Z", "action": "amend_stop", "inst": "GRASS-USDT-SWAP", "dry_run": false, "old": 0.5144269058416524, "new": 0.5095269058416524}

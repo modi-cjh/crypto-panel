@@ -1,10 +1,10 @@
 {
- "updated_at": "2026-11-11T17:06:24Z",
+ "updated_at": "2026-11-11T21:45:33Z",
  "champion": "s13164",
  "team": [
   "s13215",
   "s12407",
-  "s12473",
+  "s13660",
   "s12821",
   "s13164",
   "s14155",
@@ -108,7 +108,7 @@
    "opened": 1794384000000,
    "strategy": "evolved",
    "champion": "s13164",
-   "rank": 6,
+   "rank": 7,
    "risk": 0.05,
    "leverage": 50,
    "leader": true
@@ -116,7 +116,7 @@
   "GRASS-USDT-SWAP": {
    "side": -1,
    "entry": 0.45760846,
-   "stop": 0.5144269058416524,
+   "stop": 0.5095269058416524,
    "tp": 0.2825758142275384,
    "opened": 1794384000000,
    "strategy": "evolved",
@@ -133,7 +133,7 @@
    "opened": 1794384000000,
    "strategy": "evolved",
    "champion": "s12821",
-   "rank": 5,
+   "rank": 4,
    "risk": 0.02,
    "leverage": 10
   },
@@ -145,7 +145,7 @@
    "opened": 1794384000000,
    "strategy": "evolved",
    "champion": "s12821",
-   "rank": 5,
+   "rank": 4,
    "risk": 0.02,
    "leverage": 10
   },
@@ -157,7 +157,7 @@
    "opened": 1794398400000,
    "strategy": "evolved",
    "champion": "s12821",
-   "rank": 5,
+   "rank": 4,
    "risk": 0.02,
    "leverage": 10
   }
