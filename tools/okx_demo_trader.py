@@ -40,9 +40,10 @@ INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP
 RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # daily loss halt: 10 % below the day's starting equity
 EVOLVED_DAILY_HALT = .10                         # following the evolution champions: 10 % too, counted WITHOUT the leader's result
 RISK_RANGE = (.01, .05)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
-# The team leader (signals with leader=True; chosen by the user): 20 % of the whole account per trade, up to 50× leverage
+# The team leader (signals with leader=True; chosen by the user): 5 % of the whole account per trade (20 % at first: the
+# backtest of the whole account lost 64 % in a year, nearly all of it the leader's size), up to 50× leverage
 # (never more than the coin allows), outside the same-side cap and outside the daily halt.
-LEADER_RISK, LEADER_LEVERAGE = .20, 50
+LEADER_RISK, LEADER_LEVERAGE = .05, 50
 MARGIN_MODE = 'isolated'          # evolved mode: 'cross' (全仓) — the team shares one account and its margin, like the paper account
 CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
 SAME_SIDE_CAP = .05

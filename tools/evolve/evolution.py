@@ -372,6 +372,20 @@ def choose_team(state, now_ms):
     state['champion'] = best['id'] if best else None
     state['champion_since'] = best['since'] if best else None
     state['leader_since'] = since if best else None
+    # The bigger size (paper.LEADER_RISK) is a separate title, state['leader']: only a member that passed BOTH the
+    # out-of-sample and the final gate may hold it, it is lost at once when the holder stops qualifying, and it moves to
+    # a better qualified member only after MIN_TENURE and a clear lead. Nobody qualified → nobody trades bigger.
+    ok = [m for m in team if nodes[m['id']].get('qualified')]
+    hold = next((m for m in ok if m['id'] == state.get('leader')), None)
+    top = max(ok, key=lambda m: nodes[m['id']]['fitness'], default=None)
+    boost_since = state.get('boost_since') or now_ms
+    if hold and top['id'] != hold['id']:
+        fh, ft = nodes[hold['id']]['fitness'], nodes[top['id']]['fitness']
+        if not (now_ms - boost_since >= MIN_TENURE and ft > max(fh * SWITCH_MARGIN, fh + .01)):
+            top = hold
+    if top and (not hold or top['id'] != hold['id']):
+        boost_since = now_ms
+    state['leader'], state['boost_since'] = (top['id'] if top else None), (boost_since if top else None)
     return changes
 
 

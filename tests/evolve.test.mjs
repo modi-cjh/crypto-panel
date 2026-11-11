@@ -151,10 +151,10 @@ test('the leader is shown with its bigger size and the rules explain it', async 
   const { executionProfileText } = await import('../assets/control.mjs');
   const html = paperMarkup(d);
   assert.match(html, /第一名<br><small class="muted">加大仓位<\/small>/);
-  assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）加大仓位[\\s\\S]*整个账户的 20%[\\s\\S]*杠杆上限 50×[\\s\\S]*不计入同方向上限[\\s\\S]*日亏停手`));
+  assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）加大仓位[\\s\\S]*整个账户的 5%[\\s\\S]*杠杆上限 50×[\\s\\S]*不计入同方向上限[\\s\\S]*日亏停手`));
   assert.match(html, /其他成员每笔 1%–5%/); assert.match(html, /升为第一名（加大仓位）/);
-  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, leader_risk: .2, leader_leverage: 50, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
-  assert.match(text, /每笔止损风险 1%–5%（按策略）/); assert.match(text, /第一名每笔 20%、最高 50×/); assert.match(text, /日亏 10% 停手/);
+  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, leader_risk: .05, leader_leverage: 50, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
+  assert.match(text, /每笔止损风险 1%–5%（按策略）/); assert.match(text, /第一名每笔 5%、最高 50×/); assert.match(text, /日亏 10% 停手/);
 });
 
 test('shared cross-margin account: members show what they contributed, positions say 全仓, rules list the shared limits', () => {
@@ -168,4 +168,10 @@ test('shared cross-margin account: members show what they contributed, positions
     trades: [{ inst: 'ETH-USDT-SWAP', side: 1, pnl: -30, reason: 'daily_halt', closed: t0, lever: 10, funding: 0, champion: 's2' }] } });
   assert.match(one, /16x 全仓 · 保证金 50\.00 U · <b>第一名仓位<\/b>/); assert.doesNotMatch(one, /强平 —/);
   assert.match(one, /日亏停手平仓/); assert.match(one, /今日已停手/);
+});
+
+test('the bigger size needs a member that passed both gates; without one the page says so', () => {
+  assert.match(paperMarkup(d), /只有样本外和终审都合格的成员才能当第一名/);
+  const none = paperMarkup({ ...d, paper: { ...d.paper, leader: null, members: d.paper.members.map(m => ({ ...m, boost: false })) } });
+  assert.match(none, /目前没有成员同时通过样本外和终审/); assert.doesNotMatch(none, /加大仓位<\/small>/);
 });
