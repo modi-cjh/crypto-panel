@@ -390,6 +390,10 @@
   [
    1794344377703,
    7347.48
+  ],
+  [
+   1794360073212,
+   7355.26
   ]
  ],
  "mirrored": {
@@ -643,6 +647,35 @@
    "opened_at": 1794344377703,
    "status": "open",
    "ordId": "4088338427011387392"
+  },
+  "BTC-USDT-SWAP|1794326400000": {
+   "inst": "BTC-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "XRP-USDT-SWAP|1794326400000": {
+   "inst": "XRP-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
+  },
+  "ICP-USDT-SWAP|1794358800000": {
+   "inst": "ICP-USDT-SWAP",
+   "side": 1,
+   "posSide": "long",
+   "strategy": "evolved",
+   "contracts": "67700.3",
+   "stop": 2.3637022788469233,
+   "target": 2.7132851997109313,
+   "leverage": 9,
+   "entry": 2.581,
+   "clOrdId": "evicp1794358800",
+   "opened_at": 1794360073212,
+   "status": "open",
+   "ordId": "4088865074894589952"
   }
  },
  "paused": false,

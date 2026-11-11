@@ -49,3 +49,7 @@
 {"ts": "2026-11-10T17:23:35Z", "action": "skip", "inst": "ETH-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-10T20:59:37Z", "action": "skip", "inst": "ETH-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-10T20:59:37Z", "action": "open", "inst": "SOL-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "31.28", "price": 83.29, "stop": "87.99", "target": "77.65", "leverage": 10, "risk_usdt": 146.98}
+{"ts": "2026-11-11T01:21:13Z", "action": "skip", "inst": "BTC-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
+{"ts": "2026-11-11T01:21:13Z", "action": "skip", "inst": "XRP-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
+{"ts": "2026-11-11T01:21:13Z", "action": "open", "inst": "ICP-USDT-SWAP", "dry_run": false, "side": 1, "strategy": "evolved", "contracts": "67700.3", "price": 2.581, "stop": "2.364", "target": "2.713", "leverage": 9, "risk_usdt": 147.11}
+{"ts": "2026-11-11T01:21:13Z", "action": "skip", "inst": "SPX-USDT-SWAP", "dry_run": false, "reason": "no_price"}
