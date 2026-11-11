@@ -274,6 +274,24 @@ class EvolutionTests(unittest.TestCase):
     def setUp(self):
         self.sr = tiny_market(); self.split = D.split(self.sr)
         self.obs = D.observe_volatility(self.sr)
+        for k, v in (('TEAM_SIZE', 5), ('TEAM_DIRECTION_CAP', 3)):         # the seat rules are tested on a team of five
+            self.addCleanup(setattr, E, k, getattr(E, k)); setattr(E, k, v)
+
+    def test_team_has_eight_seats_and_members_that_stop_qualifying_are_replaced(self):
+        E.TEAM_SIZE, E.TEAM_DIRECTION_CAP = 8, 5
+        st, ids = self._setup([(12 - k, True, 3, 10) for k in range(10)])
+        for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % len(G.SPECIES)]
+        E.update_hall(st); E.choose_team(st, T0)
+        self.assertEqual([m['id'] for m in st['team']], ids[:8])
+        h = 3600_000
+        st['nodes'][ids[3]]['qualified'] = False; E.update_hall(st)
+        self.assertEqual(E.choose_team(st, T0 + h), []); self.assertEqual(E.choose_team(st, T0 + 2 * h), [])   # two runs: still seated
+        changes = E.choose_team(st, T0 + 3 * h)                                                               # third run in a row: replaced, tenure does not protect it
+        self.assertEqual([(c[1], c[3]) for c in changes], [(ids[3], 'unqualified')]); self.assertIn(changes[0][2], ids[8:])
+        st['nodes'][ids[5]]['qualified'] = False; E.update_hall(st)
+        E.choose_team(st, T0 + 4 * h); st['nodes'][ids[5]]['qualified'] = True; E.update_hall(st)
+        E.choose_team(st, T0 + 5 * h)
+        self.assertEqual(st['unqualified'], {})                                                               # qualifying again resets the count
 
     def test_generation_keeps_size_carries_elites_and_records_lineage(self):
         st = E.init_state(1, self.sr, self.split)
@@ -491,6 +509,29 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(risk, {'BTC-USDT-SWAP': .04, 'PEPE-USDT-SWAP': .02})
         self.assertEqual(X.ACCOUNT_RULES['major_factor'], 2.0); self.assertIn('DOGE-USDT-SWAP', X.MAJORS)
 
+    def test_coins_whose_demo_price_is_off_take_no_new_entry_and_the_ranges_are_remembered(self):
+        sr = self._breakout_market(coins=3)
+        seg = [dict(id='m', genes=base_genes(risk=.02), from_i=0, wind_i=None, boosts=[])]
+        r = X.simulate_account(seg, sr, 30, 71, equity=10000.0, blocked={'C1-USDT-SWAP': [(35, None)], 'C2-USDT-SWAP': [(10, 38)]})
+        self.assertEqual(sorted(p['inst'] for p in r['positions']), ['C0-USDT-SWAP', 'C2-USDT-SWAP'])    # C1 blocked at the fill; C2's block had ended
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'evolve'; path.mkdir()
+            (path / 'universe.json').write_text(json.dumps(dict(version=2, instruments=['A-USDT-SWAP', 'B-USDT-SWAP', 'C-USDT-SWAP'])))
+            tick = lambda **px: [dict(instId=f'{k}-USDT-SWAP', last=str(v)) for k, v in px.items()]
+            ranges, now = D.price_check(tmp, 1000, lambda p: tick(A=100, B=100, C=100), lambda p: tick(A=100.5, B=147, C=0))
+            self.assertEqual(ranges, {'B-USDT-SWAP': [[1000, None]], 'C-USDT-SWAP': [[1000, None]]}); self.assertEqual(now, {'B-USDT-SWAP': .47, 'C-USDT-SWAP': None})
+            ranges, now = D.price_check(tmp, 2000, lambda p: tick(A=100, B=100, C=100), lambda p: tick(A=103, B=100.2, C=0))
+            self.assertEqual(ranges, {'A-USDT-SWAP': [[2000, None]], 'B-USDT-SWAP': [[1000, 2000]], 'C-USDT-SWAP': [[1000, None]]})   # B is back, A drifted
+            self.assertEqual(json.loads((path / 'universe.json').read_text())['price_off'], ranges)
+            def down(p): raise RuntimeError('x')
+            self.assertEqual(D.price_check(tmp, 3000, down, down)[0], ranges)                             # the check failing changes nothing
+        # the paper account: a blocked coin's pending signal is neither shown nor sent to the mirror
+        st, ids = self._setup([(5.0, True, 3, 10)])
+        E.update_hall(st); E.choose_team(st, T0)
+        view, signals = P.update(st, self.sr, [])
+        view2, signals2 = P.update(st, self.sr, [], {k: [[self.sr[k].ts[0], None]] for k in self.sr})
+        self.assertEqual(view2['price_off'], sorted(self.sr)); self.assertEqual(view2['pending'], []); self.assertEqual(signals2, {})
+
     def test_daily_halt_closes_the_other_members_and_leaves_the_leader(self):
         closes = [100.0] * 40 + [110.0, 111.0, 111.0] + [104.0] * 20                     # breakout, then a fall that stays above the stops
         sr = {f'C{k}-USDT-SWAP': series_from(list(closes), f'C{k}-USDT-SWAP') for k in range(6)}
@@ -508,7 +549,7 @@ class EvolutionTests(unittest.TestCase):
         E.update_hall(st); E.choose_team(st, T0)
         n = self.sr['BTC-USDT-SWAP'].n
         cut = lambda back: {k: X.Series(k, v.ts[:n - back], v.o[:n - back], v.h[:n - back], v.l[:n - back], v.c[:n - back]) for k, v in self.sr.items()}
-        st['paper'] = dict(start_equity=10000.0, slots=[dict(P._new_slot(2100.0), curve_done=[[T0, 2000.0], [T0 + H, 2100.0]]) for _ in range(E.TEAM_SIZE)])
+        st['paper'] = dict(start_equity=10000.0, slots=[dict(P._new_slot(2100.0), curve_done=[[T0, 2000.0], [T0 + H, 2100.0]]) for _ in range(5)])
         view, signals = P.update(st, cut(300), [])
         acc = st['paper']['account']
         self.assertNotIn('slots', st['paper']); self.assertEqual(acc['start_equity'], 10500.0)        # the slots' total carries over

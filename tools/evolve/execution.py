@@ -413,7 +413,7 @@ def crowd_factor(same_side_open):
     return next((f for n, f in CROWD_STEPS if same_side_open >= n), 1.0)
 
 
-def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1):
+def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None):
     """ONE account traded by several strategies at once, cross margin (全仓): the paper account of the champion team.
 
     segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
@@ -428,6 +428,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     - margin = notional ÷ leverage (leverage = min(cap, 80 % ÷ stop distance), cap = rules['lever'] / 'leader_lever'), and
       a new entry needs it to fit into 95 % of the free margin (equity − margin in use);
     - a trade on one of rules['majors'] risks rules['major_factor'] times as much;
+    - `blocked` = {inst: [(i0, i1 or None)]}: bar ranges in which a coin takes no new entry (its OKX demo price was
+      away from the real market, data.price_check); positions already open run on;
     - crowding: with 3+ positions already open on a side the next entry on that side risks half, with 6+ a quarter;
     - same-side cap: the open risk of the non-leader positions on one side plus the new one stays within
       rules['same_side_cap'] × equity (leader positions are outside it);
@@ -476,6 +478,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         for sid, inst, d, dist, boost in sorted(pending, key=lambda x: not x[4]):
             s, g = series[inst], by_id[sid]['genes']
             if dist <= 0 or inst in pos or sum(1 for p in pos.values() if p['seg'] == sid) >= MAX_POSITIONS or (halted and not boost):
+                continue
+            if blocked and any(a <= i and (b is None or i < b) for a, b in blocked.get(inst, ())):
                 continue
             px = s.o[i] * (1 + SLIP * d)
             if dist / px < MIN_STOP_DIST:

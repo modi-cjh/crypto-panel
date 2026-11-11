@@ -381,6 +381,18 @@ class MirrorTests(unittest.TestCase):
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
+    def test_no_entry_while_the_demo_price_is_away_from_the_real_market(self):
+        state = dict(odt.new_state(), paused=False)
+        fake = FakeOKX()                                                           # demo BTC 70000
+        m = odt.Mirror(fake, state, paper(**{'BTC-USDT-SWAP': long_btc()}), NOW, False); m.live = lambda inst: 68000.0   # real market 2.9 % lower
+        m.run('run')
+        self.assertEqual(fake.posts, []); self.assertEqual(m.actions[-1]['reason'], 'demo_price_off'); self.assertEqual(state['mirrored'], {})
+        m2 = odt.Mirror(fake, state, paper(**{'BTC-USDT-SWAP': long_btc()}), NOW, False); m2.live = lambda inst: 69800.0  # back within 1 %: followed
+        m2.run('run')
+        self.assertEqual([q for q, b in fake.posts][-1], '/api/v5/trade/order')
+        m3 = odt.Mirror(FakeOKX(), dict(odt.new_state(), paused=False), paper(**{'BTC-USDT-SWAP': long_btc()}), NOW, False); m3.live = lambda inst: None
+        m3.run('run'); self.assertEqual([a['action'] for a in m3.actions], ['open'])  # real price unavailable: the check is skipped
+
     def test_positions_opened_this_run_are_in_the_summary_right_away(self):
         fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
         self.assertEqual(m.summary()['positions'], [])                                   # snapshot read before the order
