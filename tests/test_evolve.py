@@ -474,8 +474,7 @@ class EvolutionTests(unittest.TestCase):
         lead = X.simulate_account([seg(1, boosts=[(0, None)]), seg(2, genes=g5)], sr, 30, 71, equity=10000.0)
         lp = [p for p in lead['positions'] if p['boost']]
         self.assertEqual(len(lp), 3)
-        self.assertAlmostEqual(lp[0]['qty'] * (lp[0]['entry'] - lp[0]['stop']) / 10000.0, .20, delta=.002)
-        self.assertGreater(lp[0]['lever'], X.LEVERAGE)
+        self.assertAlmostEqual(lp[0]['qty'] * (lp[0]['entry'] - lp[0]['stop']) / 10000.0, X.ACCOUNT_RULES['leader_risk'], delta=.002)
         others = [p for p in lead['positions'] if not p['boost']]
         self.assertTrue(others)                                                          # the leader's 60 % did not use up the others' cap
         self.assertAlmostEqual(others[0]['qty'] * (others[0]['entry'] - others[0]['stop']) / 10000.0, .025, delta=.003)   # 4th long: half of 5 %
@@ -515,10 +514,10 @@ class EvolutionTests(unittest.TestCase):
         for inst, sig in signals.items():
             lead = sig['champion'] == ids[0]
             self.assertEqual((sig.get('leader', False), sig['leverage']), (True, 50) if lead else (False, 10))
-            if lead: self.assertEqual(sig['risk'], .20)
+            if lead: self.assertEqual(sig['risk'], P.LEADER_RISK)
         # a seat changes hands: the old member winds down, the title moves
         new = next(nid for nid in st['population'] if nid not in ids)
-        st['team'][1] = dict(id=new, since=0); st['champion'] = ids[2]
+        st['team'][1] = dict(id=new, since=0); st['leader'] = ids[2]
         view2, _ = P.update(st, cut(150), [(1, ids[1], new, 'challenger')])
         segs = {g['champion']: g for g in acc['segs']}
         last = cut(150)['BTC-USDT-SWAP'].ts[-1]
@@ -540,6 +539,18 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(st['champion'], ids[0])                                      # better fitness, but tenure has not passed
         E.choose_team(st, T0 + E.MIN_TENURE + 3600_000)
         self.assertEqual(st['champion'], ids[1])
+        # the bigger size is its own title: only for a member that passed both gates
+        self.assertEqual(st['leader'], ids[1]); self.assertEqual(P.LEADER_RISK, .05)
+        st['nodes'][ids[1]]['qualified'] = False
+        E.choose_team(st, T0 + E.MIN_TENURE + 2 * 3600_000)
+        self.assertEqual(st['leader'], ids[0])                                         # lost at once, the best qualified member takes it
+        self.assertEqual(st['champion'], ids[1])                                       # (the display leader is unchanged)
+        for nid in ids: st['nodes'][nid]['qualified'] = False
+        E.choose_team(st, T0 + E.MIN_TENURE + 3 * 3600_000)
+        self.assertIsNone(st['leader'])                                                # nobody qualified: nobody trades bigger
+        view, signals = P.update(st, self.sr, [])
+        self.assertIsNone(view['leader']); self.assertFalse(any(m['boost'] for m in view['members']))
+        self.assertFalse(any(s.get('leader') for s in signals.values()))
 
     def test_prune_keeps_champion_ancestry(self):
         st = E.init_state(3, self.sr, self.split)

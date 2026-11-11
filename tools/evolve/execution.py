@@ -399,7 +399,7 @@ def fitness(m):
 
 
 # ----------------------------------------------------------------- the shared (cross-margin) team account
-ACCOUNT_RULES = dict(leader_risk=.20, leader_lever=50, lever=LEVERAGE, same_side_cap=.20, daily_halt=.10, day_shift=7 * HOUR)
+ACCOUNT_RULES = dict(leader_risk=.05, leader_lever=50, lever=LEVERAGE, same_side_cap=.20, daily_halt=.10, day_shift=7 * HOUR)
 CROWD_STEPS = ((6, .25), (3, .5))     # same-side positions already open → risk factor for the next entry on that side
 
 

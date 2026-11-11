@@ -1,12 +1,13 @@
 """Paper trading for the champion team: ONE shared account, cross margin (全仓), run by execution.simulate_account().
 
 The team's strategies all trade the same account: every position is sized on the whole account's equity (risk gene × equity;
-the leader: 20 %), margin is shared, one position per coin, and the same-side cap and the daily halt are the OKX mirror's
+the leader: 5 %), margin is shared, one position per coin, and the same-side cap and the daily halt are the OKX mirror's
 (tools/okx_demo_trader.py). Each run replays the account from its start bar with the full seat history, so the result is
 exactly what the engine produces on live bars:
   account = dict(from_ts, start_equity, segs=[dict(id, champion, slot, genes, species, from_ts, wind_ts, boosts, reason)])
 - a member that loses its seat gets wind_ts: no new signals, its open positions run to their own exits;
-- `boosts` are the [from_ts, to_ts] ranges in which the member was the team leader (rank 1, state['champion']).
+- `boosts` are the [from_ts, to_ts] ranges in which the member held the bigger size (state['leader']: the best member that
+  passed both the out-of-sample and the final gate; nobody when no member qualifies).
 Before this, the account was five separate slots of 1/5 each; that history (curve, trades, seat changes) is kept as
 paper['legacy'] and the shared account starts from the slots' total equity. The slot code below `_legacy_update` only
 serves that one-time conversion.
@@ -173,7 +174,7 @@ def _legacy_update(state, series, changes):
                                          reason='leader' if m['id'] == leader else 'demoted', start_equity=round(equity, 2), to_ts=None, end_equity=None,
                                          boost=m['id'] == leader))
     _CTX['extra'] = _others_equity(slots, series)
-    rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
+    rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, m['id'] != state.get('champion'), -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     members, curves, trades, positions, pending, signals = [], [], [], [], [], {}
     order = []
     idle = 0.0
@@ -243,7 +244,7 @@ def update(state, series, changes):
     paper = state.get('paper') or {}
     if 'account' not in paper:
         paper = _convert(state, series, last_ts)
-    acc, team, leader = paper['account'], state.get('team', []), state.get('champion')
+    acc, team, leader = paper['account'], state.get('team', []), state.get('leader')
     seated = lambda slot_i: next((g for g in acc['segs'] if g['slot'] == slot_i and g['wind_ts'] is None), None)
 
     def wind(g):

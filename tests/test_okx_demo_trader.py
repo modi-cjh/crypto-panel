@@ -281,16 +281,16 @@ class MirrorTests(unittest.TestCase):
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
-    def test_the_leader_risks_twenty_percent_with_up_to_fifty_times_leverage_outside_the_same_side_cap(self):
+    def test_the_leader_risks_its_own_share_with_up_to_fifty_times_leverage_outside_the_same_side_cap(self):
         try:
             odt.configure_evolved()
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
             sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.05) for k, v in px.items()}
-            sig['DOGE-USDT-SWAP'].update(rank=1, leader=True, risk=.20, leverage=50, stop=px['DOGE-USDT-SWAP'] * 1.01)   # 1 % stop
+            sig['DOGE-USDT-SWAP'].update(rank=1, leader=True, risk=odt.LEADER_RISK, leverage=50, stop=px['DOGE-USDT-SWAP'] * 1.01)   # 1 % stop
             fake = FakeOKX(equity=100000, prices=px); m, state = run(fake, paper(**sig))
             opened = {a['inst']: a for a in m.actions if a['action'] == 'open'}
             lead = opened['DOGE-USDT-SWAP']
-            self.assertAlmostEqual(lead['risk_usdt'] / m.equity, .20, delta=.002); self.assertEqual(lead['leverage'], 50); self.assertTrue(lead['leader'])
+            self.assertAlmostEqual(lead['risk_usdt'] / m.equity, odt.LEADER_RISK, delta=.002); self.assertEqual(odt.LEADER_RISK, .05); self.assertEqual(lead['leverage'], 50); self.assertTrue(lead['leader'])
             # the leader's 20 % does not use up the others' 20 % cap: four more 5 % shorts still open
             self.assertEqual(len(opened), 5); self.assertEqual({a['leverage'] for k, a in opened.items() if k != 'DOGE-USDT-SWAP'}, {10})
             self.assertTrue(next(v for v in state['mirrored'].values() if v['inst'] == 'DOGE-USDT-SWAP')['leader'])
