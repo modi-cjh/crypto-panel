@@ -160,7 +160,7 @@ const wait = (page, ms) => page.waitForTimeout(ms);
     await low.close();
   }
   // No horizontal overflow on narrow phones, on every route.
-  for (const hash of ['#/', '#/sim', '#/market']) for (const width of [320, 360, 390]) {
+  for (const hash of ['#/', '#/evolve', '#/market']) for (const width of [320, 360, 390]) {
     await page.setViewportSize({ width, height: 844 }); await page.goto(BASE + hash); await page.waitForSelector('#mascot[data-state]');
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${hash} ${width}`);
   }
