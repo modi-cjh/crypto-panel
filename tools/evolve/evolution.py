@@ -48,7 +48,8 @@ UNQUALIFIED_RUNS = 3      # a member that failed the gates this many runs in a r
 # state['defense_id'] / state['defense_streak'] are still written (and used to seed the map on
 # old state). The drawdown check is on the combined unseen window (样本外 + 终审, costs included)
 # and passes at max_dd <= 30 % (inclusive). GATE / FINAL_GATE (25 %) still decide `qualified`.
-# Leader boost still requires the entry gate, not just OOS qualification.
+# The leader title still requires the entry gate, not just OOS qualification. The title decides
+# signal priority; every seat, including the leader, sizes from its own risk and leverage genes.
 ENTRY_STREAK = 5
 ENTRY_MAX_DD = 30.0
 
@@ -187,6 +188,12 @@ def record_defense(state):
     resets that id to 0. The legacy defense_id / defense_streak fields still follow the
     living population's fitness champion, so older readers keep working.
     """
+    # migrate_defense_streaks may seed defense_streaks[defense_id] from the legacy
+    # defense_streak, which already counts every completed generation. This function
+    # is only called at the end of a *new* generation, so we then add exactly one
+    # (not zero, not two) for a seated, still-qualified member. A prior
+    # defense_streak_for() in the same run only reads the seeded map; it does not
+    # increment, so the first record_defense after an upgrade cannot double-count.
     streaks = migrate_defense_streaks(state)
     nodes = state['nodes']
     seated = [m['id'] for m in state.get('team', []) if m.get('id') in nodes]
@@ -242,6 +249,7 @@ def evaluate(genes, series, split):
     """split = (start, cut, end) or (start, cut, mid, end): train [start, cut), out-of-sample [cut, mid), final check
     [mid, end). 'qualified' = passes the out-of-sample gate and, when there is a final window, the final gate too."""
     start, cut, mid, end = split if len(split) == 4 else (*split, split[-1])
+    genes = fix(genes)
     ev = entries(genes, series)
     tr = simulate(genes, series, start, cut, curve_every=24, events=ev)
     te = simulate(genes, series, cut, mid, curve_every=24, events=ev)
@@ -317,7 +325,9 @@ def refresh(state, series, split):
     team = {m['id'] for m in state.get('team', [])}
     for nid in set(state['population']) | set(state['hall']) | team | ({state['champion']} if state['champion'] else set()):
         if nid in state['nodes']:
-            state['nodes'][nid].update(evaluate(state['nodes'][nid]['genes'], series, split))
+            n = state['nodes'][nid]
+            n['genes'] = fix(n['genes'])
+            n.update(evaluate(n['genes'], series, split))
     update_hall(state)
 
 
@@ -542,7 +552,7 @@ def choose_team(state, now_ms):
                 changes.append((slot, weakest['id'], nid, 'challenger')); team[slot] = dict(id=nid, since=now_ms)
                 break
     state['team'] = team
-    # The leader (rank 1) trades with the boosted size (paper.LEADER_RISK), so it must not flip between members from run
+    # The leader (rank 1) has signal priority, so it must not flip between members from run
     # to run: it keeps the title while it is on the team, until MIN_TENURE has passed AND another member's fitness is
     # clearly higher (SWITCH_MARGIN).
     best = max(team, key=lambda m: nodes[m['id']]['fitness'], default=None)
