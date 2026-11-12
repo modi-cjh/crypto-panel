@@ -284,14 +284,17 @@ class EvolutionTests(unittest.TestCase):
         E.update_hall(st); E.choose_team(st, T0)
         self.assertEqual([m['id'] for m in st['team']], ids[:8])
         h = 3600_000
+        self.assertEqual(E.choose_team(st, T0 + h), [])    # still-qualified members keep the seat, even before tenure
         st['nodes'][ids[3]]['qualified'] = False; E.update_hall(st)
-        self.assertEqual(E.choose_team(st, T0 + h), []); self.assertEqual(E.choose_team(st, T0 + 2 * h), [])   # two runs: still seated
-        changes = E.choose_team(st, T0 + 3 * h)                                                               # third run in a row: replaced, tenure does not protect it
-        self.assertEqual([(c[1], c[3]) for c in changes], [(ids[3], 'unqualified')]); self.assertIn(changes[0][2], ids[8:])
+        changes = E.choose_team(st, T0 + 2 * h)            # first run after failing OOS: replaced, tenure does not protect it
+        self.assertEqual([(c[1], c[3]) for c in changes], [(ids[3], 'entry_gate')]); self.assertIn(changes[0][2], ids[8:])
+        self.assertNotIn(ids[3], [m['id'] for m in st['team']])
         st['nodes'][ids[5]]['qualified'] = False; E.update_hall(st)
-        E.choose_team(st, T0 + 4 * h); st['nodes'][ids[5]]['qualified'] = True; E.update_hall(st)
-        E.choose_team(st, T0 + 5 * h)
-        self.assertEqual(st['unqualified'], {})                                                               # qualifying again resets the count
+        E.choose_team(st, T0 + 3 * h)
+        self.assertNotIn(ids[5], [m['id'] for m in st['team']])
+        st['nodes'][ids[5]]['qualified'] = True; E.update_hall(st)
+        E.choose_team(st, T0 + 4 * h)
+        self.assertNotIn(ids[5], st.get('unqualified', {}))                  # no longer seated, so the fail count is cleared
 
     def test_generation_keeps_size_carries_elites_and_records_lineage(self):
         st = E.init_state(1, self.sr, self.split)
@@ -356,6 +359,7 @@ class EvolutionTests(unittest.TestCase):
             n['oos_dd'] = 20
         st['defense_id'] = nid
         st['defense_streak'] = streak
+        st.setdefault('defense_streaks', {})[nid] = streak
 
     def test_team_fills_with_the_best_qualified_and_caps_each_species(self):
         st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10), (2.0, True, 3, 10), (1.5, True, 3, 10), (1.0, True, 3, 10), (9.0, False, -1, 10)])
@@ -581,8 +585,9 @@ class EvolutionTests(unittest.TestCase):
     def test_paper_account_is_shared_converts_the_old_slots_and_follows_seat_and_leader_changes(self):
         st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10), (2.0, True, 3, 10), (1.0, True, 3, 10)])
         for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % 4]
-        E.update_hall(st); E.choose_team(st, T0)
+        E.update_hall(st)
         self._grant_entry(st, ids[0])   # only a member that passed the 5-gen entry gate may take a live paper seat
+        E.choose_team(st, T0)
         n = self.sr['BTC-USDT-SWAP'].n
         cut = lambda back: {k: X.Series(k, v.ts[:n - back], v.o[:n - back], v.h[:n - back], v.l[:n - back], v.c[:n - back]) for k, v in self.sr.items()}
         st['paper'] = dict(start_equity=10000.0, slots=[dict(P._new_slot(2100.0), curve_done=[[T0, 2000.0], [T0 + H, 2100.0]]) for _ in range(5)])
@@ -615,6 +620,8 @@ class EvolutionTests(unittest.TestCase):
         st, ids = self._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10), (2.0, True, 3, 10), (1.0, True, 3, 10)])
         for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % 4]
         E.update_hall(st); E.choose_team(st, T0)
+        for nid in ids:
+            self._grant_entry(st, nid)   # leader boost requires the three-part entry gate, not only OOS
         self.assertEqual(st['champion'], ids[0])
         st['nodes'][ids[1]]['fitness'] = 9.0
         E.choose_team(st, T0 + 3600_000)
@@ -716,6 +723,102 @@ class EntryGateTests(unittest.TestCase):
         self.assertFalse(any(g['champion'] == ids[0] and g['wind_ts'] is None for g in st['paper']['account']['segs']))
         self.assertFalse([t for t in view3['trades'] if t['reason'] == 'switch'])
 
+
+    def test_each_seat_has_its_own_defense_streak_persisted_and_refresh_does_not_increment(self):
+        ev = EvolutionTests()
+        ev.sr, ev.split, ev.obs = self.sr, self.split, self.obs
+        ev.addCleanup = lambda *a, **k: None
+        ev.setUp()
+        st, ids = ev._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10)])
+        for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % 4]
+        E.update_hall(st); E.choose_team(st, T0)
+        self.assertGreaterEqual(len(st['team']), 2)
+        a, b = st['team'][0]['id'], st['team'][1]['id']
+        for _ in range(3):
+            E.record_defense(st)
+        self.assertEqual(st['defense_streaks'][a], 3)
+        self.assertEqual(st['defense_streaks'][b], 3)
+        self.assertEqual(E.entry_gate(st['nodes'][a], state=st)['streak'], 3)
+        # persist across a reload the way a later Actions run would
+        st2 = json.loads(json.dumps(st))
+        self.assertEqual(st2['defense_streaks'][a], 3)
+        E.refresh(st2, self.sr, self.split)
+        self.assertEqual(st2['defense_streaks'].get(a), 3)       # refresh must not add (or clear) a generation
+        self.assertEqual(st2['defense_streaks'].get(b), 3)
+        # keep using the scripted roster to check later increments and resets
+        st3 = json.loads(json.dumps(st))
+        E.choose_team(st3, T0 + 3600_000)
+        self.assertEqual(st3['defense_streaks'][a], 3)           # choose_team must not add a generation
+        for _ in range(2):
+            E.record_defense(st3)
+        self.assertEqual(st3['defense_streaks'][a], 5)
+        self.assertEqual(st3['defense_streaks'][b], 5)
+        self.assertTrue(E.entry_gate(st3['nodes'][a], state=st3)['passed'])
+        # fail OOS: that seat resets; the other is still qualified so it increments one more
+        st3['nodes'][a]['qualified'] = False
+        E.record_defense(st3)
+        self.assertEqual(st3['defense_streaks'][a], 0)
+        self.assertEqual(st3['defense_streaks'][b], 6)
+        # drop off the team: leftover count is cleared
+        st3['nodes'][a]['qualified'] = True
+        st3['defense_streaks'][a] = 4
+        st3['team'] = [m for m in st3['team'] if m['id'] != a]
+        E.record_defense(st3)
+        self.assertEqual(st3['defense_streaks'].get(a, 0), 0)
+        # old state with only defense_id / defense_streak still seeds that one individual
+        old = dict(population=st['population'], nodes=st['nodes'], team=st['team'],
+                   defense_id=b, defense_streak=5)
+        self.assertEqual(E.defense_streak_for(old, b), 5)
+        self.assertEqual(E.defense_streak_for(old, a), 0)
+
+    def test_failing_gate_seat_can_be_replaced_before_tenure_but_accumulating_seats_stay(self):
+        ev = EvolutionTests()
+        ev.sr, ev.split, ev.obs = self.sr, self.split, self.obs
+        ev.addCleanup = lambda *a, **k: None
+        ev.setUp()
+        ev_size, ev_cap = E.TEAM_SIZE, E.TEAM_DIRECTION_CAP
+        E.TEAM_SIZE, E.TEAM_DIRECTION_CAP = 8, 5
+        try:
+            st, ids = ev._setup([(12 - k, True, 3, 10) for k in range(10)])
+            for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % len(G.SPECIES)]
+            E.update_hall(st); E.choose_team(st, T0)
+            self.assertEqual([m['id'] for m in st['team']], ids[:8])
+            # a member still able to finish the 5-gen streak is not bumped, even by a stronger outsider
+            st['nodes'][ids[8]]['fitness'] = 99.0
+            E.update_hall(st)
+            self.assertEqual(E.choose_team(st, T0 + 3600_000), [])
+            self.assertEqual([m['id'] for m in st['team']], ids[:8])
+            # failing OOS opens the seat immediately, before the 7-day tenure
+            st['nodes'][ids[0]]['qualified'] = False; E.update_hall(st)
+            changes = E.choose_team(st, T0 + 2 * 3600_000)
+            self.assertTrue(changes)
+            self.assertEqual(changes[0][1], ids[0])
+            self.assertEqual(changes[0][3], 'entry_gate')
+            self.assertIn(changes[0][2], ids[8:])
+            # too-large drawdown likewise, even if the member is still marked qualified
+            st['nodes'][ids[1]]['oos_dd'] = 31.0
+            E.update_hall(st)
+            changes = E.choose_team(st, T0 + 3 * 3600_000)
+            self.assertTrue(any(c[1] == ids[1] and c[3] == 'entry_gate' for c in changes))
+        finally:
+            E.TEAM_SIZE, E.TEAM_DIRECTION_CAP = ev_size, ev_cap
+
+    def test_update_view_omits_legacy_trades_from_list_and_does_not_drop_stored_legacy(self):
+        ev = EvolutionTests()
+        ev.sr, ev.split, ev.obs = self.sr, self.split, self.obs
+        ev.addCleanup = lambda *a, **k: None
+        ev.setUp()
+        st, ids = ev._setup([(5.0, True, 3, 10), (4.0, True, 3, 10)])
+        for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % 4]
+        E.update_hall(st); E.choose_team(st, T0)
+        ev._grant_entry(st, ids[0])
+        P.update(st, self.sr, [])
+        marker = dict(inst='BTC-USDT-SWAP', side=1, pnl=-1.25, reason='switch', closed=1, champion='legacy-bot')
+        st['paper'].setdefault('legacy', dict(curve=[], trades=[], segments=[]))
+        st['paper']['legacy']['trades'] = [marker]
+        view, _ = P.update(st, self.sr, [])
+        self.assertFalse(any(t.get('champion') == 'legacy-bot' or t.get('closed') == 1 or t.get('reason') == 'switch' for t in view['trades']))
+        self.assertEqual(st['paper']['legacy']['trades'][0]['champion'], 'legacy-bot')
 
 class UniverseTests(unittest.TestCase):
 

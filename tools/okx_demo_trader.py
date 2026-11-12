@@ -14,7 +14,7 @@ Each run, against <data>/combined/state.json:
   - when the paper position is gone, the mirrored position is closed;
   - if the exchange stop already closed a mirrored position, it is marked done and never reopened.
 Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; leverage is capped at 10x; a UTC+7 day
-loss of 8% closes everything and blocks new entries until the next day; actions `pause`, `resume`,
+loss of 10% closes everything and blocks new entries until the next day; actions `pause`, `resume`,
 `flatten` (close all and pause) and `dry-run` (log intended orders, send nothing) are available.
 Secrets come from OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE, reach curl through stdin and are never logged.
 """

@@ -4,13 +4,13 @@ import { runtimeConfig, refreshRuntimeHealth } from './runtime.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { riskProgress } from './history.mjs';
-import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, okxDailyReturns, okxDailyMarkup, okxOutlier, okxOutlierNote, mirrorCompareMarkup, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261112-gate';
+import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, okxDailyReturns, okxDailyMarkup, okxOutlier, okxOutlierNote, mirrorCompareMarkup, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261112-gate2';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
-import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261112-gate';
+import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261112-gate2';
 import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
 import { workState, pnlMood, tradeBurst, positionReport, pnlComment } from './robot-work.mjs';
-import { EVOLVE_URL, EVOLVE_NODES_URL, validNodeDetails, needsDetails, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays, updateSchedule, evolveIntroMarkup } from './evolve.mjs?v=20261112-gate';
+import { EVOLVE_URL, EVOLVE_NODES_URL, validNodeDetails, needsDetails, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays, updateSchedule, evolveIntroMarkup } from './evolve.mjs?v=20261112-gate2';
 import { GeneFx } from './evolve-fx.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
@@ -793,9 +793,9 @@ async function refreshEvolve(){
  if(evolveBusy || !['home','evolve','sim'].includes(route))return;evolveBusy=true;
  try{
   const r=await fetch(`${EVOLVE_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});
-  if(!r.ok)throw new Error(r.status===404?'尚未生成':'读取失败');const d=await r.json();if(!validEvolve(d))throw new Error('格式不对');
+  if(!r.ok)throw new Error('读取失败');const d=await r.json();if(!validEvolve(d))throw new Error('格式不对');
   evolveData=d;$('evolve-error').hidden=true;setError('evolve',null);renderEvolve();if(route==='sim'||route==='home')renderSim();
- }catch(e){const msg=e.message==='尚未生成'?'进化系统还没有运行过：第一次运行后（约 3 分钟）这里会出现第一代策略。':'进化数据暂时读取失败，稍后自动重试。';setError('evolve',msg);if(!evolveData){const intro=$('evolve-intro');if(intro)intro.innerHTML=`<p class="alert" role="alert">${msg}</p>`;if(route==='evolve'){$('evolve-error').hidden=false;$('evolve-error').textContent=msg;}}}
+ }catch(e){const msg='进化数据暂时读取失败，稍后自动重试。';setError('evolve',msg);if(!evolveData){const intro=$('evolve-intro');if(intro)intro.innerHTML=`<p class="alert" role="alert">${msg}</p>`;if(route==='evolve'){$('evolve-error').hidden=false;$('evolve-error').textContent=msg;}}}
  finally{evolveBusy=false;}
 }
 // Per-node genes and curves (nodes.json), fetched only when a node without them is opened; once per generation.

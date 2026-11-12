@@ -67,7 +67,7 @@ def dashboard(state, series, split, obs, paper_view, timing):
         champion_rules=dict(min_tenure_hours=E.MIN_TENURE // 3600_000, streak=E.STREAK, retain=E.RETAIN, margin=E.SWITCH_MARGIN,
                             team_size=E.TEAM_SIZE, species_cap=E.TEAM_SPECIES_CAP, direction_cap=E.TEAM_DIRECTION_CAP),
         entry_rules=dict(streak=E.ENTRY_STREAK, max_dd=E.ENTRY_MAX_DD, generations_per_run=5,
-                         note='每个 Actions 运行最多进化 5 代；守擂按代累计、跨运行保留。同一策略连续 5 代既是当代冠军又样本外合格，即可在一次运行内满门槛。三项全过才接入模拟盘；不过则持仓走完，账户持有现金，不会改用未过关的策略。'),
+                         note='每个 Actions 运行最多进化 5 代；每个席位各自按代累计守擂、跨运行保留。同一策略连续 5 代留在组合且样本外合格，即可在一次运行内满门槛；样本外失败或退出组合则清零。refresh 不加代。三项全过才开新仓；不过则持仓走完，账户持有现金，不会改用未过关的策略。'),
         team=[dict(node_view(nodes[m['id']], state=state), since=iso(m['since'])) for m in state.get('team', []) if m['id'] in nodes],
         challengers=[dict(id=nid, species=nodes[nid]['species'], fitness=nodes[nid]['fitness'], test=nodes[nid]['test'],
                           streak=state.get('streaks', {}).get(nid, 0), entry_gate=E.entry_gate(nodes[nid], state=state))

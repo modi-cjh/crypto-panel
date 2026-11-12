@@ -38,12 +38,17 @@ TEAM_SIZE, TEAM_SPECIES_CAP = 8, 2      # 8 seats (5 before): more trades a day,
 # the quota keeps seats for qualified strategies of the other direction, so a trend reversal does not hit every seat.
 TEAM_DIRECTION_CAP = 5
 UNQUALIFIED_RUNS = 3      # a member that failed the gates this many runs in a row gives its seat to a qualified candidate
-# Paper / OKX-demo entry gate (hard; never live). Ported from the old lineage CANDIDATE_STREAK=5:
-# the same individual must be the generation champion AND out-of-sample qualified for 5 consecutive
-# generations. Each Actions run breeds up to 5 generations, so a stable champion can satisfy the
-# streak in a single run; the count is persisted in state['defense_id'] / state['defense_streak']
-# across runs. The drawdown check is on the combined unseen window (样本外 + 终审, costs included)
+# Paper / OKX-demo entry gate (hard; never live). Each individual on the 8-seat team keeps its
+# own defense streak in state['defense_streaks'][id]. A "defense" is one generation in which that
+# individual is still on the team AND out-of-sample qualified (`qualified`, which includes the
+# final window). The streak resets to 0 when the individual fails OOS or leaves the team.
+# record_defense() runs only from generation(), so a refresh with no new generation does not add
+# a count. Each Actions run breeds up to 5 generations, so a seated member that stays qualified
+# can satisfy the 5-gen streak in a single run. The older single-champion fields
+# state['defense_id'] / state['defense_streak'] are still written (and used to seed the map on
+# old state). The drawdown check is on the combined unseen window (样本外 + 终审, costs included)
 # and passes at max_dd <= 30 % (inclusive). GATE / FINAL_GATE (25 %) still decide `qualified`.
+# Leader boost still requires the entry gate, not just OOS qualification.
 ENTRY_STREAK = 5
 ENTRY_MAX_DD = 30.0
 
@@ -154,21 +159,48 @@ def oos_window_dd(node):
 
 
 def update_defense_streak(prev_id, prev_streak, champ_id, qualified):
-    """Consecutive generations the same individual has been champion AND out-of-sample qualified.
-
-    Ported from the old lineage engine.update_streak / CANDIDATE_STREAK=5. The count resets to 0
-    when the champion fails the OOS gate, and restarts at 1 when a different individual takes the title.
+    """Legacy helper: consecutive generations the same individual has been the fitness champion
+    AND out-of-sample qualified. Kept so older state and tests still round-trip. The paper entry
+    gate now reads per-individual streaks from state['defense_streaks'] instead.
     """
     if not qualified:
         return 0
     return (prev_streak or 0) + 1 if champ_id == prev_id else 1
 
 
+def migrate_defense_streaks(state):
+    """Ensure state['defense_streaks'] exists. Old single-champion fields seed the map once."""
+    if 'defense_streaks' not in state or state['defense_streaks'] is None:
+        streaks = {}
+        oid, n = state.get('defense_id'), int(state.get('defense_streak') or 0)
+        if oid and n:
+            streaks[oid] = n
+        state['defense_streaks'] = streaks
+    return state['defense_streaks']
+
+
 def record_defense(state):
-    """Once per generation: the living individual with the best training fitness is this generation's
-    champion (same rule as the old engine). Updates state['defense_id'] and state['defense_streak']."""
+    """Once per generation (never from refresh): update each team member's defense streak.
+
+    A defense = the individual is on the current 8-seat team and is out-of-sample qualified
+    this generation. Qualified seated members increment; a fail or a drop from the team
+    resets that id to 0. The legacy defense_id / defense_streak fields still follow the
+    living population's fitness champion, so older readers keep working.
+    """
+    streaks = migrate_defense_streaks(state)
     nodes = state['nodes']
-    pop = [nodes[i] for i in state['population'] if i in nodes]
+    seated = [m['id'] for m in state.get('team', []) if m.get('id') in nodes]
+    seated_set = set(seated)
+    for nid in list(streaks):
+        if nid not in seated_set:
+            streaks[nid] = 0
+    for nid in seated:
+        if nodes[nid].get('qualified'):
+            streaks[nid] = int(streaks.get(nid, 0)) + 1
+        else:
+            streaks[nid] = 0
+    state['defense_streaks'] = {nid: s for nid, s in streaks.items() if s or nid in seated_set}
+    pop = [nodes[i] for i in state.get('population', []) if i in nodes]
     if not pop:
         return
     champ = max(pop, key=lambda n: n['fitness'])
@@ -178,7 +210,10 @@ def record_defense(state):
 
 
 def defense_streak_for(state, nid):
-    return int(state.get('defense_streak') or 0) if nid and nid == state.get('defense_id') else 0
+    if not nid or state is None:
+        return 0
+    streaks = migrate_defense_streaks(state)
+    return int(streaks.get(nid, 0))
 
 
 def entry_reasons(oos_ok, streak, dd, streak_need=ENTRY_STREAK, dd_lim=ENTRY_MAX_DD):
@@ -266,7 +301,8 @@ def new_node(state, genes, parents, gen, how, series, split):
 
 def init_state(seed, series, split):
     rng = random.Random(seed)
-    state = dict(seed=seed, generation=0, nodes={}, population=[], hall=[], champion=None, history=[], stats=dict(born=0, killed=0), next_id=0)
+    state = dict(seed=seed, generation=0, nodes={}, population=[], hall=[], champion=None, history=[], stats=dict(born=0, killed=0), next_id=0,
+                 defense_streaks={}, defense_id=None, defense_streak=0)
     for i in range(POPULATION):   # start with every species equally represented
         state['population'].append(new_node(state, random_genome(rng, SPECIES[i % len(SPECIES)]), [], 0, 'seed', series, split)['id'])
     update_hall(state)
@@ -274,7 +310,10 @@ def init_state(seed, series, split):
 
 
 def refresh(state, series, split):
-    """The data window rolls forward every run: re-score the living population and the hall of fame on it."""
+    """The data window rolls forward every run: re-score the living population and the hall of fame on it.
+
+    Does not call record_defense(): a refresh with no new generation must not increment any streak.
+    """
     team = {m['id'] for m in state.get('team', [])}
     for nid in set(state['population']) | set(state['hall']) | team | ({state['champion']} if state['champion'] else set()):
         if nid in state['nodes']:
@@ -398,7 +437,11 @@ def protect_species(state, elites, children, pop, gen, rng, obs, series, split):
 def choose_team(state, now_ms):
     """Maintain the paper-trading team. Returns the changes made this run as [(slot, old_id, new_id, reason)].
 
-    Each slot keeps its member for MIN_TENURE unless the member breaks the RETAIN gate. Empty slots are filled at once
+    Each slot keeps its member for MIN_TENURE unless the member breaks the RETAIN gate, or cannot complete the
+    paper entry gate (failed OOS, or combined unseen-window drawdown > ENTRY_MAX_DD). Those blocked seats can be
+    given to a qualified challenger at once — tenure and the challenger STREAK do not apply — so a strategy that
+    could pass the 5-gen gate is not stuck outside a full roster for a week. Members who are only short of the
+    on-team 5-gen streak are left in place so they can finish accumulating. Empty slots are filled at once
     with the best qualified strategies. After tenure, a challenger that has qualified for STREAK consecutive runs and
     beats the weakest member's training fitness by SWITCH_MARGIN replaces it (at most one such swap per run).
     Seats prefer at most TEAM_SPECIES_CAP per species and at most TEAM_DIRECTION_CAP long-only / short-only members
@@ -431,13 +474,38 @@ def choose_team(state, now_ms):
         return [nid for nid in pool if nid not in ids and nid in nodes and species_ok(nid, replacing) and direction_ok(nid, replacing)]
 
     ready = [nid for nid in state['hall'] if streaks.get(nid, 0) >= STREAK]
+
+    def blocked_from_gate(nid):
+        n = nodes[nid]
+        return (not n.get('qualified')) or oos_window_dd(n) > ENTRY_MAX_DD
+
+    def qualified_challengers(replacing=None):
+        gated, rest = [], []
+        for nid in state['hall']:
+            if nid not in nodes or not nodes[nid].get('qualified'):
+                continue
+            (gated if entry_gate(nodes[nid], state=state)['passed'] else rest).append(nid)
+        return (candidates(gated, replacing) or candidates(ready, replacing) or candidates(rest, replacing))
+
     for slot, m in enumerate(team):                            # clear breakdowns are replaced at once
         if breaks_retain(nodes[m['id']]):
             pick = (candidates(ready, m['id']) or candidates(state['hall'], m['id']) or [None])[0]
             if pick:
                 changes.append((slot, m['id'], pick, 'breakdown')); team[slot] = dict(id=pick, since=now_ms)
+    # Seats that cannot finish the entry gate (failed OOS or DD > 30 %) are opened to a qualified
+    # challenger at once. Tenure and STREAK=3 would otherwise keep a passing strategy off the
+    # 8-seat roster, so it could never accumulate 5 on-team generations. Incumbents that are
+    # still qualified with DD ≤ 30 % stay, even if their on-team streak is still below 5.
+    changed_slots = {c[0] for c in changes}
+    for slot, m in enumerate(team):
+        if slot in changed_slots or not blocked_from_gate(m['id']):
+            continue
+        pick = (qualified_challengers(m['id']) or [None])[0]
+        if pick:
+            changes.append((slot, m['id'], pick, 'entry_gate')); team[slot] = dict(id=pick, since=now_ms)
     # Members that stopped qualifying: after UNQUALIFIED_RUNS runs in a row the seat goes to a qualified candidate (one per
     # run, tenure or fitness do not protect it). Without a candidate the member stays rather than leave the seat empty.
+    # Usually entry_gate already made the swap; this remains a fallback when no challenger was free earlier.
     unq = state.get('unqualified', {})
     state['unqualified'] = unq = {m['id']: unq.get(m['id'], 0) + 1 for m in team if not nodes[m['id']].get('qualified')}
     if not changes:
@@ -489,10 +557,10 @@ def choose_team(state, now_ms):
     state['champion'] = best['id'] if best else None
     state['champion_since'] = best['since'] if best else None
     state['leader_since'] = since if best else None
-    # The bigger size (paper.LEADER_RISK) is a separate title, state['leader']: only a member that passed BOTH the
-    # out-of-sample and the final gate may hold it, it is lost at once when the holder stops qualifying, and it moves to
-    # a better qualified member only after MIN_TENURE and a clear lead. Nobody qualified → nobody trades bigger.
-    ok = [m for m in team if nodes[m['id']].get('qualified')]
+    # The bigger size (paper.LEADER_RISK) is a separate title, state['leader']: only a member that passed the
+    # three-part entry gate may hold it, it is lost at once when the holder stops passing, and it moves to
+    # a better gated member only after MIN_TENURE and a clear lead. Nobody passed → nobody trades bigger.
+    ok = [m for m in team if entry_gate(nodes[m['id']], state=state)['passed']]
     hold = next((m for m in ok if m['id'] == state.get('leader')), None)
     top = max(ok, key=lambda m: nodes[m['id']]['fitness'], default=None)
     boost_since = state.get('boost_since') or now_ms

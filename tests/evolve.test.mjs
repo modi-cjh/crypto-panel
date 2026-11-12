@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { replayGenerations, replayState, replayDelays, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphLayout, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, miniCurve, updateSchedule, nextPaperUpdate, evolveIntroMarkup, entryGateMarkup, entryGateView, PAPER_STALE_MS } from '../assets/evolve.mjs';
+import { replayGenerations, replayState, replayDelays, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphLayout, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, miniCurve, updateSchedule, nextPaperUpdate, evolveIntroMarkup, entryGateMarkup, entryGateView, currentAccountTrades, PAPER_STALE_MS } from '../assets/evolve.mjs';
 
 const d = JSON.parse(fs.readFileSync(new URL('./fixtures/evolve-dashboard.json', import.meta.url), 'utf8'));
 
@@ -175,7 +175,7 @@ test('shared cross-margin account: members show what they contributed, positions
 test('the bigger size needs a member that passed both gates; without one the page says so', () => {
   assert.match(paperMarkup(d), /只有通过上场门槛（样本外与终审合格、连续守擂 5 代、回撤 ≤ 30%）的成员才能当第一名/);
   const none = paperMarkup({ ...d, paper: { ...d.paper, leader: null, members: d.paper.members.map(m => ({ ...m, boost: false })) } });
-  assert.match(none, /目前没有成员通过上场门槛担任第一名/); assert.doesNotMatch(none, /<b>加大仓位<\/b>/); assert.match(none, /暂无第一名/);
+  assert.match(none, /暂无通过上场门槛的成员，已有持仓走完后持有现金/); assert.doesNotMatch(none, /<b>加大仓位<\/b>/); assert.match(none, /暂无第一名/);
 });
 
 test('the rules name the five majors and their doubled risk', async () => {
@@ -243,6 +243,40 @@ test('evolve intro is one sentence plus key numbers, with the full explanation f
   assert.match(html, /第 <b>\d+<\/b> 代/);
   assert.match(html, /冠军样本外/);
   assert.match(html, /<details class="evo-more"><summary>了解进化规则<\/summary>/);
-  assert.match(html, /连续 5 代守擂/);
+  assert.match(html, /每个席位各自累计守擂/);
   assert.match(evolveIntroMarkup(null), /数据加载中/);
 });
+
+test('recent trades list and counts use the current shared account only, not legacy switch closes', () => {
+  const from = d.paper.account_from;
+  assert.ok(from);
+  const legacy = (d.paper.trades || []).filter(t => t.closed <= from);
+  assert.ok(legacy.length > 0);
+  assert.ok(legacy.some(t => t.reason === 'switch'));
+  assert.equal(currentAccountTrades(d.paper).length, (d.paper.trades || []).filter(t => t.closed > from).length);
+  const html = paperMarkup(d);
+  assert.doesNotMatch(html, /换冠军平仓/);
+  assert.match(html, new RegExp(`已平仓</span><strong class="">${currentAccountTrades(d.paper).length}`));
+  const t0 = Date.parse(d.updated_at);
+  const mixed = paperMarkup({ ...d, paper: { ...d.paper, trades: [
+    { inst: 'ETH-USDT-SWAP', side: 1, pnl: -30, reason: 'switch', closed: from - 3600000, lever: 10, funding: 0, champion: 'old' },
+    { inst: 'BTC-USDT-SWAP', side: 1, pnl: 4, reason: 'target', closed: t0, lever: 10, funding: 0, champion: 's1' },
+  ] } });
+  assert.match(mixed, /止盈/);
+  assert.doesNotMatch(mixed, /换冠军平仓/);
+  assert.match(mixed, /已平仓<\/span><strong class="">1/);
+  assert.equal(currentAccountTrades({ trades: [
+    { closed: from - 1, reason: 'switch' }, { closed: from + 1, reason: 'target' },
+  ], account_from: from }).map(t => t.reason).join(), 'target');
+});
+
+test('each seat card shows its own defense streak from entry_gate', () => {
+  const team = d.team.map((m, i) => ({ ...m, entry_gate: { passed: i === 0, oos_ok: true, streak: i === 0 ? 5 : 2, streak_needed: 5, max_dd: 10, max_dd_limit: 30, reasons: i === 0 ? [] : ['连续守擂 2/5 代，未满 5 代'] } }));
+  const paper = { ...d.paper, members: (d.paper.members || []).map((m, i) => ({ ...m, entry_gate: team[i]?.entry_gate })) };
+  const html = paperMarkup({ ...d, team, paper, nodes: d.nodes.map(n => {
+    const t = team.find(x => x.id === n.id); return t ? { ...n, entry_gate: t.entry_gate } : n;
+  }), champion: { ...d.champion, entry_gate: team[0].entry_gate } });
+  assert.match(html, /守擂 5\/5 代/);
+  assert.match(html, /守擂 2\/5 代/);
+});
+

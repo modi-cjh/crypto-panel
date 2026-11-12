@@ -1,7 +1,7 @@
 """Paper trading for the champion team: ONE shared account, cross margin (全仓), run by execution.simulate_account().
 
-The team's strategies all trade the same account: every position is sized on the whole account's equity (risk gene × equity;
-the leader: 5 %), margin is shared, one position per coin, and the same-side cap and the daily halt are the OKX mirror's
+The team's strategies all trade the same account: every position is sized on the whole account's equity (risk gene × equity,
+capped at 3 %; an entry-gated leader also 3 %, leverage cap 10×), margin is shared, one position per coin, and the same-side cap and the daily halt are the OKX mirror's
 (tools/okx_demo_trader.py). Each run replays the account from its start bar with the full seat history, so the result is
 exactly what the engine produces on live bars:
   account = dict(from_ts, start_equity, segs=[dict(id, champion, slot, genes, species, from_ts, wind_ts, boosts, reason)])
@@ -344,7 +344,10 @@ def update(state, series, changes, price_off=None):
                            leader_risk=ACCOUNT_RULES['leader_risk'], leader_lever=ACCOUNT_RULES['leader_lever'],
                            max_risk=ACCOUNT_RULES['max_risk'], majors=list(ACCOUNT_RULES['majors']), major_factor=ACCOUNT_RULES['major_factor']),
                 curve=([p for p in legacy.get('curve') or [] if p[0] < acc['from_ts']] + [list(p) for p in res['curve']])[-400:],
-                trades=sorted(trades + (legacy.get('trades') or []), key=lambda t: t['closed'], reverse=True)[:50],
+                # Recent trades and their counts are the current shared account only.
+                # paper['legacy']['trades'] (old 5-slot book, including 'switch' closes before
+                # 2026-11-11T04:00Z) stay in state for history but are not published on the dashboard.
+                trades=sorted(trades, key=lambda t: t['closed'], reverse=True)[:50],
                 positions=positions, pending=pending,
                 leader=dict(id=leader, risk=LEADER_RISK, leverage=LEADER_LEVERAGE) if leader else None,
                 members=sorted(members, key=lambda m: m['rank']), segments=(seats + (legacy.get('segments') or []))[:30])
