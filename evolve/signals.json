@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-12T09:12:58Z",
+ "updated_at": "2026-11-12T13:25:51Z",
  "champion": "s13164",
  "team": [
   "s13215",
@@ -164,7 +164,7 @@
   "CRV-USDT-SWAP": {
    "side": -1,
    "entry": 0.24115176,
-   "stop": 0.26112577700713235,
+   "stop": 0.25872577700713234,
    "tp": 0.17358216208074262,
    "opened": 1794441600000,
    "strategy": "evolved",
@@ -177,7 +177,7 @@
   "LPT-USDT-SWAP": {
    "side": -1,
    "entry": 1.2557488,
-   "stop": 1.3302531924294843,
+   "stop": 1.3142531924294842,
    "tp": 0.9985651804403929,
    "opened": 1794441600000,
    "strategy": "evolved",
@@ -190,25 +190,61 @@
   "INJ-USDT-SWAP": {
    "side": -1,
    "entry": 7.518496,
-   "stop": 9.157670248211769,
+   "stop": 9.149670248211768,
    "tp": 3.8798086936479916,
    "opened": 1794441600000,
    "strategy": "evolved",
    "champion": "s14155",
-   "rank": 3,
+   "rank": 4,
    "risk": 0.0235,
    "leverage": 10
   },
   "CRO-USDT-SWAP": {
    "side": -1,
    "entry": 0.049850028000000005,
-   "stop": 0.051016888427798016,
+   "stop": 0.050536888427798014,
    "tp": 0.04323471788023428,
    "opened": 1794445200000,
    "strategy": "evolved",
    "champion": "s13827",
-   "rank": 4,
+   "rank": 5,
    "risk": 0.01,
+   "leverage": 10
+  },
+  "AVAX-USDT-SWAP": {
+   "side": -1,
+   "entry": 8.477304199999999,
+   "stop": 8.994133049546027,
+   "tp": 8.146533736290541,
+   "opened": 1794481200000,
+   "strategy": "evolved",
+   "champion": "s13518",
+   "rank": 3,
+   "risk": 0.0253,
+   "leverage": 10
+  },
+  "HMSTR-USDT-SWAP": {
+   "side": 1,
+   "entry": 0.00013432686000000002,
+   "stop": 0.00012783730156987658,
+   "tp": 0.00013848017739527904,
+   "opened": 1794481200000,
+   "strategy": "evolved",
+   "champion": "s13518",
+   "rank": 3,
+   "risk": 0.0253,
+   "leverage": 10
+  },
+  "BNB-USDT-SWAP": {
+   "side": -1,
+   "entry": 663.807212,
+   "stop": 682.6981000228282,
+   "tp": 651.7170436653901,
+   "opened": 1794484800000,
+   "strategy": "evolved",
+   "champion": "s13518",
+   "rank": 3,
+   "risk": 0.0253,
    "leverage": 10
   }
  }
