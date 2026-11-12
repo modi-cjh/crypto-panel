@@ -82,6 +82,40 @@ export function mirrorCompareMarkup(d, evo) {
     `<ul class="evo-list">${rows || '<li class="empty">两边都没有持仓</li>'}</ul>`;
 }
 
+// Return per day (UTC+7 days, the account's own day): each day's last equity against the previous day's last
+// (the first day against its first point). Today ends at the live equity. Days without a run are absent, so the
+// first day after a gap carries the whole gap. Newest first.
+const dayKey = t => new Date(t + 7 * 3600e3).toISOString().slice(0, 10);
+export function okxDailyReturns(d, liveEquity = null, now = Date.now()) {
+  const pts = (d?.history || []).filter(p => finite(p[0]) && finite(p[1]) && p[1] > 0).sort((a, b) => a[0] - b[0]);
+  if (!pts.length) return [];
+  const close = new Map();
+  for (const [t, e] of pts) close.set(dayKey(t), e);
+  if (finite(liveEquity) && liveEquity > 0) close.set(dayKey(now), liveEquity);
+  const days = [...close.keys()].sort(), out = [], today = dayKey(now), dayStart = num(d.day_start);
+  let prev = pts[0][1], prevDay = null;
+  for (const k of days) {
+    const e = close.get(k);
+    if (k === today && dayStart > 0) prev = dayStart;            // today: from the account's own start-of-day equity, as the header shows
+    const gap = prevDay ? Math.round((Date.parse(k) - Date.parse(prevDay)) / 864e5) - 1 : 0;
+    out.push({ day: k, usdt: e - prev, pct: (e / prev - 1) * 100, equity: e, gap });
+    prev = e; prevDay = k;
+  }
+  return out.reverse();
+}
+
+export function okxDailyMarkup(rows, limit = 10) {
+  if (!rows.length) return '<p class="empty">跑满一天后这里会出现每天的收益</p>';
+  const shown = rows.slice(0, limit), top = Math.max(...shown.map(r => Math.abs(r.pct)), .01);
+  const md = k => `${k.slice(5, 7)}/${k.slice(8, 10)}`;
+  return `<ol class="okx-daily">${shown.map((r, i) => {
+    const w = Math.max(2, Math.abs(r.pct) / top * 100).toFixed(1), cls = r.pct >= 0 ? 'up' : 'down';
+    return `<li><span class="okx-daily-day">${i === 0 ? '今天' : md(r.day)}${r.gap > 0 ? `<small>含前 ${r.gap} 天</small>` : ''}</span>` +
+      `<span class="okx-daily-bar ${cls}"><i style="width:${w}%"></i></span>` +
+      `<span class="okx-daily-val"><b class="${cls}">${signed(r.pct)}%</b><small>${signed(r.usdt)} U</small></span></li>`;
+  }).join('')}</ol>`;
+}
+
 export function okxTotals(d, marks = new Map(), now = Date.now()) {
   if (!d) return null;
   const l = okxLive(d, marks, now), start = okxStart(d);

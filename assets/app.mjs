@@ -4,7 +4,7 @@ import { runtimeConfig, refreshRuntimeHealth } from './runtime.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { riskProgress } from './history.mjs';
-import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, okxOutlier, okxOutlierNote, mirrorCompareMarkup, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-quotes443';
+import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, okxDailyReturns, okxDailyMarkup, okxOutlier, okxOutlierNote, mirrorCompareMarkup, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261104-quotes443';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
 import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261104-quotes443';
@@ -501,7 +501,7 @@ function renderPinnedSim(){
   $('pinned-label-text').textContent='OKX 模拟权益';$('pinned-mode').textContent='交易所模拟';
   rollNumber($('pinned-equity'),t.equity,EQUITY_ROLL_STEP);
   const odd=okxOutlier(simData,t);   // one outsized trade: show the return without it, as the home card explains
-  $('pinned-daily').textContent=`今日 ${Number.isFinite(t.day)?signed(t.day):'—'} · ${odd?`累计 ${signed(odd.retWithout)}%（扣单笔 ${odd.inst.split('-')[0]}）`:`累计 ${signed(t.ret)}%`}${stale?' · 延迟':''}`;$('pinned-daily').className=tone(Number.isFinite(t.day)?t.day:t.ret);
+  $('pinned-daily').textContent=`今日 ${Number.isFinite(t.day)?`${signed(t.day)}（${signed(t.dayPct)}%）`:'—'} · ${odd?`累计 ${signed(odd.retWithout)}%（扣单笔 ${odd.inst.split('-')[0]}）`:`累计 ${signed(t.ret)}%`}${stale?' · 延迟':''}`;$('pinned-daily').className=tone(Number.isFinite(t.day)?t.day:t.ret);
   $('pinned-source').textContent='OKX 模拟交易 · 约每 4 小时更新';
   $('pinned-time').textContent=`${stale?'延迟 · ':''}${time(simData.updated_at)} UTC+7`;$('pinned-time').className=stale?'stale':'';
 }
@@ -751,7 +751,7 @@ function renderOkxPositions(id,openByDefault){
  box.querySelectorAll('details.okx-pos').forEach(el=>{if(state.has(el.dataset.inst))el.open=state.get(el.dataset.inst);});
 }
 function retLine(t){
- return `累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 今日 <span class="${tone(t.day)}">${Number.isFinite(t.day)?signed(t.day)+' USDT':'—'}</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`+(o=>o?`<br><small class="okx-outlier">${okxOutlierNote(o)}</small>`:'')(okxOutlier(simData,t));
+ return `累计收益 <span class="${tone(t.ret)}">${signed(t.ret)}%</span> · 今日 <span class="${tone(t.day)}">${Number.isFinite(t.day)?`${signed(t.day)} USDT（${signed(t.dayPct)}%）`:'—'}</span> · 持仓 ${t.positions} · 已平仓 ${t.trades} 笔`+(o=>o?`<br><small class="okx-outlier">${okxOutlierNote(o)}</small>`:'')(okxOutlier(simData,t));
 }
 // One-line digest of the account notices; the full notices sit behind it (tap to expand).
 const PROFILE_SHORT={aggressive:'激进档',volume_test:'增量测试档',standard:'标准档',evolved:'进化冠军'};
@@ -858,6 +858,7 @@ function renderSim(){
   renderOkxPositions('home-okx-positions',false);setText($('home-okx-pos-count'),String(simData.positions.length));
   setHTML($('home-okx-actions'),okxActionsMarkup(simData,15,{kind:'trades'}));setHTML($('home-okx-log'),okxActionsMarkup(simData,30,{kind:'system'}));
   setHTML($('okx-compare'),mirrorCompareMarkup(simData,evolveData));
+  setHTML($('okx-daily'),okxDailyMarkup(okxDailyReturns(simData,t.equity),10));
  }
  renderPinnedBalance();
 }
