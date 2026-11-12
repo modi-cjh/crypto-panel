@@ -169,3 +169,20 @@ test('positions name the strategy that opened them; stop moves are rounded and l
   const log = am(d, 10, { kind: 'system' });
   assert.match(log, /止损 0\.50953 → 0\.50353/); assert.doesNotMatch(log, /0\.5095269/);
 });
+
+test('daily returns: each UTC+7 day against the previous day, today at the live equity, gaps named', async () => {
+  const { okxDailyReturns: dr, okxDailyMarkup: dm } = await import('../assets/okx.mjs');
+  const at = (day, hour) => Date.parse(`2026-11-${day}T${String(hour).padStart(2, '0')}:00:00+07:00`);
+  const d = { history: [[at('08', 9), 5000], [at('08', 21), 5100], [at('09', 9), 4998], [at('12', 8), 6000]] };
+  const rows = dr(d, 6060, at('12', 15));
+  assert.deepEqual(rows.map(r => r.day), ['2026-11-12', '2026-11-09', '2026-11-08']);
+  assert.ok(Math.abs(rows[2].pct - 2) < 1e-9);                                  // 5000 → 5100
+  assert.ok(Math.abs(rows[1].pct - (4998 / 5100 - 1) * 100) < 1e-9);
+  assert.ok(Math.abs(rows[0].pct - (6060 / 4998 - 1) * 100) < 1e-9); assert.equal(rows[0].gap, 2);   // 11/10 and 11/11 had no run
+  const html = dm(rows);
+  assert.match(html, /今天<small>含前 2 天<\/small>/); assert.match(html, /11\/08/); assert.match(html, /\+2\.00%/);
+  assert.match(html, /okx-daily-bar down/);
+  assert.match(dm([]), /跑满一天后/);
+  const withStart = dr({ ...d, day_start: 5000 }, 6060, at('12', 15));
+  assert.ok(Math.abs(withStart[0].pct - 21.2) < 1e-9);                           // today against day_start, matching the header
+});

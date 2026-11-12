@@ -201,12 +201,13 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
   /* no blur on the header here: a backdrop-filter would make it the containing block of the fixed tab bar below */
   .header{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--bg);grid-template-columns:minmax(0,1fr) auto;min-height:0;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));gap:4px 10px;align-items:center}
   .header-status{display:none}
-  .brand>span:not(.brand-icon){font-size:0;line-height:1}.brand>span:not(.brand-icon) b{font-size:19px}   /* just “MODI” on a phone */
+  .brand{flex:none}.brand>span:not(.brand-icon){font-size:0;line-height:1;white-space:nowrap}.brand>span:not(.brand-icon) b{font-size:19px}   /* just “MODI” on a phone */
   .brand{font-size:11px}.brand-icon{width:30px;height:30px;min-width:30px;font-size:17px;border-radius:8px}.brand-sub{display:none}
   .pinned-balance{grid-column:2;grid-row:1;border-left:0;padding-left:0}
   .pinned-balance strong{font-size:19px}
   .pinned-balance small,.pinned-label{display:none}
-  #pinned-daily{font-size:11px}
+  #pinned-daily{font-size:11px;line-height:1.35;text-align:right;white-space:normal}
+  .pinned-balance{min-width:0;max-width:62vw}
   /* the navigation becomes a tab bar fixed to the bottom of the screen */
   .header nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:auto repeat(3,1fr);gap:0;padding:6px max(10px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));
     background:var(--bar);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--sep);overflow:visible}
@@ -226,3 +227,14 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
   .panel-heading{padding:16px 16px 8px}
   .okx-pos-pnl b{min-width:80px;font-size:14px}
 }
+
+/* 每日收益: one row per day, a bar scaled to the largest day shown, Stocks-style green / red */
+.okx-daily{list-style:none;margin:0;padding:0 20px 16px;display:flex;flex-direction:column}
+.okx-daily li{display:grid;grid-template-columns:5.2em minmax(0,1fr) 7.5em;align-items:center;gap:12px;padding:9px 0;border-top:.5px solid var(--sep);font-variant-numeric:tabular-nums}
+.okx-daily li:first-child{border-top:0}
+.okx-daily-day{font-weight:500;display:flex;flex-direction:column;line-height:1.2}.okx-daily-day small{color:var(--faint);font-size:11px;font-weight:400}
+.okx-daily-bar{height:8px;border-radius:99px;background:var(--fill);overflow:hidden}
+.okx-daily-bar i{display:block;height:100%;border-radius:99px}
+.okx-daily-bar.up i{background:var(--green-fill)}.okx-daily-bar.down i{background:var(--red-fill)}
+.okx-daily-val{text-align:right;display:flex;flex-direction:column;line-height:1.25}
+.okx-daily-val b{font:600 15px var(--display)}.okx-daily-val small{color:var(--faint);font-size:11px}
