@@ -154,6 +154,8 @@ test('the leader is shown with its bigger size and the rules explain it', async 
   assert.match(html, /<span class="evo-rank lead">第一名<\/span>[\s\S]*?<b>第一名（信号优先）<\/b>/);
   assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）信号优先[\\s\\S]*风险基因 5%[\\s\\S]*杠杆基因 50×[\\s\\S]*计入同方向上限[\\s\\S]*日亏停手`));
   assert.match(html, /所有席位（含第一名）每笔按风险基因 2%–10%、杠杆基因 1–100×，单笔风险（含主流币加倍）最多 10%/);
+  assert.match(html, /BTC\/ETH\/SOL\/BNB\/XRP 维持保证金率 0\.5%，其他币 2\.5%/);
+
   assert.match(html, /OKX 模拟盘跟单使用同一套风险\/杠杆基因（2%–10%、1–100×），逐仓下单/);
 
   assert.match(html, /升为第一名（信号优先）/);
@@ -164,7 +166,7 @@ test('the leader is shown with its bigger size and the rules explain it', async 
 });
 
 
-test('shared cross-margin account: members show what they contributed, positions say 全仓, rules list the shared limits', () => {
+test('shared account: members show what they contributed, positions say 逐仓, rules list the shared limits', () => {
   const html = paperMarkup(d);
   assert.equal(d.paper.mode, 'cross');
   assert.match(html, /贡献 <b class="[a-z]*">[+-]?[\d,.]+ U<\/b>（占账户/); assert.match(html, /样本外 <b[^>]*>[^<]+<\/b> · 终审 <b/); assert.match(html, /共用一个账户/);
@@ -174,7 +176,7 @@ test('shared cross-margin account: members show what they contributed, positions
   const t0 = Date.parse(d.updated_at);
   const one = paperMarkup({ ...d, paper: { ...d.paper, halted: true, positions: [{ inst: 'BTC-USDT-SWAP', side: 1, entry: 100, stop: 95, target: null, opened: t0, lever: 16, margin: 50, funding: 0, champion: 's1', boost: true }],
     trades: [{ inst: 'ETH-USDT-SWAP', side: 1, pnl: -30, reason: 'daily_halt', closed: t0, lever: 10, funding: 0, champion: 's2' }] } });
-  assert.match(one, /16x 全仓 · 保证金 50\.00 U · <b>第一名仓位<\/b>/); assert.doesNotMatch(one, /强平 —/);
+  assert.match(one, /16x 逐仓 · 保证金 50\.00 U · <b>第一名（信号优先）<\/b>/); assert.doesNotMatch(one, /强平 —/);
   assert.match(one, /日亏停手平仓/); assert.match(one, /今日已停手/);
 });
 

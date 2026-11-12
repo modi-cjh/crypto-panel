@@ -300,16 +300,17 @@ class MirrorTests(unittest.TestCase):
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
             caps = {k: dict(SPECS[k], lever='100') for k in px}
             sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.03) for k, v in px.items()}
-            sig['DOGE-USDT-SWAP'].update(rank=1, leader=True, risk=.08, leverage=50, stop=px['DOGE-USDT-SWAP'] * 1.01)   # 1 % stop allows 50×
+            # XRP is a 0.5 % MMR major: a 1 % stop can keep 50×. (DOGE uses 2.5 % MMR, so 50× would be reduced.)
+            sig['XRP-USDT-SWAP'].update(rank=1, leader=True, risk=.08, leverage=50, stop=px['XRP-USDT-SWAP'] * 1.01)
             fake = FakeOKX(equity=100000, prices=px, instruments=caps); m, state = run(fake, paper(**sig))
             opened = {a['inst']: a for a in m.actions if a['action'] == 'open'}
-            lead = opened['DOGE-USDT-SWAP']
+            lead = opened['XRP-USDT-SWAP']
             self.assertAlmostEqual(lead['risk_usdt'] / m.equity, .08, delta=.002)
             self.assertEqual(odt.LEADER_RISK, .10); self.assertEqual(lead['leverage'], 50); self.assertTrue(lead['leader'])
             self.assertLessEqual(max(a['leverage'] for a in opened.values()), 100)
             # the leader counts toward the same-side cap (8 % + four more 3 % = 20 %, all fit)
             self.assertEqual(len(opened), 5)
-            self.assertTrue(next(v for v in state['mirrored'].values() if v['inst'] == 'DOGE-USDT-SWAP')['leader'])
+            self.assertTrue(next(v for v in state['mirrored'].values() if v['inst'] == 'XRP-USDT-SWAP')['leader'])
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 

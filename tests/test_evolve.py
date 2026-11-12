@@ -916,6 +916,88 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         self.assertEqual([p['inst'] for p in r1['positions']], ['C1-USDT-SWAP'])
         self.assertAlmostEqual(liq[0]['pnl'], -victim['margin'] - victim['qty'] * victim['entry'] * X.FEE, places=2)
 
+    def test_mmr_tiers_and_instrument_leverage_caps(self):
+        self.assertEqual(X.maintenance_rate('BTC-USDT-SWAP'), .005)
+        self.assertEqual(X.maintenance_rate('ETH-USDT-SWAP'), .005)
+        self.assertEqual(X.maintenance_rate('SOL-USDT-SWAP'), .005)
+        self.assertEqual(X.maintenance_rate('BNB-USDT-SWAP'), .005)
+        self.assertEqual(X.maintenance_rate('XRP-USDT-SWAP'), .005)
+        self.assertEqual(X.maintenance_rate('DOGE-USDT-SWAP'), .025)
+        self.assertEqual(X.maintenance_rate('PEPE-USDT-SWAP'), .025)
+        self.assertEqual(X.maintenance_rate('C0-USDT-SWAP'), .025)
+        self.assertEqual(X.inst_max_leverage('BTC-USDT-SWAP'), 100)
+        self.assertEqual(X.inst_max_leverage('BNB-USDT-SWAP'), 50)          # OKX snapshot, not forced to 100
+        self.assertEqual(X.inst_max_leverage('C0-USDT-SWAP'), 20)           # unknown alt → 20×
+        self.assertEqual(X.inst_max_leverage('UNKNOWN-MAJOR-USDT-SWAP'), 20)
+        # an unlisted name that is in MMR_MAJORS still may go to 100
+        self.assertEqual(X.FALLBACK_INST_LEVERAGE, 20)
+        # 100× on a 2.5 % MMR coin has negative maintenance room; leverage is reduced
+        mmr = X.MMR_OTHER
+        L = X.clamp_leverage(100, .003, cap=100, mmr=mmr)
+        self.assertLess(L, 100)
+        self.assertLessEqual(L, X.max_leverage_for_stop(.003, mmr=mmr))
+        self.assertLess(L * (mmr + X.FEE), 1)                             # room is no longer negative
+        liq = X.liquidation_price(100.0, 1, L, mmr=mmr)
+        self.assertLess(liq, 100.0 * (1 - .003))
+        # even a zero-width stop cannot keep 100× on an alt
+        self.assertLess(X.clamp_leverage(100, 0.0, cap=100, mmr=mmr), 40)
+
+    def test_paper_entry_uses_inst_cap_and_alt_mmr(self):
+        # unknown alt, gene 100×, tight stop: cap 20× (fallback) and 2.5 % MMR still leaves room at 20×
+        closes = [100.0] * 40 + [110.0] + [111.0] * 3
+        s = series_from(closes, 'C0-USDT-SWAP')
+        g = base_genes(leverage=100, risk=.02, stop_atr=.8)
+        r = X.simulate(g, {'C0-USDT-SWAP': s}, 30, s.n)
+        self.assertTrue(r['positions'])
+        p = r['positions'][0]
+        self.assertEqual(p['lever'], 20)
+        self.assertAlmostEqual(p['liq'], X.liquidation_price(p['entry'], 1, 20, mmr=.025), places=6)
+        # BTC may keep high leverage when the stop fits under 0.5 % MMR
+        s_btc = series_from(closes, 'BTC-USDT-SWAP')
+        r2 = X.simulate(g, {'BTC-USDT-SWAP': s_btc}, 30, s_btc.n)
+        self.assertTrue(r2['positions'])
+        self.assertGreater(r2['positions'][0]['lever'], 20)
+
+    def test_funding_recomputes_isolated_liquidation_price(self):
+        closes = [100.0] * 40 + [110.0] + [111.0] * 16
+        s = series_from(closes, 'BTC-USDT-SWAP')
+        # funding at every 8h after the open moves the isolated margin
+        s.funding = {t: .01 for t in s.ts if t % (8 * H) == 0}
+        r = X.simulate(base_genes(leverage=10, risk=.02), {'BTC-USDT-SWAP': s}, 30, s.n)
+        self.assertTrue(r['positions'])
+        p = r['positions'][0]
+        self.assertGreater(p['funding'], 0)
+        remaining = p['margin'] - p['funding']
+        want = X.liquidation_price(p['entry'], 1, p['lever'], mmr=X.maintenance_rate('BTC-USDT-SWAP'),
+                                   margin=remaining, qty=p['qty'])
+        self.assertAlmostEqual(p['liq'], want, places=6)
+        # paying funding tightens a long's liq (moves it up toward the entry)
+        plain = X.liquidation_price(p['entry'], 1, p['lever'], mmr=X.maintenance_rate('BTC-USDT-SWAP'))
+        self.assertGreater(p['liq'], plain)
+
+    def test_account_equity_floor_closes_at_bar_close_not_as_liquidation(self):
+        # Two alts open. A huge funding payment on C0 is taken from the shared cash and wipes C0's
+        # isolated margin (C0 therefore liquidates). C1 never trades through its own liq, but the
+        # book equity is then <= 0, so C1 must close at the bar close with reason 'equity', not 'liquidation'.
+        closes = [100.0] * 40 + [110.0] + [111.0] * 3
+        sr = {k: series_from(list(closes), k) for k in ('C0-USDT-SWAP', 'C1-USDT-SWAP')}
+        g = base_genes(risk=.02, leverage=10)
+        r0 = X.simulate_account([dict(id='m', genes=g, from_i=0, wind_i=None, boosts=[])], sr, 30, len(closes), equity=10000.0)
+        self.assertEqual(len(r0['positions']), 2)
+        for s in sr.values():
+            s.o.append(s.c[-1]); s.h.append(s.c[-1]); s.l.append(s.c[-1]); s.c.append(s.c[-1]); s.ts.append(s.ts[-1] + H); s.n += 1
+            s._cache.clear()
+        last_ts = sr['C0-USDT-SWAP'].ts[-1]
+        sr['C0-USDT-SWAP'].funding = {last_ts: 50.0}   # test-only rate: pay 50× notional from shared cash
+        r1 = X.simulate_account([dict(id='m', genes=g, from_i=0, wind_i=None, boosts=[])], sr, 30, sr['C0-USDT-SWAP'].n, equity=10000.0)
+        liq = [t for t in r1['trades'] if t['reason'] == 'liquidation']
+        eq = [t for t in r1['trades'] if t['reason'] == 'equity']
+        self.assertTrue(any(t['inst'] == 'C0-USDT-SWAP' for t in liq))
+        self.assertTrue(any(t['inst'] == 'C1-USDT-SWAP' for t in eq), msg=[(t['inst'], t['reason']) for t in r1['trades']])
+        self.assertFalse(any(t['inst'] == 'C1-USDT-SWAP' and t['reason'] == 'liquidation' for t in r1['trades']))
+        self.assertAlmostEqual(eq[0]['exit'], sr['C1-USDT-SWAP'].c[-1], places=4)
+        self.assertEqual(r1['positions'], [])
+
 
 class EntryGatePaperIntegrationTests(unittest.TestCase):
     def test_gate_streak_team_selection_and_paper_step(self):
@@ -945,12 +1027,19 @@ class EntryGatePaperIntegrationTests(unittest.TestCase):
             st['nodes'][ids[0]]['qualified'] = False; E.update_hall(st)
             changes = E.choose_team(st, T0 + 3600_000)
             self.assertTrue(any(c[1] == ids[0] and c[3] == 'entry_gate' for c in changes))
-            ev._grant_entry(st, st['team'][0]['id'])
-            for m in st['team'][1:]:
-                ev._grant_entry(st, m['id'])
+            new_id = next(c[2] for c in changes if c[1] == ids[0] and c[3] == 'entry_gate')
+            self.assertLess(E.defense_streak_for(st, new_id), 5)
+            # do not call _grant_entry for the new seat: streak < 5 means it must wind down, no new entries
+            for m in st['team']:
+                if m['id'] != new_id:
+                    ev._grant_entry(st, m['id'])
             view2, signals = P.update(st, ev.sr, changes)
             live = [g for g in st['paper']['account']['segs'] if g['wind_ts'] is None]
             self.assertTrue(live)
+            self.assertNotIn(new_id, [g['champion'] for g in live])
+            self.assertFalse(any(g['champion'] == new_id and g['wind_ts'] is None for g in st['paper']['account']['segs']))
+            self.assertFalse(any(m.get('id') == new_id and m.get('trading') for m in view2['members']))
+            self.assertFalse(any(sig.get('champion') == new_id for sig in signals.values()))
             self.assertTrue(view2['members'])
             self.assertEqual(view2['rules']['max_risk'], .10)
             self.assertEqual(view2['rules']['lever'], 100)

@@ -38,7 +38,7 @@ from volume_test import profile as volume_profile, describe as describe_volume
 from runtime_guard import entries_allowed, atomic_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
-from execution import clamp_leverage, DEFAULT_LEVERAGE  # noqa: E402
+from execution import clamp_leverage, DEFAULT_LEVERAGE, maintenance_rate  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -448,8 +448,8 @@ class Mirror:
             except (TypeError, ValueError):
                 want = DEFAULT_LEVERAGE
             want = max(1, min(want, EVOLVED_MAX_LEVERAGE))
-            # stop before liquidation first, then the per-instrument OKX cap
-            lever = clamp_leverage(want, dist, cap=EVOLVED_MAX_LEVERAGE)
+            # stop before liquidation first (this coin's MMR), then the per-instrument OKX cap
+            lever = clamp_leverage(want, dist, cap=EVOLVED_MAX_LEVERAGE, mmr=maintenance_rate(inst))
             lever = max(1, min(lever, self.inst_max_lever(inst)))
         else:
             cap = MAX_LEVERAGE
