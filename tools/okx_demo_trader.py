@@ -7,13 +7,15 @@ the paper results. Every request carries `x-simulated-trading: 1`; it cannot rea
 
 Each run, against <data>/combined/state.json:
   - a paper position opened in the last OPEN_WINDOW that is not mirrored yet is opened at market,
-    sized by the strategy's risk at the paper stop (evolved mode: cross margin 全仓, one shared account; less when many
-    positions are already open on that side; the legacy modes: isolated, 1 %), with the stop (and the
+    sized by the strategy's risk at the paper stop (evolved mode: isolated margin, the strategy's own 2–10 % risk gene;
+    less when many positions are already open on that side; the legacy modes: isolated, 1 %), with the stop (and the
     mean-reversion target) attached as exchange-side algo orders;
   - when the paper stop trails, the exchange stop is amended;
   - when the paper position is gone, the mirrored position is closed;
   - if the exchange stop already closed a mirrored position, it is marked done and never reopened.
-Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; leverage is capped at 10x; a UTC+7 day
+Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; this process is demo-only and
+refuses to start or send any request without `x-simulated-trading: 1`. Evolved mode uses isolated margin, the strategy's own risk (2–10 %) and leverage
+(1–100×, reduced so the stop sits before liquidation, then clamped to that coin's OKX max; fallback 20× if the public spec is missing). A UTC+7 day
 loss of 10% closes everything and blocks new entries until the next day; actions `pause`, `resume`,
 `flatten` (close all and pause) and `dry-run` (log intended orders, send nothing) are available.
 Secrets come from OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE, reach curl through stdin and are never logged.
@@ -35,17 +37,26 @@ from pathlib import Path
 from volume_test import profile as volume_profile, describe as describe_volume
 from runtime_guard import entries_allowed, atomic_json
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
+from execution import clamp_leverage, DEFAULT_LEVERAGE  # noqa: E402
+
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
-RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # daily loss halt: 10 % below the day's starting equity
+RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # legacy volume-test profiles: 1 % risk, 10× cap; daily halt 10 %
 EVOLVED_DAILY_HALT = .10                         # following the evolution champions: 10 %, counted on the whole account including the leader
-RISK_RANGE = (.01, .03)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range (cap 3 %)
-MAX_TRADE_RISK = .03
-# Every seat including the leader: at most 3 % of the account per trade, leverage cap 10×. The leader still uses
-# LEADER_RISK (3 %) when flagged; majors may be doubled then clamped so the result never exceeds 3 %. The leader
-# counts toward the same-direction cap and is subject to the daily-loss stop, same as everyone else.
-LEADER_RISK, LEADER_LEVERAGE = MAX_TRADE_RISK, MAX_LEVERAGE
-MARGIN_MODE = 'isolated'          # evolved mode: 'cross' (全仓) — the team shares one account and its margin, like the paper account
+RISK_RANGE = (.02, .10)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
+MAX_TRADE_RISK = .10
+EVOLVED_MAX_LEVERAGE = 100
+FALLBACK_INST_LEVERAGE = 20       # when the OKX public instrument spec has no usable `lever`
+# Every seat including the leader uses its own risk and leverage genes (2–10 %, 1–100×). Majors may be doubled then
+# clamped so the result never exceeds 10 %. The leader counts toward the same-direction cap and is subject to the
+# daily-loss stop, same as everyone else. LEADER_RISK / LEADER_LEVERAGE are the caps, not a fixed bigger size.
+LEADER_RISK, LEADER_LEVERAGE = MAX_TRADE_RISK, EVOLVED_MAX_LEVERAGE
+MARGIN_MODE = 'isolated'          # evolved and legacy modes both use isolated margin (逐仓) so each position has its own liquidation
+# Demo-only lock: flipped only in tests to prove the process refuses to start without the simulated-trading header.
+DEMO_ONLY = True
+SIMULATED_HEADER = 'x-simulated-trading'
+SIMULATED_VALUE = '1'
 MAJORS, MAJOR_FACTOR = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'), 2.0   # majors risk twice as much (execution.ACCOUNT_RULES)
 PRICE_TOLERANCE = .01             # no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
 CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
@@ -66,16 +77,18 @@ def configure_evolved(universe=None):
     """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply. `universe` is the
     coin list the evolution trades (signals.json 'instruments', the top-100 perpetuals); without it, the five majors."""
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT, MARGIN_MODE
-    MARGIN_MODE = 'cross'
-    # Each order risks its strategy's own risk gene (1–5 %, capped at 3 % after crowding and the major-coin factor),
-    # at most 20 % in one direction (the leader included), and a 10 % daily loss on the whole account closes every
-    # position until tomorrow. The leader uses LEADER_RISK (3 %) and the same 10× leverage cap as everyone else.
+    MARGIN_MODE = 'isolated'
+    # Each order risks its strategy's own risk gene (2–10 %, capped at 10 % after crowding and the major-coin factor)
+    # and its leverage gene (1–100×, reduced so the stop sits before liquidation, then clamped to that coin's OKX max).
+    # At most 20 % in one direction (the leader included); a 10 % daily loss on the whole account closes every
+    # position until tomorrow. The leader uses the same gene ranges; the title only decides signal priority.
     INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], .20, EVOLVED_DAILY_HALT
     if isinstance(universe, list) and universe and len(set(universe)) == len(universe) and all(
             isinstance(i, str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', i) for i in universe):
         INSTRUMENTS = list(universe)
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT,
-                          leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE, max_risk=MAX_TRADE_RISK, margin_mode=MARGIN_MODE, majors=list(MAJORS), major_factor=MAJOR_FACTOR)
+                          leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE, max_risk=MAX_TRADE_RISK, max_leverage=EVOLVED_MAX_LEVERAGE,
+                          fallback_leverage=FALLBACK_INST_LEVERAGE, margin_mode=MARGIN_MODE, majors=list(MAJORS), major_factor=MAJOR_FACTOR)
     return ACTIVE_PROFILE
 
 
@@ -101,6 +114,22 @@ def real_price(inst):
         return None
 
 
+def assert_demo_only():
+    """Refuse to start (or to build a request) unless this process is locked to OKX demo trading."""
+    if not DEMO_ONLY or SIMULATED_HEADER != 'x-simulated-trading' or str(SIMULATED_VALUE) != '1':
+        raise SystemExit('OKX demo trader is demo-only and refused to run without x-simulated-trading: 1')
+
+
+def simulated_headers(key, sign, ts, passphrase):
+    """Signed OKX headers; the simulated-trading flag is always forced and cannot be omitted."""
+    assert_demo_only()
+    headers = {'OK-ACCESS-KEY': key, 'OK-ACCESS-SIGN': sign, 'OK-ACCESS-TIMESTAMP': ts, 'OK-ACCESS-PASSPHRASE': passphrase,
+               SIMULATED_HEADER: SIMULATED_VALUE, 'Content-Type': 'application/json'}
+    if headers.get('x-simulated-trading') != '1':
+        raise OKXError('demo-only: refused to send a request without x-simulated-trading: 1')
+    return headers
+
+
 class OKXError(RuntimeError):
     pass
 
@@ -115,8 +144,7 @@ class OKX:
         payload = json.dumps(body, separators=(',', ':')) if body is not None else ''
         ts = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
         sign = base64.b64encode(hmac.new(self.secret.encode(), f'{ts}{method}{path}{payload}'.encode(), hashlib.sha256).digest()).decode()
-        headers = {'OK-ACCESS-KEY': self.key, 'OK-ACCESS-SIGN': sign, 'OK-ACCESS-TIMESTAMP': ts, 'OK-ACCESS-PASSPHRASE': self.passphrase,
-                   'x-simulated-trading': '1', 'Content-Type': 'application/json'}
+        headers = simulated_headers(self.key, sign, ts, self.passphrase)
         config = ''.join(f'header = "{k}: {v}"\n' for k, v in headers.items()) + f'url = "{BASE}{path}"\nrequest = "{method}"\n'
         if payload:
             config += 'data = "' + payload.replace('\\', '\\\\').replace('"', '\\"') + '"\n'
@@ -253,6 +281,8 @@ class Mirror:
         self.live = None                  # set to real_price when following the evolution champions
         self.new_order_risk = {}
         self.now_ms = int(now.timestamp() * 1000)
+        self.specs = {}
+        self._inst_caps = None
 
     def log(self, kind, inst, **kw):
         self.actions.append(dict(ts=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), action=kind, inst=inst, dry_run=self.dry, **kw))
@@ -296,14 +326,50 @@ class Mirror:
         oco = self.c.request('GET', '/api/v5/trade/orders-algo-pending?instType=SWAP&ordType=oco')
         self.algos = [a for r in (algos, oco) if ok(r) for a in r.get('data') or [] if a.get('instId') in managed]
         self.specs = {}
+        self._inst_caps = None
+        self.load_instrument_caps()
 
     def spec(self, inst):
         if inst not in self.specs:
             r = self.c.request('GET', f'/api/v5/public/instruments?instType=SWAP&instId={inst}')
-            d = (r.get('data') or [{}])[0]
+            d = (r.get('data') or [{}])[0] if ok(r) else {}
+            try:
+                max_lever = int(float(d.get('lever') or 0))
+            except (TypeError, ValueError):
+                max_lever = 0
             self.specs[inst] = dict(ctVal=float(d.get('ctVal') or 0), lotSz=d.get('lotSz') or '1', minSz=float(d.get('minSz') or 0), tickSz=d.get('tickSz') or '0.0001',
-                                    maxLever=int(float(d.get('lever') or 0)))
+                                    maxLever=max_lever)
         return self.specs[inst]
+
+    def load_instrument_caps(self):
+        """Cache each SWAP's OKX max leverage for this run from the public instruments list."""
+        if self._inst_caps is not None:
+            return self._inst_caps
+        caps = {}
+        try:
+            r = self.c.request('GET', '/api/v5/public/instruments?instType=SWAP')
+            if ok(r):
+                for d in r.get('data') or []:
+                    inst = d.get('instId')
+                    try:
+                        lev = int(float(d.get('lever') or 0))
+                    except (TypeError, ValueError):
+                        lev = 0
+                    if inst and lev >= 1:
+                        caps[inst] = lev
+        except (OKXError, TypeError, ValueError, KeyError):
+            caps = {}
+        self._inst_caps = caps
+        return caps
+
+    def inst_max_lever(self, inst):
+        """Per-instrument OKX max leverage; 20× if the public spec is missing or unusable."""
+        caps = self.load_instrument_caps()
+        if inst in caps:
+            return caps[inst]
+        sp = self.spec(inst)
+        n = int(sp.get('maxLever') or 0)
+        return n if n >= 1 else FALLBACK_INST_LEVERAGE
 
     def price(self, inst):
         r = self.c.request('GET', f'/api/v5/market/ticker?instId={inst}')
@@ -346,16 +412,16 @@ class Mirror:
         r = RISK
         evolved = bool(ACTIVE_PROFILE and ACTIVE_PROFILE.get('mode') == 'evolved')
         leader = evolved and bool(p.get('leader'))
-        if leader:
-            r = LEADER_RISK
-        elif evolved and p.get('risk') is not None:
+        if evolved and p.get('risk') is not None:
             r = min(RISK_RANGE[1], max(RISK_RANGE[0], float(p['risk'])))
+        elif evolved:
+            r = RISK_RANGE[0]
         if evolved:                                # many positions on one side are one bet: the next one risks less
             crowd = sum(1 for m in self.s['mirrored'].values() if m.get('status') == 'open' and m.get('side') == side)
             r *= next((f for n, f in CROWD_STEPS if crowd >= n), 1.0)
             if inst in MAJORS:
                 r *= MAJOR_FACTOR
-            r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 3 %
+            r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 10 %
         risk = r * self.equity
         same_risk = 0.0
         for existing_key, m in self.s['mirrored'].items():
@@ -376,8 +442,23 @@ class Mirror:
         contracts = quantize(risk / (px * dist) / sp['ctVal'], sp['lotSz'])
         if float(contracts) < sp['minSz'] or contracts <= 0:
             return self.log('skip', inst, reason='size_below_minimum', contracts=fmt(contracts), min=sp['minSz'])
-        cap = LEADER_LEVERAGE if leader else MAX_LEVERAGE
-        lever = max(1, min(cap, int(p.get('leverage') or cap), int(.8 / dist), sp.get('maxLever') or cap))
+        if evolved:
+            try:
+                want = int(p.get('leverage') or DEFAULT_LEVERAGE)
+            except (TypeError, ValueError):
+                want = DEFAULT_LEVERAGE
+            want = max(1, min(want, EVOLVED_MAX_LEVERAGE))
+            # stop before liquidation first, then the per-instrument OKX cap
+            lever = clamp_leverage(want, dist, cap=EVOLVED_MAX_LEVERAGE)
+            lever = max(1, min(lever, self.inst_max_lever(inst)))
+        else:
+            cap = MAX_LEVERAGE
+            try:
+                want = int(p.get('leverage') or cap)
+            except (TypeError, ValueError):
+                want = cap
+            inst_cap = sp.get('maxLever') or cap
+            lever = max(1, min(cap, want, int(.8 / dist), inst_cap))
         margin = float(contracts) * sp['ctVal'] * px / lever
         if margin > self.available * .95:
             return self.log('skip', inst, reason='insufficient_margin', margin=round(margin, 4), available=round(self.available, 4))
@@ -615,6 +696,7 @@ def main():
     ap.add_argument('--data', type=Path, required=True)
     ap.add_argument('--action', default='run', choices=['run', 'dry-run', 'pause', 'resume', 'flatten', 'follow-current', 'snapshot'])
     args = ap.parse_args()
+    assert_demo_only()
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
     if not all(creds):
         print('未配置 OKX 模拟交易密钥，跳过跟单。'); return
@@ -624,7 +706,7 @@ def main():
         sig = json.loads(evolved_path.read_text())
         paper = {'positions': sig.get('positions', {}), 'source': 'evolve'}
         applied = configure_evolved(sig.get('instruments'))
-        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 同向 ≤ {SAME_SIDE_CAP:.0%} · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
+        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，缺省 {FALLBACK_INST_LEVERAGE}×）· 逐仓 · 同向 ≤ {SAME_SIDE_CAP:.0%} · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
     else:
         if not paper_path.exists():
             print('没有策略信号，跳过跟单。'); return

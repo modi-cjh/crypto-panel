@@ -154,9 +154,13 @@ test('the leader is shown with its bigger size and the rules explain it', async 
   assert.match(html, /<span class="evo-rank lead">第一名<\/span>[\s\S]*?<b>第一名（信号优先）<\/b>/);
   assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）信号优先[\\s\\S]*风险基因 5%[\\s\\S]*杠杆基因 50×[\\s\\S]*计入同方向上限[\\s\\S]*日亏停手`));
   assert.match(html, /所有席位（含第一名）每笔按风险基因 2%–10%、杠杆基因 1–100×，单笔风险（含主流币加倍）最多 10%/);
+  assert.match(html, /OKX 模拟盘跟单使用同一套风险\/杠杆基因（2%–10%、1–100×），逐仓下单/);
+
   assert.match(html, /升为第一名（信号优先）/);
-  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .02, risk_max: .10, same_side_cap: .2, daily_halt: .1, leader_risk: .10, leader_leverage: 100, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
-  assert.match(text, /每笔止损风险 2%–10%（按策略）/); assert.match(text, /第一名每笔 10%、最高 100×（计入同向上限和日亏停手）/); assert.match(text, /日亏 10% 停手/);
+  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .02, risk_max: .10, same_side_cap: .2, daily_halt: .1, leader_risk: .10, leader_leverage: 100, max_leverage: 100, margin_mode: 'isolated', instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
+  assert.match(text, /每笔止损风险 2%–10%（按策略）/); assert.match(text, /杠杆最高 100×/); assert.match(text, /逐仓/);
+  assert.match(text, /第一名信号优先（计入同向上限和日亏停手）/); assert.match(text, /日亏 10% 停手/);
+  assert.doesNotMatch(text, /第一名每笔 10%/);
 });
 
 

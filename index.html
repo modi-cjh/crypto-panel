@@ -17,10 +17,10 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="MODI">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="stylesheet" href="./assets/style.css?v=20261112-lev100">
-  <link rel="stylesheet" href="./assets/apple.css?v=20261112-lev100">
+  <link rel="stylesheet" href="./assets/style.css?v=20261112-okx100">
+  <link rel="stylesheet" href="./assets/apple.css?v=20261112-okx100">
   <script defer src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="./assets/app.mjs?v=20261112-lev100"></script>
+  <script type="module" src="./assets/app.mjs?v=20261112-okx100"></script>
 </head>
 <body>
   <div id="toasts" role="status" aria-live="polite"></div>
@@ -57,7 +57,7 @@
         <section class="panel command-fills"><div class="panel-heading"><div><span class="eyebrow">04 / 执行轨迹</span><h2>最近成交</h2></div></div><ol id="home-okx-actions" class="okx-acts"></ol><details class="okx-log"><summary>运行记录（暂停、恢复、跳过的信号）</summary><ol id="home-okx-log" class="okx-acts"></ol></details></section>
   <section class="panel"><div class="panel-heading"><h2>跟单对照</h2><small class="muted">纸面账户 vs OKX 模拟盘</small></div><div id="okx-compare"><p class="skeleton" role="status">数据加载中</p></div></section>
         <section class="panel okx-danger" aria-labelledby="okx-danger-title"><div class="panel-heading"><h2 id="okx-danger-title">停止交易</h2></div><div class="trade-controls"><p data-stop-status role="status">全部平仓后保持暂停，需登录 GitHub 执行。</p><button type="button" class="trade-stop-button" data-stop-demo aria-haspopup="dialog" aria-controls="stop-dialog">全部平仓并停止…</button></div></section>
-        <p class="panel-caption">规则：通过上场门槛的冠军组合成员按已收盘 K 线出信号，信号出现 5 小时内（更早的信号只在价格仍在入场区间时）在 OKX 模拟交易按市价开仓（全仓：所有策略共用一个账户和保证金），模拟盘价格偏离真实行情超过 1% 的币暂不开新仓，每笔开仓都带交易所止损，发现持仓没有止损单会立刻补挂。每一席位（含第一名）按自己的风险基因 2%–10%、杠杆基因 1–100× 开仓，单笔风险（含主流币加倍）最多 10%；实际杠杆会下调到止损在强平价之前（逐仓强平，维持保证金率按 0.5% 加平仓手续费计，跳空穿过强平价亏掉该仓保证金）。BTC / ETH / SOL / XRP / DOGE 五个主流币每笔风险加倍，但仍不超过 10%。同方向已有 3 个以上持仓时新开仓风险减半，6 个以上减到四分之一。同方向合计风险（含第一名）≤ 20%，每个策略最多同时 3 个持仓。第一名须通过上场门槛（样本外与终审合格、连续守擂 5 代、回撤 ≤ 30%），信号优先成交，按自己的风险和杠杆基因开仓，计入同方向上限和日亏停手。止损 / 止盈作为交易所条件单，跟随止损上移时同步修改。当日亏损达 10% 时全部成员平仓并停手到次日。仅为 OKX 模拟资金，不构成投资建议。账户数据来自 GitHub paper-data 分支，约每 4 小时更新一次（金边时间显示上次 / 下次更新，超过 5 小时才报警）。</p>
+        <p class="panel-caption">规则：通过上场门槛的冠军组合成员按已收盘 K 线出信号，信号出现 5 小时内（更早的信号只在价格仍在入场区间时）在 OKX 模拟交易按市价开仓（逐仓；杠杆不超过该币在 OKX 允许的上限，取不到上限时按 20×），模拟盘价格偏离真实行情超过 1% 的币暂不开新仓，每笔开仓都带交易所止损，发现持仓没有止损单会立刻补挂。每一席位（含第一名）按自己的风险基因 2%–10%、杠杆基因 1–100× 开仓，单笔风险（含主流币加倍）最多 10%；实际杠杆会下调到止损在强平价之前（逐仓强平，维持保证金率按 0.5% 加平仓手续费计，跳空穿过强平价亏掉该仓保证金）。BTC / ETH / SOL / XRP / DOGE 五个主流币每笔风险加倍，但仍不超过 10%。同方向已有 3 个以上持仓时新开仓风险减半，6 个以上减到四分之一。同方向合计风险（含第一名）≤ 20%，每个策略最多同时 3 个持仓。第一名须通过上场门槛（样本外与终审合格、连续守擂 5 代、回撤 ≤ 30%），信号优先成交，按自己的风险和杠杆基因开仓，计入同方向上限和日亏停手。止损 / 止盈作为交易所条件单，跟随止损上移时同步修改。当日亏损达 10% 时全部成员平仓并停手到次日。仅为 OKX 模拟资金，不构成投资建议。账户数据来自 GitHub paper-data 分支，约每 4 小时更新一次（金边时间显示上次 / 下次更新，超过 5 小时才报警）。</p>
         <button id="legacy-toggle" class="expand-button" type="button" aria-expanded="false">显示原主力盘（crypto-bot · 已暂停）</button>
       </section>
       <section class="panel capital-panel" aria-label="账户权益">
