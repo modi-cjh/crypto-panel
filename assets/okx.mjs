@@ -122,7 +122,11 @@ export function okxCurveSVG(d) {
   const lo = Math.min(...vals, base), hi = Math.max(...vals, base), pad = Math.max((hi - lo) * .12, base * .002);
   const W = 680, H = 250, L = 118, R = 12, T = 16, B = 40, x = t => L + (t - t0) / (t1 - t0) * (W - L - R), y = v => T + (hi + pad - v) / (hi - lo + pad * 2) * (H - T - B);
   const grid = [hi + pad, base, lo - pad].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="${v === base ? 'sim-base' : 'equity-grid'}"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt(v)}</text>`).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="OKX 模拟账户资金曲线">${grid}<polyline points="${pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ')}" fill="none" stroke="${OKX_COLOR}" stroke-width="2" vector-effect="non-scaling-stroke"/>` +
+  // Coloured like Apple's Stocks: green when the account is above where the curve starts, red when below; a soft area under it.
+  const dir = vals.at(-1) >= vals[0] ? 'curve-up' : 'curve-down', line = pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ');
+  const floor = (H - B).toFixed(1), tip = `<circle class="curve-tip ${dir}" cx="${x(t1).toFixed(1)}" cy="${y(vals.at(-1)).toFixed(1)}" r="4.5"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="OKX 模拟账户资金曲线">${grid}<polygon class="curve-area ${dir}" points="${x(t0).toFixed(1)},${floor} ${line} ${x(t1).toFixed(1)},${floor}"/>` +
+    `<polyline class="curve-line ${dir}" points="${line}" fill="none" stroke="${OKX_COLOR}" stroke-width="2" vector-effect="non-scaling-stroke"/>${tip}` +
     `<text x="${L}" y="${H - 8}">${time(t0)}</text><text x="${W - R}" y="${H - 8}" text-anchor="end">${time(t1)}</text></svg>`;
 }
 

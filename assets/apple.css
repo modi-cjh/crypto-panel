@@ -1,0 +1,227 @@
+/* MODI · Apple-style skin (on top of style.css; replaces future.css + hud.css, chosen by the user 2026-11-12).
+   Modelled on Apple's own Stocks / Wallet apps: system font, one large number, grouped inset cards with no borders,
+   a translucent large-title bar, green / red value badges, a bottom tab bar on phones. Follows the phone's light / dark
+   setting. Presentation only: data, rules and scripts are unchanged. */
+
+/* ---------- tokens: light, then dark ---------- */
+:root{
+  color-scheme:light;
+  --bg:#f2f2f7; --panel:#ffffff; --fill:#e9e9ee; --fill-2:#f2f2f7; --line:rgb(60 60 67 / .13); --sep:rgb(60 60 67 / .16);
+  --text:#1d1d1f; --muted:#6e6e73; --faint:#8e8e93;
+  --accent:#0071e3; --cyan:#0071e3; --purple:#8944ab; --amber:#b25000;
+  --green:#248a3d; --red:#d70015; --green-fill:#34c759; --red-fill:#ff3b30;
+  --tint-green:rgb(52 199 89 / .14); --tint-red:rgb(255 59 48 / .12); --tint-blue:rgb(0 113 227 / .1); --tint-amber:rgb(255 149 0 / .14);
+  --bar:rgb(249 249 252 / .8); --shadow:0 1px 2px rgb(0 0 0 / .04),0 6px 24px rgb(0 0 0 / .05);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue","Microsoft YaHei","Noto Sans SC",sans-serif;
+  --display:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Helvetica Neue","Microsoft YaHei",sans-serif;
+  --mono:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Helvetica Neue",sans-serif;
+  --radius:18px; --radius-s:12px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  color-scheme:dark;
+  --bg:#000000; --panel:#1c1c1e; --fill:#2c2c2e; --fill-2:#2c2c2e; --line:rgb(84 84 88 / .45); --sep:rgb(84 84 88 / .6);
+  --text:#f5f5f7; --muted:#98989d; --faint:#8e8e93;
+  --accent:#2997ff; --cyan:#2997ff; --purple:#bf5af2; --amber:#ff9f0a;
+  --green:#30d158; --red:#ff453a; --green-fill:#30d158; --red-fill:#ff453a;
+  --tint-green:rgb(48 209 88 / .16); --tint-red:rgb(255 69 58 / .16); --tint-blue:rgb(41 151 255 / .16); --tint-amber:rgb(255 159 10 / .16);
+  --bar:rgb(22 22 24 / .72); --shadow:none } }
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#000000; --panel:#1c1c1e; --fill:#2c2c2e; --fill-2:#2c2c2e; --line:rgb(84 84 88 / .45); --sep:rgb(84 84 88 / .6);
+  --text:#f5f5f7; --muted:#98989d; --faint:#8e8e93;
+  --accent:#2997ff; --cyan:#2997ff; --purple:#bf5af2; --amber:#ff9f0a;
+  --green:#30d158; --red:#ff453a; --green-fill:#30d158; --red-fill:#ff453a;
+  --tint-green:rgb(48 209 88 / .16); --tint-red:rgb(255 69 58 / .16); --tint-blue:rgb(41 151 255 / .16); --tint-amber:rgb(255 159 10 / .16);
+  --bar:rgb(22 22 24 / .72); --shadow:none }
+
+/* ---------- base ---------- */
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased;letter-spacing:0}
+body::before,body::after{content:none}
+.up{color:var(--green)}.down{color:var(--red)}.muted{color:var(--muted)}
+a{color:inherit}
+h1,h2,h3{font-family:var(--display);letter-spacing:-.3px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- header: translucent bar, quiet brand, balance on the right ---------- */
+.header{background:var(--bar);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:.5px solid var(--sep);box-shadow:none;min-height:0;padding-block:12px;gap:22px}
+.brand{gap:10px;font-size:13px;color:var(--muted)}
+.brand b{font:700 19px var(--display);color:var(--text);letter-spacing:-.2px}
+.brand-icon{width:36px;height:36px;min-width:36px;border:0;border-radius:9px;background:linear-gradient(160deg,#1d1d1f,#3a3a3c);color:#fff;font:700 20px var(--display);box-shadow:none}
+.brand-icon>span{display:none}
+.brand-sub{color:var(--faint);letter-spacing:0;font-size:11px}
+.header-status,.header-status *{color:var(--faint);font-family:var(--font)}
+.day-number{color:var(--faint)}
+nav{gap:4px}
+nav>a{font-size:14px;font-weight:500;color:var(--muted);padding:7px 12px;border-radius:999px;transition:background .2s,color .2s}
+nav>a:hover{color:var(--text)}
+nav>a.active{color:var(--text);background:var(--fill)}
+nav>a.active::after{content:none}
+nav>a svg{display:none}
+.connection{color:var(--muted);font-size:12px;border:0;background:none}
+.pinned-balance{border-left:.5px solid var(--sep)}
+.pinned-balance strong{font:600 22px var(--display);letter-spacing:-.5px;color:var(--text);font-variant-numeric:tabular-nums}
+.pinned-label,.pinned-balance small{color:var(--faint)}
+#pinned-daily{font-weight:500}
+
+/* ---------- headings: large titles ---------- */
+.command-heading{padding:28px 0 18px}
+.command-heading .eyebrow,.command-heading .sector-label,.heading-dot{display:none}
+.command-heading h1,.page-heading h1{font:700 34px/1.12 var(--display);letter-spacing:-.6px;color:var(--text)}
+.command-heading p,.page-heading p{color:var(--muted);font-size:15px;line-height:1.5;margin-top:6px}
+.page-heading{padding:28px 0 18px}
+.page-heading .eyebrow,.eyebrow{color:var(--faint);font:500 13px var(--font);letter-spacing:0;text-transform:none}
+#evolve-page .page-heading .eyebrow,#sim-page .page-heading .eyebrow{display:none}
+.lab-tag{display:none}
+.module-label,.module-arrow{display:none}
+.panel-heading .eyebrow{display:none}   /* section numbering (01 / 02 …) is not part of this style */
+
+/* ---------- cards: grouped inset, no borders ---------- */
+.panel,.stat{background:var(--panel);border:0;border-radius:var(--radius);box-shadow:var(--shadow)}
+.panel::before,.panel::after{content:none}
+.panel-heading{padding:18px 20px 10px}
+.panel-heading h2{font:600 20px var(--display);letter-spacing:-.3px;color:var(--text)}
+.panel-heading small,.panel-heading p{color:var(--faint);font-size:13px}
+.panel-caption{color:var(--faint);font-size:12px;line-height:1.6}
+.pill{border:0;border-radius:999px;background:var(--fill);color:var(--muted);font:500 12px var(--font);padding:4px 10px;box-shadow:none}
+.pill.up,.okx-pill.up{background:var(--tint-green);color:var(--green)}
+.pill.down,.okx-pill.down{background:var(--tint-red);color:var(--red)}
+.mode-tag{border:0;border-radius:6px;background:var(--fill);color:var(--muted);font:500 11px var(--font);box-shadow:none}
+.history-metrics>div{border-color:var(--sep)}
+.history-metrics span{color:var(--faint);font-size:12px}
+.history-metrics strong{font:600 18px var(--display);font-variant-numeric:tabular-nums;color:var(--text)}
+.history-metrics strong.up{color:var(--green)}.history-metrics strong.down{color:var(--red)}
+
+/* ---------- home: the account card leads, one big number ---------- */
+#home-sim{gap:18px}
+#home-sim .okx-hero,.okx-hero{background:var(--panel);border:0;min-height:0;padding:22px 22px 14px}
+#home-sim .okx-hero::before{content:none}
+.okx-hero-top h1{font:500 14px var(--font);color:var(--muted);letter-spacing:0}
+.equity-number strong,#home-sim .okx-hero .equity-number strong,#okx-total-equity{font:600 clamp(44px,6vw,64px)/1.05 var(--display);letter-spacing:-1.6px;color:var(--text);text-shadow:none;animation:none}
+.equity-number small{font:500 18px var(--display);color:var(--muted);letter-spacing:0}
+.okx-ret{font-size:15px;color:var(--muted)}
+.okx-ret .up,.okx-ret .down{font-weight:600}
+.okx-outlier{color:var(--faint)}
+.okx-notes>summary,.okx-notes{background:var(--fill-2);border:0;border-radius:var(--radius-s);color:var(--muted)}
+.okx-curve-head h2{font:600 17px var(--display)}
+.sim-curve svg text,#okx-curve svg text,#home-okx-curve svg text{fill:var(--faint);font-family:var(--font)}
+.sim-curve svg .equity-grid{stroke:var(--line)}
+.sim-curve svg .sim-base{stroke:var(--sep);stroke-dasharray:2 4}
+.sim-curve svg polyline.curve-line{stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round}
+.sim-curve svg .curve-up{stroke:var(--green-fill)}.sim-curve svg .curve-down{stroke:var(--red-fill)}
+.sim-curve svg .curve-area.curve-up{fill:var(--tint-green);stroke:none}.sim-curve svg .curve-area.curve-down{fill:var(--tint-red);stroke:none}
+.sim-curve svg .curve-tip{stroke:var(--panel);stroke-width:2}
+.sim-curve svg .curve-tip.curve-up{fill:var(--green-fill)}.sim-curve svg .curve-tip.curve-down{fill:var(--red-fill)}
+
+/* evolution card on the home page: a plain grouped row, no orbit */
+#home-evolve,.evo-home{background:var(--panel);border:0;min-height:0;padding:18px 20px;gap:4px}
+#home-evolve:hover{box-shadow:var(--shadow)}
+.evo-orbit{display:none}
+.evo-home-gen{font:600 22px var(--display);letter-spacing:-.3px;color:var(--text);text-shadow:none}
+.evo-home-main{font-size:15px;color:var(--text)}
+#home-evolve .muted{color:var(--muted);font-size:13px}
+
+/* ---------- positions: Stocks-style rows with value badges ---------- */
+.okx-pos-list{padding:0 8px 8px}
+.okx-pos{border:0;border-radius:0;background:none;box-shadow:none}
+.okx-pos+.okx-pos{border-top:.5px solid var(--sep)}
+.okx-pos>summary{padding:12px 12px;border-radius:12px}
+.okx-pos>summary:hover{background:var(--fill-2)}
+.okx-pos-coin b{font:600 17px var(--display);color:var(--text)}
+.okx-pos-coin .coin-icon{width:34px;height:34px;border:0;background:var(--fill);color:var(--text);font-weight:600;box-shadow:none}
+.okx-side{border:0;border-radius:6px;font:600 11px var(--font);padding:2px 6px}
+.okx-side.down{background:var(--tint-red);color:var(--red)}.okx-side.up{background:var(--tint-green);color:var(--green)}
+.okx-pos-tag{color:var(--faint);font-size:12px}
+.okx-pos-tag b{color:var(--accent);font-weight:600}
+.okx-pos-pnl b{display:inline-block;min-width:92px;text-align:center;font:600 15px var(--display);font-variant-numeric:tabular-nums;padding:5px 9px;border-radius:8px;color:#fff;background:var(--faint)}
+.okx-pos-pnl.up b{background:var(--green-fill)}.okx-pos-pnl.down b{background:var(--red-fill)}
+.okx-pos-pnl small{color:var(--faint);font-size:12px}
+.okx-pos-body{background:var(--fill-2);border-radius:12px;margin:0 6px 10px;border:0}
+.okx-pos-body strong{font-family:var(--display)}
+
+/* 跟单对照: inside the card's padding */
+#okx-compare{padding:0 20px 16px}#okx-compare>p{margin:0 0 6px;color:var(--muted)}
+#okx-compare .evo-list li{border-color:var(--sep)}
+
+/* ---------- activity lists ---------- */
+.okx-acts li{border-color:var(--sep)}
+.okx-acts b{font-weight:600;color:var(--text)}
+.okx-acts p{color:var(--muted)}
+.okx-acts time{color:var(--faint);font-family:var(--font)}
+.okx-act-dot{box-shadow:none}
+.okx-log>summary,.evo-more>summary{color:var(--accent);font-size:14px}
+
+/* ---------- strategy lab ---------- */
+#evolve-page .panel{border:0}
+.evo-top{background:var(--panel)}
+.evo-loop-box{background:none}
+.evo-loop-box::before,.evo-loop-box::after{content:none}
+.evo-loop-box svg,.evo-graph-box svg circle,.evo-mini polyline,#home-okx-curve polyline,#okx-curve polyline{filter:none}
+.evo-stats strong,.evo-ring-gen{text-shadow:none;font-family:var(--display)}
+.evo-member{border-color:var(--sep)}
+.evo-member:has(.evo-rank.lead){background:var(--tint-blue);box-shadow:none;border-radius:12px;padding-inline:8px}
+.evo-rank.lead{color:var(--accent);text-shadow:none}
+.evo-list li{border-color:var(--sep)}
+.evo-detail{background:var(--fill-2);border:0;border-radius:var(--radius)}
+.evo-genes .evo-gbar,.evo-gbar{background:var(--fill)}
+.evo-gbar b{background:var(--accent)}
+
+/* charts and the loop in the system blue instead of the old teal */
+.evo-ring-run,.evo-best,.evo-test{stroke:var(--accent)}
+.sim-legend i.evo-test,i.evo-test{background:var(--accent)}
+.evo-gen-label{fill:var(--accent)}
+.evo-phase circle{stroke:var(--accent);fill:var(--panel)}
+.evo-ring{stroke:var(--fill)}
+.evo-node.alive circle:not(.hit):not(.champ-ring){stroke:var(--panel)}
+
+/* ---------- notices keep their meaning in both themes ---------- */
+.alert,.pause-banner,.trade-profile,.account-data-note,.sim-backfill,.sim-pending{background:var(--tint-amber);color:var(--amber);border:0;border-radius:var(--radius-s)}
+.trade-stop-button,.trade-stop-link{background:var(--tint-red);color:var(--red);border:0;border-radius:999px}
+.diag pre{background:var(--fill-2);color:var(--text)}
+dialog{background:var(--panel);color:var(--text);border:0;border-radius:var(--radius)}
+table th{background:transparent;color:var(--faint)}
+tbody tr:hover{background:var(--fill-2)}
+footer{border-color:var(--sep);color:var(--faint)}
+.footer-brand{color:var(--muted)}
+.companion-doing{background:var(--fill-2)}
+
+/* ---------- motion: only Apple-like transitions ---------- */
+.panel,.okx-pos>summary,nav>a{transition:background .2s ease,box-shadow .2s ease,transform .15s ease}
+a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ---------- desktop ---------- */
+@media(min-width:761px){
+  .header{grid-template-columns:auto auto 1fr 210px}
+}
+
+/* ---------- phone: compact large-title bar, tab bar at the bottom ---------- */
+@media(max-width:760px){
+  html{scroll-padding-top:90px}
+  /* no blur on the header here: a backdrop-filter would make it the containing block of the fixed tab bar below */
+  .header{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--bg);grid-template-columns:minmax(0,1fr) auto;min-height:0;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));gap:4px 10px;align-items:center}
+  .header-status{display:none}
+  .brand>span:not(.brand-icon){font-size:0;line-height:1}.brand>span:not(.brand-icon) b{font-size:19px}   /* just “MODI” on a phone */
+  .brand{font-size:11px}.brand-icon{width:30px;height:30px;min-width:30px;font-size:17px;border-radius:8px}.brand-sub{display:none}
+  .pinned-balance{grid-column:2;grid-row:1;border-left:0;padding-left:0}
+  .pinned-balance strong{font-size:19px}
+  .pinned-balance small,.pinned-label{display:none}
+  #pinned-daily{font-size:11px}
+  /* the navigation becomes a tab bar fixed to the bottom of the screen */
+  .header nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:repeat(4,1fr) auto;gap:0;padding:6px max(10px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));
+    background:var(--bar);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--sep);overflow:visible}
+  .header nav>a{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;font-weight:500;padding:4px 0;border-radius:0;background:none;color:var(--faint);letter-spacing:0}
+  .header nav>a svg{display:block;width:24px;height:24px;fill:currentColor}
+  .header nav>a.active{color:var(--accent);background:none}
+  .header nav .connection{margin:0;padding:0 6px;align-self:center}
+  .header nav .connection #connection-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  main{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+  footer{padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}
+  .command-heading,.page-heading{padding:20px 0 12px;flex-direction:column;align-items:flex-start;gap:10px}
+  .page-heading>div{max-width:none}
+  .command-heading h1,.page-heading h1{font-size:30px}
+  #home-sim{grid-template-columns:1fr}
+  #home-sim .okx-hero{padding:18px 18px 10px}
+  .panel-heading{padding:16px 16px 8px}
+  .okx-pos-pnl b{min-width:80px;font-size:14px}
+}

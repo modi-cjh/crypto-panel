@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#070d1a">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <meta name="description" content="MODI AI 交易团队、真实行情、技术指标与模拟盘看板。OKX 公共数据，只读不下单。">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://www.okx.com wss://ws.okx.com:8443 wss://ws.okx.com wss://wspap.okx.com wss://wspap.okx.com:8443 https://raw.githubusercontent.com; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>MODI · AI 交易团队</title>
@@ -16,17 +17,16 @@
   <meta name="apple-mobile-web-app-title" content="MODI">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="./assets/style.css?v=20261104-connect">
-  <link rel="stylesheet" href="./assets/future.css?v=20261112-space-lab">
-  <link rel="stylesheet" href="./assets/hud.css?v=20261112-hud-glow">
+  <link rel="stylesheet" href="./assets/apple.css?v=20261112-apple">
   <script defer src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="./assets/app.mjs?v=20261112-hud-glow"></script>
+  <script type="module" src="./assets/app.mjs?v=20261112-apple"></script>
 </head>
 <body>
   <div id="toasts" role="status" aria-live="polite"></div>
   <header class="header">
-    <a class="brand" href="#/" aria-label="交易团队首页"><span class="brand-icon" aria-hidden="true">M<span>✦</span></span><span><b>MODI</b> · AI 交易团队<small class="brand-sub">自主进化 · 交易指挥系统</small></span></a>
+    <a class="brand" href="#/" aria-label="交易团队首页"><span class="brand-icon" aria-hidden="true">M<span>✦</span></span><span><b>MODI</b> · AI 交易团队<small class="brand-sub">自主进化 · 模拟交易</small></span></a>
     <div class="header-status"><span id="day-number" class="day-number">DAY —</span><time id="utc-clock">— UTC+7</time></div>
-    <nav aria-label="主导航"><a href="#/" data-nav="home">交易室</a><a href="#/sim" data-nav="sim">模拟交易</a><a href="#/evolve" data-nav="evolve">策略进化</a><a href="#/market" data-nav="market">市场行情</a><button id="connection" class="connection" type="button" aria-haspopup="dialog" aria-controls="diag" title="点击查看连接诊断"><span id="connection-dot" class="dot"></span><span id="connection-text">正在连接</span></button></nav>
+    <nav aria-label="主导航"><a href="#/" data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>交易室</a><a href="#/sim" data-nav="sim"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16v-1.5H4zM5.5 16.5h3v-6h-3zm5 0h3V6h-3zm5 0h3v-4h-3z"/></svg>模拟交易</a><a href="#/evolve" data-nav="evolve"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 0 0 0-19m0 3.5a6 6 0 1 1 0 12 6 6 0 0 1 0-12m0 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6"/></svg>策略进化</a><a href="#/market" data-nav="market"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.5 8.5 11l4 4 6.5-8.5 1.8 1.4-8.1 10.6-4-4-4.2 5z"/></svg>市场行情</a><button id="connection" class="connection" type="button" aria-haspopup="dialog" aria-controls="diag" title="点击查看连接诊断"><span id="connection-dot" class="dot"></span><span id="connection-text">正在连接</span></button></nav>
     <aside class="pinned-balance" aria-label="常驻实时余额"><span class="pinned-label"><span id="pinned-label-text">主力盘余额</span> <span id="pinned-mode" class="mode-tag">—</span></span><strong id="pinned-equity">—</strong><span id="pinned-daily">当日盈亏 · 等待基准</span><small id="pinned-source">等待账户快照</small><small id="pinned-time">— UTC+7</small></aside>
   </header>
   <main id="main">
@@ -43,7 +43,7 @@
     </dialog>
 
     <section id="home-page" class="page" aria-label="交易室首页">
-      <div class="command-heading"><div><span class="eyebrow">MODI / 深空指挥舱</span><h1>交易指挥中心<span class="heading-dot" aria-hidden="true"></span></h1><p>观察市场，交给策略进化。</p></div><span class="sector-label">模拟交易 <i></i> 账户总览</span></div>
+      <div class="command-heading"><div><span class="eyebrow">MODI / 深空指挥舱</span><h1>交易室<span class="heading-dot" aria-hidden="true"></span></h1><p>OKX 模拟账户与策略进化的冠军组合。</p></div><span class="sector-label">模拟交易 <i></i> 账户总览</span></div>
       <section id="home-sim" class="home-sim" hidden aria-label="OKX 模拟交易账户">
         <section class="panel okx-hero"><span class="module-label">01 / 账户中枢</span><div class="okx-hero-top"><h1>OKX 模拟账户权益 <span class="mode-tag">交易所模拟</span></h1><span id="home-okx-status" class="pill">—</span></div><div class="equity-number"><strong id="okx-total-equity">—</strong><small>USDT</small></div><p id="okx-total-ret" class="okx-ret">—</p><details class="okx-notes"><summary><span class="okx-notes-line" data-notes-summary>账户快照读取中…</span></summary><div class="okx-notes-body"><p class="trade-profile" data-execution-profile role="status">策略档位：等待任务回执确认</p><p class="runtime-health" data-runtime-health role="status">正在检查执行调度…</p><p class="account-data-note" data-account-note role="status">正在读取账户快照…</p></div></details><small id="okx-total-updated" class="visually-hidden"></small><div class="panel-heading okx-curve-head"><h2>资金曲线</h2><a href="#/sim" class="pill">完整页面 →</a></div><div id="home-okx-curve" class="sim-curve"></div></section>
         <a id="home-evolve" class="panel evo-home" href="#/evolve" hidden></a>
