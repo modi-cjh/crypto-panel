@@ -83,3 +83,10 @@
 {"ts": "2026-11-12T00:33:47Z", "action": "open", "inst": "1INCH-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "16577.6", "price": 0.0737, "stop": "0.0789", "target": "0.0594", "leverage": 10, "risk_usdt": 86.61, "leader": true}
 {"ts": "2026-11-12T00:33:47Z", "action": "open", "inst": "INJ-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "222", "price": 7.476, "stop": "9.305", "target": "3.882", "leverage": 3, "risk_usdt": 40.71}
 {"ts": "2026-11-12T00:33:47Z", "action": "open", "inst": "NOT-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "9415", "price": 0.0003271, "stop": "0.0003639", "target": "0.0002759", "leverage": 7, "risk_usdt": 34.64}
+{"ts": "2026-11-12T01:26:06Z", "action": "amend_stop", "inst": "CRV-USDT-SWAP", "dry_run": false, "old": 0.26622577700713235, "new": 0.2648257770071324}
+{"ts": "2026-11-12T01:26:06Z", "action": "close", "inst": "XTZ-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-12T01:26:06Z", "action": "close", "inst": "AUCTION-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-12T01:26:06Z", "action": "close", "inst": "1INCH-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-12T01:26:06Z", "action": "amend_stop", "inst": "INJ-USDT-SWAP", "dry_run": false, "old": 9.30467024821177, "new": 9.248670248211768}
+{"ts": "2026-11-12T01:26:06Z", "action": "close", "inst": "NOT-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-12T01:26:06Z", "action": "open", "inst": "CRO-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "504", "price": 0.04947, "stop": "0.05294", "target": "0.04324", "leverage": 10, "risk_usdt": 17.47}
