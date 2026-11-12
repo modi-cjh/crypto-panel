@@ -25,7 +25,9 @@ def iso(ms):
     return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
 
 
-GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'origin', 'fitness', 'qualified', 'train', 'test', 'final', 'test_ok', 'final_ok', 'oos_dd')
+GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'origin', 'fitness', 'solo_fitness', 'port_fitness', 'qualified', 'train', 'test',
+              'final', 'test_ok', 'final_ok', 'oos_dd')
+PORT_KEYS = ('port_train', 'port_oos_dd', 'port_marginal', 'port_context')     # portfolio fitness details (nodes.json and seated nodes)
 
 
 def node_view(n, curves=False, slim=False, state=None):
@@ -35,6 +37,7 @@ def node_view(n, curves=False, slim=False, state=None):
         v['entry_gate'] = E.entry_gate(n, state=state)
     if slim:                                   # summary and curves live in nodes.json
         return v
+    v.update({k: n[k] for k in PORT_KEYS if k in n})
     v['summary'] = describe(n['genes'])
     v['test_curve'] = n.get('test_curve', [])[:: max(1, len(n.get('test_curve', [])) // 20)]
     if curves:
@@ -43,7 +46,7 @@ def node_view(n, curves=False, slim=False, state=None):
 
 
 def node_details(state):
-    keep = ('genes', 'summary', 'test_curve', 'entry_gate', 'oos_dd')
+    keep = ('genes', 'summary', 'test_curve', 'entry_gate', 'oos_dd') + PORT_KEYS
     return dict(schema=1, generation=state['generation'], updated_at=iso(int(time.time() * 1000)),
                 nodes={nid: {k: v for k, v in node_view(n, state=state).items() if k in keep} for nid, n in state['nodes'].items()})
 

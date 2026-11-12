@@ -5,13 +5,18 @@ Rules (identical in every caller):
 - One position per instrument and at most MAX_POSITIONS at once; size = equity × risk ÷ stop distance.
 - Contract mode (the same lot rules as the OKX mirror, tools/okx_demo_trader.py): the size is rounded down to whole lots of
   the coin's contract (`Series.spec` = ctVal, lotSz, minSz) and skipped below the minimum; leverage is the genome's
-  leverage gene (1–100×, default 10× for old genomes), reduced if needed so the stop sits strictly before the isolated
-  liquidation price and then clamped to that coin's OKX max leverage (static snapshot of public `lever`, 20× if unknown;
-  majors may go up to 100×); isolated margin = notional ÷ leverage; an entry is skipped when its margin exceeds 95 % of the free
-  margin (equity − margin in use); stops closer than 0.2 % are skipped. A gap through the liquidation price loses the
-  whole isolated margin (no extra close fee or slippage). Funding (`Series.funding`, {ts: rate}) is paid / received on
-  every funding time a position is held: notional × rate (not margin × rate), longs pay positive rates. Funding is
-  charged against the isolated margin, so the liquidation price is recomputed after each payment.
+  leverage gene (1–100×, default 10× for old genomes), then clamped to that coin's OKX max leverage (static snapshot of
+  public `lever`, 20× if unknown; majors may go up to 100×). Margin mode is cross (全仓): initial margin = notional ÷ leverage
+  is reserved from the shared account, and an entry is skipped when its margin exceeds 95 % of the free margin
+  (equity − margin in use). Stops closer than 0.2 % are skipped. Liquidation is at the account level: when mark equity
+  (cash + unrealized PnL of every open position, after fees and funding) is at or below total maintenance margin
+  (sum of mark notional × MMR, 0.5 % on MAJORS and 2.5 % on others), every position is closed at that bar's price
+  with taker fees (reason `liquidation`). There is no partial or tiered liquidation — one breach wipes the book
+  (cash is floored at 0 if a gap goes past bankruptcy).
+  A new entry is skipped when its own stop (fees and slippage included), or the worst case of every open stop at once,
+  would leave equity at or below the remaining maintenance margin. Funding (`Series.funding`, {ts: rate}) is paid /
+  received on every funding time a position is held: notional × rate (not margin × rate), longs pay positive rates, and
+  is deducted from shared cash, so it can itself trigger a cross liquidation.
 - Stop and target are checked inside each later bar; if a bar touches both, the stop is assumed first (conservative);
   a gap through the stop fills at the open. Positions also exit at the close after `max_hold` bars.
 - Equity is marked to market at every close; max drawdown is measured on that curve.
@@ -28,21 +33,21 @@ SLIP = .0002         # slippage per fill
 LEVERAGE = 100       # most leverage a gene may request (paper account; the OKX demo mirror still has its own cap)
 DEFAULT_LEVERAGE = 10  # genomes saved before the leverage gene
 MIN_LEVERAGE = 1
-# Isolated maintenance margin rate (MMR), used in the liquidation price.
+# Maintenance margin rate (MMR) used for cross-margin liquidation (account equity vs total MM).
 # 0.5 % is in the range of OKX / Binance lowest-tier rates for the most liquid USDT perps.
 # Thinner coins use 2.5 %, a conservative stand-in for higher official tiers (we do not model OKX's full
-# notional-tier schedule). The close taker fee is included in the liquidation price so remaining margin
-# still covers MMR after that fee. At 100×, 2.5 % MMR leaves negative maintenance room (1/L < MMR + fee);
-# clamp_leverage must reduce L (or the entry is skipped) so the stop and the liq price stay on the correct side.
+# notional-tier schedule). Liquidation closes the whole book when equity <= sum(notional × MMR); there is
+# no partial or tiered liquidation. A new entry is skipped if its stop would leave equity at or below MM.
 MMR_MAJOR = .005
 MMR_OTHER = .025
 MMR = MMR_MAJOR      # default for helpers called without an instrument
 # One shared major-coin list for paper and the OKX demo follower: risk is doubled (then capped at 10 %),
-# and isolated MMR is 0.5 % (every other coin uses 2.5 %). BTC/ETH/SOL/XRP typically allow 100× on OKX;
+# and MMR is 0.5 % (every other coin uses 2.5 %). BTC/ETH/SOL/XRP typically allow 100× on OKX;
 # BNB and DOGE allow 50× — the per-instrument cap still applies. A major missing from the leverage
 # snapshot (paper) or the public instruments response (demo) falls back to 20×, same as unknown alts.
 MAJORS = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP')
 FALLBACK_INST_LEVERAGE = 20   # unknown coins in the paper engine and the OKX demo follower
+MARGIN_MODE = 'cross'        # paper and the OKX demo follower both use cross margin (全仓)
 MARGIN_USE = .95     # an entry may use at most this share of the free margin
 MIN_STOP_DIST = .002 # stops closer than this (fraction of price) are skipped, as on OKX
 START_EQUITY = 10000.0
@@ -298,7 +303,7 @@ def _species_signal(g, s, i):
 
 
 
-# ----------------------------------------------------------------- isolated liquidation
+# ----------------------------------------------------------------- cross-margin liquidation
 def maintenance_rate(inst):
     """Per-coin MMR: 0.5 % for MAJORS (BTC/ETH/SOL/BNB/XRP/DOGE), 2.5 % for every other coin."""
     return MMR_MAJOR if inst in MAJORS else MMR_OTHER
@@ -332,11 +337,14 @@ def inst_max_leverage(inst, cap=LEVERAGE):
 
 
 def liquidation_price(entry, side, leverage=None, mmr=MMR, fee=FEE, margin=None, qty=None):
-    """Isolated-style liquidation price, including the close fee.
+    """Informational isolated-style liquidation price (not used for execution).
 
+    Cross-margin liquidation is at the account level (see `book_liquidated`). This helper is kept so a
+    single-position estimate can still be shown or compared: it is the price at which *this* position
+    alone would exhaust its own initial margin after MMR and the close fee.
     long:  entry × (1 − (cushion − MMR − fee))
     short: entry × (1 + (cushion − MMR − fee))
-    `cushion` is remaining isolated margin ÷ entry notional (equal to 1/L when funding has not yet moved the margin).
+    `cushion` is remaining margin ÷ entry notional (equal to 1/L when funding has not yet moved the margin).
     side is +1 for a long, −1 for a short. Leverage is at least 1.
     """
     if margin is not None and qty is not None and entry:
@@ -348,39 +356,41 @@ def liquidation_price(entry, side, leverage=None, mmr=MMR, fee=FEE, margin=None,
 
 
 def max_leverage_for_stop(stop_frac, mmr=MMR, fee=FEE, cap=LEVERAGE):
-    """Highest integer leverage at which the stop is strictly before the liquidation price.
+    """Highest integer leverage at which an *isolated* stop would sit strictly before `liquidation_price`.
 
-    Require stop_frac < 1/L − MMR − fee, i.e. L < 1 / (stop_frac + MMR + fee).
-    The stop distance itself is never moved: when the requested leverage would liquidate
-    before the stop, leverage is reduced. If even 1× cannot fit the stop before liquidation
-    (a stop wider than ~99 %), 1 is still returned and the caller should skip the trade.
+    Informational only: cross-margin execution does not reduce leverage this way. Kept so older tests
+    and callers can still ask for the isolated estimate.
     """
     room = stop_frac + mmr + fee
     cap = max(MIN_LEVERAGE, int(cap))
     if room <= 0:
         return cap
-    # floor slightly below 1/room so the inequality stays strict after rounding
     return max(MIN_LEVERAGE, min(cap, int(1.0 / room - 1e-12)))
 
 
-def clamp_leverage(desired, stop_frac, cap=LEVERAGE, mmr=MMR, fee=FEE):
-    """Requested leverage, capped by `cap` and by max_leverage_for_stop (using this coin's MMR)."""
+def clamp_leverage(desired, stop_frac=None, cap=LEVERAGE, mmr=None, fee=FEE):
+    """Requested leverage, capped to [1, `cap`].
+
+    Cross margin: leverage only sets initial margin (notional / L). It no longer changes a
+    per-position liquidation price. `stop_frac`, `mmr` and `fee` are accepted for call-site
+    compatibility and ignored; the stop-before-liquidation rule is `cross_open_allowed`.
+    The per-coin OKX cap is applied by the caller via `inst_max_leverage` / the live `lever`.
+    """
     try:
         want = int(desired)
     except (TypeError, ValueError):
         want = cap
-    want = max(MIN_LEVERAGE, min(want, int(cap)))
-    return min(want, max_leverage_for_stop(stop_frac, mmr=mmr, fee=fee, cap=cap))
+    return max(MIN_LEVERAGE, min(want, int(cap)))
 
 
 def isolated_remaining_margin(p):
-    """Isolated margin left after funding has been charged against it (never negative)."""
-    return max(0.0, p['margin'] - p['funding'])
+    """Legacy helper: isolated margin left after funding (never negative). Not used by the cross engine."""
+    return max(0.0, p['margin'] - p.get('funding', 0.0))
 
 
 def apply_isolated_funding(p, pay, inst=None):
-    """Charge `pay` (notional × rate × side) against isolated margin and recompute the liq price."""
-    p['funding'] += pay
+    """Legacy helper: charge funding against isolated margin and refresh the informational liq estimate."""
+    p['funding'] = p.get('funding', 0.0) + pay
     mmr = p.get('mmr', maintenance_rate(inst))
     p['liq'] = liquidation_price(p['entry'], p['side'], p.get('lever'), mmr=mmr, fee=FEE,
                                  margin=isolated_remaining_margin(p), qty=p['qty'])
@@ -388,14 +398,125 @@ def apply_isolated_funding(p, pay, inst=None):
 
 
 def isolated_liq_cash(p):
-    """Cash change and net trade PnL when an isolated position is liquidated.
-
-    Funding has already been taken from cash and from the isolated margin, so only the remaining
-    margin is wiped from cash. Net PnL is −original margin − entry fee (funding is part of that margin drain).
-    No extra close fee or slippage.
-    """
+    """Legacy helper: cash change and net PnL of an isolated liquidation (wipe remaining margin)."""
     remaining = isolated_remaining_margin(p)
     return -remaining, -p['margin'] - p['fee']
+
+
+def book_equity(cash, pos, prices):
+    """Mark equity: cash + unrealized PnL of every open position (entry fees and funding already in cash)."""
+    return cash + sum(p['qty'] * (prices[inst] - p['entry']) * p['side'] for inst, p in pos.items())
+
+
+def book_mm(pos, prices):
+    """Total maintenance margin: sum of mark notional × that coin's MMR."""
+    return sum(p['qty'] * max(prices[inst], 0.0) * p.get('mmr', maintenance_rate(inst)) for inst, p in pos.items())
+
+
+def book_liquidated(cash, pos, prices):
+    """True when the book is non-empty and mark equity is at or below total maintenance margin."""
+    return bool(pos) and book_equity(cash, pos, prices) <= book_mm(pos, prices)
+
+
+def close_proceeds(p, px, slip=False):
+    """Close `p` at `px`. Returns (fill_price, cash_delta, net_pnl). Always charges the taker fee.
+
+    `slip=True` applies the usual exit slippage away from the trader. Cross liquidation uses the
+    bar price with fees and no extra slip (`slip=False`).
+    """
+    if slip:
+        px = px * (1 - SLIP * p['side'])
+    fee = p['qty'] * px * FEE
+    gain = p['qty'] * (px - p['entry']) * p['side'] - fee
+    net = gain - p['fee'] - p.get('funding', 0.0)
+    return px, gain, net
+
+
+def liquidate_book(cash, pos, prices, ts, trades, extra=None):
+    """Full-account cross liquidation: close every position at `prices` with fees, reason `liquidation`.
+
+    No partial or tiered liquidation is modelled — one breach closes the whole book. A gap far through the bankruptcy
+    price cannot leave the account below zero (the exchange's insurance fund takes the rest), so cash is floored at 0.
+    `extra(inst, p)` may add fields (for example `seg` / `boost` on the shared account). Returns the new cash balance.
+    """
+    for inst in list(pos):
+        p = pos.pop(inst)
+        px, gain, net = close_proceeds(p, prices[inst], slip=False)
+        cash += gain
+        rec = dict(inst=inst, side=p['side'], entry=p['entry'], exit=px, opened=p['opened'], closed=ts,
+                   pnl=net, funding=round(p.get('funding', 0.0), 4), qty=p['qty'], lever=p['lever'],
+                   reason='liquidation')
+        if extra:
+            rec.update(extra(inst, p))
+        trades.append(rec)
+    return max(cash, 0.0)
+
+
+def _all_stops_leftover(cash, pos):
+    """Cash left if every open position is stopped (with exit slippage and fees)."""
+    left = cash
+    for p in pos.values():
+        _, gain, _ = close_proceeds(p, p['stop'], slip=True)
+        left += gain
+    return left
+
+
+def cross_open_allowed(cash, pos, inst, new_p, prices, fixed=None):
+    """Whether `new_p` may be opened on this cross-margin book.
+
+    `cash` is the balance *before* the new entry fee, without the unrealized PnL of `pos` / `fixed`; `new_p['fee']` is
+    the entry fee. `prices` marks every key of `pos` and `fixed` (typically the bar's open / the last price).
+    `fixed` = positions that share the account but have no stop this program manages (manual positions on the OKX demo
+    account): they stay at the mark in every scenario and keep their maintenance margin. Returns (ok, reason) with
+    reason None on success, otherwise `equity_below_mm` or `stop_before_liquidation`.
+
+    Rules (strict inequalities):
+    1. After the entry, mark equity must stay above total MM including the new position.
+    2. If the new position is then stopped (slip + fee) and the others stay at the mark, remaining
+       equity must stay above the remaining MM; a lone position must also leave cash > 0.
+    3. If every stopped position, including the new one, is stopped at once (fixed ones at the mark), equity must stay
+       above the remaining MM (cash > 0 when nothing is left).
+    Leverage is not reduced to satisfy these rules — the entry is skipped.
+    """
+    fixed = dict(fixed or {})
+    cash_after = cash - new_p['fee']
+    book = dict(pos)
+    book.update(fixed)
+    book[inst] = new_p
+    px_book = dict(prices)
+    px_book[inst] = new_p['entry']
+    if book_liquidated(cash_after, book, px_book):
+        return False, 'equity_below_mm'
+    _, gain, _ = close_proceeds(new_p, new_p['stop'], slip=True)
+    cash_stopped = cash_after + gain
+    others = dict(pos)
+    others.update(fixed)
+    if others:
+        if book_liquidated(cash_stopped, others, {k: prices[k] for k in others}):
+            return False, 'stop_before_liquidation'
+    elif cash_stopped <= 0:
+        return False, 'stop_before_liquidation'
+    left = _all_stops_leftover(cash_after, dict(pos, **{inst: new_p}))
+    if fixed:
+        if book_liquidated(left, fixed, {k: prices[k] for k in fixed}):
+            return False, 'stop_before_liquidation'
+    elif left <= 0:
+        return False, 'stop_before_liquidation'
+    return True, None
+
+
+def marks_at(series, keys, i, field):
+    """{inst: series[inst].field[i]} for inst in keys."""
+    return {k: getattr(series[k], field)[i] for k in keys}
+
+
+def adverse_prices(pos, series, i):
+    """Conservative same-bar extremes: lows for longs, highs for shorts."""
+    out = {}
+    for inst, p in pos.items():
+        s = series[inst]
+        out[inst] = s.l[i] if p['side'] == 1 else s.h[i]
+    return out
 
 
 # ----------------------------------------------------------------- the engine
@@ -427,7 +548,13 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     for i in range(start, end):
         if extra_equity is not None:
             extra = extra_equity.get(ts0[i], extra)
-        # 0) funding at this hour, on positions held into it
+        def _liq_now(prices):
+            nonlocal cash
+            if pos and book_liquidated(cash + extra, pos, prices):
+                cash = liquidate_book(cash, pos, prices, ts0[i], trades)
+                return True
+            return False
+        # 0) funding at this hour, on positions held into it (shared cash; may itself trigger cross liquidation)
         for inst, p in pos.items():
             f = series[inst].funding
             if f:
@@ -435,7 +562,13 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
                 if rate:
                     pay = p['qty'] * series[inst].o[i] * rate * p['side']
                     cash -= pay
-                    apply_isolated_funding(p, pay, inst)
+                    p['funding'] = p.get('funding', 0.0) + pay
+                    # informational isolated-style estimate only
+                    p['liq'] = liquidation_price(p['entry'], p['side'], p.get('lever'), mmr=p.get('mmr', maintenance_rate(inst)),
+                                                 fee=FEE, margin=isolated_remaining_margin(p), qty=p['qty'])
+        opens = marks_at(series, list(pos), i, 'o')
+        if _liq_now(opens):
+            pending, dists = {}, {}
         # 1) fills at this bar's open for signals decided on the previous close
         for inst, d in pending.items():
             s = series[inst]
@@ -455,61 +588,56 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
                 qty *= ct
             mmr = maintenance_rate(inst)
             inst_cap = inst_max_leverage(inst, cap=LEVERAGE)
-            lever = clamp_leverage(cap, dist / px, cap=inst_cap, mmr=mmr)
-            if (dist / px) >= (1 / lever - mmr - FEE):
-                continue                                            # even 1× cannot place the stop before liquidation
+            lever = clamp_leverage(cap, cap=inst_cap)
             margin = qty * px / lever
             if qty <= 0 or margin > (mark - sum(p['margin'] for p in pos.values())) * MARGIN_USE:
                 continue
-            cash -= qty * px * FEE
-            liq = liquidation_price(px, d, lever, mmr=mmr)
-            pos[inst] = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None,
-                             opened=s.ts[i], bar=i, fee=qty * px * FEE, dist=dist, lever=lever, margin=margin,
-                             liq=liq, funding=0.0, mmr=mmr)
+            new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None,
+                         opened=s.ts[i], bar=i, fee=qty * px * FEE, dist=dist, lever=lever, margin=margin,
+                         liq=liquidation_price(px, d, lever, mmr=mmr), funding=0.0, mmr=mmr)
+            opens_now = marks_at(series, list(pos), i, 'o')
+            ok, _why = cross_open_allowed(cash, pos, inst, new_p, opens_now)
+            if not ok:
+                continue
+            cash -= new_p['fee']
+            pos[inst] = new_p
         pending, dists = {}, {}
-        # 2) exits inside this bar
+        opens = marks_at(series, list(pos), i, 'o')
+        _liq_now(opens)
+        # 2) exits inside this bar (stops, targets, time — no per-position isolated liquidation)
         for inst in list(pos):
             p, s = pos[inst], series[inst]
             o, h, l, c = s.o[i], s.h[i], s.l[i], s.c[i]
             exit_px, why = None, None
-            if (o - p['liq']) * p['side'] <= 0:               # gapped through the liquidation price: the isolated margin is gone
-                exit_px, why = p['liq'], 'liquidation'
-            elif p['side'] == 1:
+            if p['side'] == 1:
                 if o <= p['stop']: exit_px, why = o, 'stop'
-                else:
-                    # whichever of stop and liq is closer to entry is touched first
-                    first, first_why = (p['stop'], 'stop') if p['stop'] > p['liq'] else (p['liq'], 'liquidation')
-                    if l <= first: exit_px, why = first, first_why
-                    elif p['target'] and o >= p['target']: exit_px, why = o, 'target'
-                    elif p['target'] and h >= p['target']: exit_px, why = p['target'], 'target'
+                elif l <= p['stop']: exit_px, why = p['stop'], 'stop'
+                elif p['target'] and o >= p['target']: exit_px, why = o, 'target'
+                elif p['target'] and h >= p['target']: exit_px, why = p['target'], 'target'
             else:
                 if o >= p['stop']: exit_px, why = o, 'stop'
-                else:
-                    first, first_why = (p['stop'], 'stop') if p['stop'] < p['liq'] else (p['liq'], 'liquidation')
-                    if h >= first: exit_px, why = first, first_why
-                    elif p['target'] and o <= p['target']: exit_px, why = o, 'target'
-                    elif p['target'] and l <= p['target']: exit_px, why = p['target'], 'target'
+                elif h >= p['stop']: exit_px, why = p['stop'], 'stop'
+                elif p['target'] and o <= p['target']: exit_px, why = o, 'target'
+                elif p['target'] and l <= p['target']: exit_px, why = p['target'], 'target'
             if exit_px is None and i - p['bar'] >= hold:
                 exit_px, why = c, 'time'
             if exit_px is None and close_at_end and i == end - 1:
                 exit_px, why = c, 'switch'
             if exit_px is not None:
-                if why == 'liquidation':
-                    d_cash, net = isolated_liq_cash(p)
-                    cash += d_cash
-                    trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=p['liq'], opened=p['opened'], closed=s.ts[i],
-                                       pnl=net, funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why, liq=p['liq']))
-                else:
-                    exit_px *= (1 - SLIP * p['side'])
-                    fee = p['qty'] * exit_px * FEE
-                    pnl = p['qty'] * (exit_px - p['entry']) * p['side'] - fee
-                    cash += pnl
-                    trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=exit_px, opened=p['opened'], closed=s.ts[i],
-                                       pnl=pnl - p['fee'] - p['funding'], funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why, liq=p['liq']))
+                exit_px, gain, net = close_proceeds(p, exit_px, slip=True)
+                cash += gain
+                trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=exit_px, opened=p['opened'], closed=s.ts[i],
+                                   pnl=net, funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why,
+                                   liq=p.get('liq')))
                 del pos[inst]
             elif trail:                                     # after the bar: follow the best price, never loosen
                 p['stop'] = max(p['stop'], h - p['dist']) if p['side'] == 1 else min(p['stop'], l + p['dist'])
-        # 3) mark to market, drawdown, new signals on this close
+        # 2b) conservative same-bar check: all remaining positions at their adverse extreme
+        if pos:
+            _liq_now(adverse_prices(pos, series, i))
+        # 3) mark to market (and a close-price cross-liquidation check), drawdown, new signals
+        closes = marks_at(series, list(pos), i, 'c')
+        _liq_now(closes)
         eq = cash + sum(p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items())
         peak = max(peak, eq); max_dd = max(max_dd, (peak - eq) / peak if peak > 0 else 0)
         if curve_every and (i - start) % curve_every == 0:
@@ -543,14 +671,15 @@ def fitness(m):
 # major_factor: a trade on one of MAJORS risks this many times the usual amount (the most liquid coins, and the ones
 # whose OKX demo prices follow the real market). The same MAJORS list sets the 0.5 % MMR tier.
 # Per-trade risk never exceeds 10 % of equity, for every seat including the leader (the gene itself is 2–10 %).
-# Leverage is chosen by the gene (1–100×) and then reduced so the stop sits before the isolated liquidation price.
+# Leverage is chosen by the gene (1–100×) and then clamped to that coin's OKX max; it only sets initial margin.
+# A new entry is skipped when its stop (or every open stop at once) would leave mark equity at or below total MM.
 # major_factor still doubles a major-coin entry, then the 10 % cap is applied so a doubled 8 % gene becomes 10 %, not 16 %.
 # leader_risk / leader_lever are the same caps: the leader uses its own risk and leverage genes, not a fixed bigger size.
 MAX_TRADE_RISK = .10
 MIN_TRADE_RISK = .02
 ACCOUNT_RULES = dict(leader_risk=MAX_TRADE_RISK, leader_lever=LEVERAGE, lever=LEVERAGE, same_side_cap=.20, daily_halt=.10,
                      day_shift=7 * HOUR, majors=MAJORS, major_factor=2.0, max_risk=MAX_TRADE_RISK, min_risk=MIN_TRADE_RISK,
-                     min_lever=MIN_LEVERAGE)
+                     min_lever=MIN_LEVERAGE, margin_mode=MARGIN_MODE)
 CROWD_STEPS = ((6, .25), (3, .5))     # same-side positions already open → risk factor for the next entry on that side
 
 
@@ -570,8 +699,8 @@ def position_risk(base, inst, same_side_open=0, rules=None):
     return min(r, rules.get('max_risk', MAX_TRADE_RISK))
 
 
-def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None):
-    """ONE shared-equity account traded by several strategies at once, with isolated (逐仓) liquidation: the paper account of the champion team.
+def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None, events=None):
+    """ONE shared-equity account traded by several strategies at once, with cross (全仓) liquidation: the paper account of the champion team.
 
     segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
     from_i <= i < wind_i (wind_i None = still seated); after wind_i its open positions run to their own exits.
@@ -583,9 +712,10 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     - size = account equity × risk ÷ stop distance (risk = the strategy's risk gene for every seat, including the
       leader), then clamped to rules['max_risk'] (10 %) after crowding and the major-coin factor;
     - one position per coin for the whole account, at most MAX_POSITIONS per strategy;
-    - margin = notional ÷ leverage (leverage = the gene, 1–100×, reduced so the stop sits before isolated liquidation;
+    - margin = notional ÷ leverage (leverage = the gene, 1–100×, then the per-coin OKX cap;
       cap = rules['lever'] / 'leader_lever', both 100×), and a new entry needs it to fit into 95 % of the free margin
-      (equity − margin in use);
+      (equity − margin in use); the entry is skipped when its stop, or every open stop at once, would leave mark equity
+      at or below total maintenance margin;
     - a trade on one of rules['majors'] risks rules['major_factor'] times as much, still never above the 10 % cap;
     - `blocked` = {inst: [(i0, i1 or None)]}: bar ranges in which a coin takes no new entry (its OKX demo price was
       away from the real market, data.price_check); positions already open run on;
@@ -594,18 +724,23 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
       rules['same_side_cap'] × equity;
     - daily halt (days start at UTC+7 midnight): when the whole account, including the leader, has lost
       rules['daily_halt'] × the day's starting equity, every position is closed and no strategy opens until the next day;
-    - each position is liquidated in isolation: when price hits that position's liquidation price the isolated margin
-      is wiped and the other positions continue; if marked equity falls to 0 or below, remaining positions that did
-      not hit their own liq are closed at the bar close (reason `equity`), not marked as liquidations;
-    - funding is charged against each position's isolated margin and that position's liq price is recomputed;
-    Returns dict(equity, curve, trades, positions, pending, pnl={seg id: realised + floating}, halted, metrics).
+    - liquidation is at the account level (cross / 全仓): when mark equity (cash + unrealized PnL, after fees and
+      funding) is at or below total maintenance margin (sum of mark notional × MMR), every open position is closed
+      at that bar's price with taker fees (reason `liquidation`). There is no partial or tiered liquidation and no
+      separate reason `equity` — one breach closes the whole book. Checked after funding, after fills, at each bar's
+      adverse extremes (lows for longs, highs for shorts, assumed simultaneous) and at the close;
+    - funding is deducted from shared cash (notional × rate × side) and can itself trigger a cross liquidation;
+    `events` = {seg id: entries(genes, series)} when the caller already computed them (portfolio fitness).
+    Returns dict(equity, curve, trades, positions, pending, pnl={seg id: realised + floating}, halted, metrics, and the
+    account-level counters halts (daily stops triggered), liquidations (cross liquidations), fees and funding in USDT).
     """
     insts = list(series)
     ts0 = series[insts[0]].ts
-    ev = {s['id']: entries(s['genes'], series) for s in segs}
+    ev = {s['id']: (events or {}).get(s['id']) or entries(s['genes'], series) for s in segs}
     by_id = {s['id']: s for s in segs}
     boosted = lambda s, i: any(a <= i and (b is None or i < b) for a, b in s.get('boosts') or ())
     cash, pos, trades, curve, pending = equity, {}, [], [], []
+    count = dict(halts=0, liquidations=0, fees=0.0, funding=0.0)
     pnl = {s['id']: 0.0 for s in segs}
     peak, max_dd = equity, 0.0
     day, day_start, others_real, snap, halted = None, equity, 0.0, {}, False
@@ -614,26 +749,28 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     def close(inst, px, why, i, slip=True):
         nonlocal cash, others_real
         p = pos.pop(inst)
-        if why == 'liquidation':
-            d_cash, net = isolated_liq_cash(p)
-            cash += d_cash
-            px = p['liq']
-            gain = d_cash
-        else:
-            if slip:
-                px *= (1 - SLIP * p['side'])
-            fee = p['qty'] * px * FEE
-            gain = p['qty'] * (px - p['entry']) * p['side'] - fee
-            cash += gain
-            net = gain - p['fee'] - p['funding']
+        fill, gain, net = close_proceeds(p, px, slip=slip)
+        cash += gain
+        count['fees'] += p['qty'] * fill * FEE
         pnl[p['seg']] += net
         others_real += gain - snap.pop(inst, 0.0)              # today's part: the result minus what it was worth at the day's start
-        trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=px, opened=p['opened'], closed=ts0[i], pnl=net,
+        trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=fill, opened=p['opened'], closed=ts0[i], pnl=net,
                            funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why, seg=p['seg'], boost=p['boost'],
-                           liq=p['liq']))
+                           liq=p.get('liq')))
+
+    def liq_now(prices, i):
+        """Full-account cross liquidation at `prices` (fees, no extra slip)."""
+        nonlocal cash
+        if pos and book_liquidated(cash, pos, prices):
+            count['liquidations'] += 1
+            for inst in list(pos):
+                close(inst, prices[inst], 'liquidation', i, slip=False)
+            cash = max(cash, 0.0)                    # never below zero: the insurance fund takes a gap past bankruptcy
+            return True
+        return False
 
     for i in range(start, end):
-        # 0) funding
+        # 0) funding (shared cash; may itself trigger cross liquidation)
         for inst, p in pos.items():
             f = series[inst].funding
             if f:
@@ -641,7 +778,12 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 if rate:
                     pay = p['qty'] * series[inst].o[i] * rate * p['side']
                     cash -= pay
-                    apply_isolated_funding(p, pay, inst)
+                    count['funding'] += pay
+                    p['funding'] = p.get('funding', 0.0) + pay
+                    p['liq'] = liquidation_price(p['entry'], p['side'], p.get('lever'), mmr=p.get('mmr', maintenance_rate(inst)),
+                                                 fee=FEE, margin=isolated_remaining_margin(p), qty=p['qty'])
+        if liq_now(marks_at(series, list(pos), i, 'o'), i):
+            pending = []
         # 1) fills at this open: the leader's signals first, then the segments in their order
         for sid, inst, d, dist, boost in sorted(pending, key=lambda x: not x[4]):
             s, g = series[inst], by_id[sid]['genes']
@@ -667,55 +809,52 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             cap = rules['leader_lever'] if boost else rules['lever']
             mmr = maintenance_rate(inst)
             inst_cap = inst_max_leverage(inst, cap=cap)
-            lever = clamp_leverage(g.get('leverage', DEFAULT_LEVERAGE), dist / px, cap=inst_cap, mmr=mmr)
-            if (dist / px) >= (1 / lever - mmr - FEE):
-                continue
+            lever = clamp_leverage(g.get('leverage', DEFAULT_LEVERAGE), cap=inst_cap)
             margin = qty * px / lever
             if qty <= 0 or margin > (mark - sum(p['margin'] for p in pos.values())) * MARGIN_USE:
                 continue
-            cash -= qty * px * FEE
             rr = g['target_rr']
-            liq = liquidation_price(px, d, lever, mmr=mmr)
-            pos[inst] = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None, opened=ts0[i], bar=i,
-                             fee=qty * px * FEE, dist=dist, lever=lever, margin=margin, funding=0.0, seg=sid, boost=boost, risk=r,
-                             hold=min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H), trail=g.get('trail', 0), liq=liq, mmr=mmr)
+            new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None, opened=ts0[i], bar=i,
+                         fee=qty * px * FEE, dist=dist, lever=lever, margin=margin, funding=0.0, seg=sid, boost=boost, risk=r,
+                         hold=min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H), trail=g.get('trail', 0),
+                         liq=liquidation_price(px, d, lever, mmr=mmr), mmr=mmr)
+            opens_now = marks_at(series, list(pos), i, 'o')
+            ok, _why = cross_open_allowed(cash, pos, inst, new_p, opens_now)
+            if not ok:
+                continue
+            cash -= new_p['fee']
+            count['fees'] += new_p['fee']
+            pos[inst] = new_p
         pending = []
-        # 2) exits inside this bar (isolated liquidation per position, same order as simulate())
+        liq_now(marks_at(series, list(pos), i, 'o'), i)
+        # 2) exits inside this bar (stops, targets, time — no per-position isolated liquidation)
         for inst in list(pos):
             p, s = pos[inst], series[inst]
             o, h, l, c = s.o[i], s.h[i], s.l[i], s.c[i]
             exit_px, why = None, None
-            if (o - p['liq']) * p['side'] <= 0:
-                exit_px, why = p['liq'], 'liquidation'
-            elif p['side'] == 1:
+            if p['side'] == 1:
                 if o <= p['stop']: exit_px, why = o, 'stop'
-                else:
-                    first, first_why = (p['stop'], 'stop') if p['stop'] > p['liq'] else (p['liq'], 'liquidation')
-                    if l <= first: exit_px, why = first, first_why
-                    elif p['target'] and o >= p['target']: exit_px, why = o, 'target'
-                    elif p['target'] and h >= p['target']: exit_px, why = p['target'], 'target'
+                elif l <= p['stop']: exit_px, why = p['stop'], 'stop'
+                elif p['target'] and o >= p['target']: exit_px, why = o, 'target'
+                elif p['target'] and h >= p['target']: exit_px, why = p['target'], 'target'
             else:
                 if o >= p['stop']: exit_px, why = o, 'stop'
-                else:
-                    first, first_why = (p['stop'], 'stop') if p['stop'] < p['liq'] else (p['liq'], 'liquidation')
-                    if h >= first: exit_px, why = first, first_why
-                    elif p['target'] and o <= p['target']: exit_px, why = o, 'target'
-                    elif p['target'] and l <= p['target']: exit_px, why = p['target'], 'target'
+                elif h >= p['stop']: exit_px, why = p['stop'], 'stop'
+                elif p['target'] and o <= p['target']: exit_px, why = o, 'target'
+                elif p['target'] and l <= p['target']: exit_px, why = p['target'], 'target'
             if exit_px is None and i - p['bar'] >= p['hold']:
                 exit_px, why = c, 'time'
             if exit_px is not None:
                 close(inst, exit_px, why, i)
             elif p['trail']:
                 p['stop'] = max(p['stop'], h - p['dist']) if p['side'] == 1 else min(p['stop'], l + p['dist'])
-        # 3) the account at this close: bankruptcy if equity is gone, daily halt, curve
+        # 2b) conservative same-bar check: remaining positions at their adverse extremes together
+        if pos:
+            liq_now(adverse_prices(pos, series, i), i)
+        # 3) mark at the close, cross-liquidation, daily halt, curve
+        liq_now(marks_at(series, list(pos), i, 'c'), i)
         unreal = {k: p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items()}
         eq = cash + sum(unreal.values())
-        if pos and eq <= 0:
-            # only positions that already hit their isolated liq are liquidations (handled above);
-            # remaining positions are closed at this bar's close, not tagged as liquidated.
-            for inst in list(pos):
-                close(inst, series[inst].c[i], 'equity', i, slip=False)
-            unreal, eq = {}, cash
         d_now = (ts0[i] + rules['day_shift']) // (24 * HOUR)
         if d_now != day:                                        # a new day starts with this bar: yesterday's close is the baseline
             day, halted, others_real = d_now, False, 0.0
@@ -724,6 +863,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         others_day = others_real + sum(unreal[k] - snap.get(k, 0.0) for k in pos)
         if not halted and day_start > 0 and others_day <= -halt * day_start:
             halted = True
+            count['halts'] += 1
             for inst in list(pos):
                 close(inst, series[inst].c[i], 'daily_halt', i)
             eq = cash
@@ -751,4 +891,4 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     open_positions = [dict(inst=k, side=p['side'], entry=p['entry'], qty=p['qty'], stop=p['stop'], target=p['target'], opened=p['opened'],
                            lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4), seg=p['seg'], boost=p['boost'], risk=p['risk'])
                       for k, p in pos.items()]
-    return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, pending=pending, pnl=pnl, halted=halted, metrics=metrics)
+    return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, pending=pending, pnl=pnl, halted=halted, metrics=metrics, **count)

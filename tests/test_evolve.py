@@ -88,11 +88,32 @@ class ExecutionTests(unittest.TestCase):
         gap = series_from(closes + [below], opens=[closes[0]] + closes[:-1] + [below])
         r3 = X.simulate(g, {'BTC-USDT-SWAP': gap}, 30, gap.n)
         self.assertEqual(r3['trades'][-1]['reason'], 'stop'); self.assertAlmostEqual(r3['trades'][-1]['exit'], below * (1 - X.SLIP))
-        crash = series_from(closes + [80.0], opens=[closes[0]] + closes[:-1] + [80.0])    # −27 %: through the liquidation price
+        # Cross margin: a −27 % gap through the stop (and through the old isolated liq estimate) is still a stop at the
+        # open, because this 2 % risk position leaves account equity far above total maintenance margin.
+        self.assertLess(80.0, p['liq'])
+        crash = series_from(closes + [80.0], opens=[closes[0]] + closes[:-1] + [80.0])
         r4 = X.simulate(g, {'BTC-USDT-SWAP': crash}, 30, crash.n)
         t = r4['trades'][-1]
-        self.assertEqual(t['reason'], 'liquidation')
-        self.assertAlmostEqual(t['pnl'], -p['margin'] - p['qty'] * p['entry'] * X.FEE, places=3)   # isolated: lose the margin; entry fee already paid, no close fee
+        self.assertEqual(t['reason'], 'stop'); self.assertAlmostEqual(t['exit'], 80.0 * (1 - X.SLIP))
+        self.assertGreater(r4['equity'], 0)
+        # A big position (10 % risk on a tight stop, 100×): the same kind of gap takes account equity to or below
+        # maintenance margin, so the whole book is liquidated at the bar's open, with the close fee and no slippage.
+        big = base_genes(target_rr=1.0, risk=.10, leverage=100, stop_atr=.5)
+        rb = X.simulate(big, {'BTC-USDT-SWAP': s}, 30, len(closes))
+        pb, cash = rb['positions'][0], rb['cash']
+        px = 103.0
+        self.assertTrue(X.book_liquidated(cash, {'BTC-USDT-SWAP': dict(pb, mmr=X.MMR_MAJOR)}, {'BTC-USDT-SWAP': px}))
+        gap = series_from(closes + [px], opens=[closes[0]] + closes[:-1] + [px])
+        r5 = X.simulate(big, {'BTC-USDT-SWAP': gap}, 30, gap.n)
+        t = r5['trades'][-1]
+        self.assertEqual(t['reason'], 'liquidation'); self.assertEqual(t['exit'], px); self.assertEqual(r5['positions'], [])
+        close_fee, entry_fee = pb['qty'] * px * X.FEE, pb['qty'] * pb['entry'] * X.FEE
+        self.assertAlmostEqual(t['pnl'], pb['qty'] * (px - pb['entry']) - close_fee - entry_fee, places=3)
+        self.assertAlmostEqual(r5['cash'], cash + pb['qty'] * (px - pb['entry']) - close_fee, places=3)
+        # past the bankruptcy price the account is floored at zero (no negative balance)
+        wipe = series_from(closes + [90.0], opens=[closes[0]] + closes[:-1] + [90.0])
+        r6 = X.simulate(big, {'BTC-USDT-SWAP': wipe}, 30, wipe.n)
+        self.assertEqual(r6['trades'][-1]['reason'], 'liquidation'); self.assertEqual(r6['equity'], 0.0)
 
     def test_contract_mode_lots_leverage_margin_and_funding(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 30
@@ -841,19 +862,16 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         self.assertLess(long_px, entry); self.assertGreater(short_px, entry)
         self.assertAlmostEqual(entry - long_px, short_px - entry)
 
-    def test_stop_before_liquidation_reduces_leverage_not_the_stop(self):
-        # a 2 % stop cannot sit in front of a 100× liquidation (~0.45 %), so leverage is reduced
-        stop_frac = .02
-        L = X.clamp_leverage(100, stop_frac)
-        self.assertLess(L, 100)
-        self.assertEqual(L, X.max_leverage_for_stop(stop_frac))
-        liq = X.liquidation_price(100.0, 1, L)
-        self.assertLess(liq, 100.0 - 100.0 * stop_frac)   # long stop (98) is above liq
-        # a tight 0.3 % stop can keep 100× (liq distance ≈ 0.45 %)
+    def test_clamp_leverage_is_only_a_cap_under_cross_margin(self):
+        # cross margin: leverage only sets initial margin, so a wide stop no longer forces a lower L
+        self.assertEqual(X.clamp_leverage(100, .02), 100)
         self.assertEqual(X.clamp_leverage(100, .003), 100)
-        self.assertLess(X.liquidation_price(100.0, 1, 100), 100.0 * (1 - .003))  # liq is further than the 0.3 % stop
-        # short, same distance
-        self.assertLess(100.0 + 100.0 * stop_frac, X.liquidation_price(100.0, -1, L))
+        self.assertEqual(X.clamp_leverage(100, .003, cap=20, mmr=X.MMR_OTHER), 20)
+        self.assertEqual(X.clamp_leverage(0, .02), 1)
+        self.assertEqual(X.clamp_leverage(250, cap=100), 100)
+        # the isolated estimate helper is still available for a single-position reference price
+        self.assertLess(X.liquidation_price(100.0, 1, 100), 100.0)
+        self.assertGreater(X.liquidation_price(100.0, -1, 100), 100.0)
 
     def test_risk_and_leverage_genes_are_clamped_and_old_genomes_migrate(self):
         self.assertEqual(G.GENES['risk'][1:], (.02, .10))
@@ -869,26 +887,29 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         self.assertEqual(X.position_risk(.08, 'BTC-USDT-SWAP'), .10)
         self.assertEqual(X.position_risk(.10, 'BTC-USDT-SWAP'), .10)
 
-    def test_high_leverage_trade_is_liquidated_and_funding_scales_with_notional(self):
-        closes = [100.0] * 40 + [110.0] + [111.0] * 2 + [90.0]
-        # open at the 110 breakout (bar 41); a later crash through liq
-        s = series_from(closes, opens=[closes[0]] + closes[:-1])
-        g = base_genes(leverage=100, risk=.02, stop_atr=.8)
-        # first confirm the open, then replay the crash
-        s_open = series_from([100.0] * 40 + [110.0] + [111.0] * 3)
-        p = X.simulate(g, {'BTC-USDT-SWAP': s_open}, 30, s_open.n)['positions']
-        self.assertTrue(p)
-        p = p[0]
+    def test_cross_liquidation_closes_the_account_at_the_bar_price_with_fees(self):
+        closes = [100.0] * 40 + [110.0] + [111.0] * 3
+        g = base_genes(leverage=100, risk=.10, stop_atr=.8)
+        s_open = series_from(closes)
+        opened = X.simulate(g, {'BTC-USDT-SWAP': s_open}, 30, s_open.n)['positions']
+        self.assertTrue(opened)
+        p = opened[0]
         self.assertLessEqual(p['lever'], 100)
-        self.assertGreater(p['stop'], p['liq'])
-        crash = series_from(closes, opens=[closes[0]] + closes[:-1])
-        # force the last open through the liq price
-        crash.o[-1] = p['liq'] * 0.99; crash.l[-1] = crash.o[-1]; crash.h[-1] = max(crash.o[-1], crash.c[-1]); crash._cache.clear()
+        # crash far enough that mark equity <= maintenance margin (cross, not the isolated liq estimate)
+        crash = series_from(closes + [1.0], opens=[closes[0]] + closes)
+        crash.l[-1] = crash.o[-1] = 1.0; crash.h[-1] = 1.0; crash._cache.clear()
         r = X.simulate(g, {'BTC-USDT-SWAP': crash}, 30, crash.n)
-        t = r['trades'][-1]
-        self.assertEqual(t['reason'], 'liquidation')
-        self.assertAlmostEqual(t['pnl'], -p['margin'] - p['qty'] * p['entry'] * X.FEE, places=2)
-        # funding is notional × rate, not margin × rate
+        liq = [t for t in r['trades'] if t['reason'] == 'liquidation']
+        self.assertTrue(liq)
+        t = liq[-1]
+        # closed at the bar price with the taker fee (not an isolated-margin wipe)
+        self.assertAlmostEqual(t['exit'], 1.0, places=6)
+        fee = t['qty'] * t['exit'] * X.FEE
+        entry_fee = p['qty'] * p['entry'] * X.FEE
+        want = t['qty'] * (t['exit'] - p['entry']) * p['side'] - fee - entry_fee - (p.get('funding') or 0)
+        self.assertAlmostEqual(t['pnl'], want, places=2)
+        self.assertEqual(r['positions'], [])
+        # funding is notional × rate, not margin × rate, and is charged to shared cash
         s2 = series_from([100.0] * 40 + [110.0] + [111.0] * 16)
         s2.funding = {t: .001 for t in s2.ts if t % (8 * H) == 0}
         r2 = X.simulate(base_genes(leverage=25, risk=.02), {'BTC-USDT-SWAP': s2}, 30, s2.n)
@@ -898,27 +919,28 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         self.assertAlmostEqual(p2['funding'], round(paid, 4), places=3)
         self.assertNotAlmostEqual(p2['funding'], p2['margin'] * .001, places=3)
 
-    def test_shared_account_isolated_liquidation_wipes_only_that_margin(self):
+    def test_shared_account_cross_liquidation_closes_every_position(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 3
         sr = {k: series_from(list(closes), k) for k in ('C0-USDT-SWAP', 'C1-USDT-SWAP')}
-        g = base_genes(risk=.02, leverage=20)
+        g = base_genes(risk=.10, leverage=20, stop_atr=.8)
         r0 = X.simulate_account([dict(id='m', genes=g, from_i=0, wind_i=None, boosts=[])], sr, 30, len(closes), equity=10000.0)
         self.assertEqual(len(r0['positions']), 2)
-        victim = next(p for p in r0['positions'] if p['inst'] == 'C0-USDT-SWAP')
-        # gap C0 through its liq; C1 stays put
-        for k, s in sr.items():
+        # crash C0 far enough that the *account* is under total MM; C1 has not moved, but both must close
+        for s in sr.values():
             s.o.append(s.c[-1]); s.h.append(s.c[-1]); s.l.append(s.c[-1]); s.c.append(s.c[-1]); s.ts.append(s.ts[-1] + H); s.n += 1
-        sr['C0-USDT-SWAP'].o[-1] = victim['liq'] * 0.99
-        sr['C0-USDT-SWAP'].l[-1] = sr['C0-USDT-SWAP'].o[-1]
-        sr['C0-USDT-SWAP'].h[-1] = sr['C0-USDT-SWAP'].c[-1]
+        sr['C0-USDT-SWAP'].o[-1] = 1.0
+        sr['C0-USDT-SWAP'].l[-1] = 1.0
+        sr['C0-USDT-SWAP'].h[-1] = 1.0
+        sr['C0-USDT-SWAP'].c[-1] = 1.0
         for s in sr.values():
             s._cache.clear()
         r1 = X.simulate_account([dict(id='m', genes=g, from_i=0, wind_i=None, boosts=[])], sr, 30, sr['C0-USDT-SWAP'].n, equity=10000.0)
         liq = [t for t in r1['trades'] if t['reason'] == 'liquidation']
-        self.assertEqual(len(liq), 1)
-        self.assertEqual(liq[0]['inst'], 'C0-USDT-SWAP')
-        self.assertEqual([p['inst'] for p in r1['positions']], ['C1-USDT-SWAP'])
-        self.assertAlmostEqual(liq[0]['pnl'], -victim['margin'] - victim['qty'] * victim['entry'] * X.FEE, places=2)
+        self.assertEqual(sorted(t['inst'] for t in liq), ['C0-USDT-SWAP', 'C1-USDT-SWAP'])
+        self.assertEqual(r1['positions'], [])
+        self.assertFalse(any(t['reason'] == 'equity' for t in r1['trades']))
+        c0 = next(t for t in liq if t['inst'] == 'C0-USDT-SWAP')
+        self.assertAlmostEqual(c0['exit'], 1.0, places=6)
 
     def test_mmr_tiers_and_instrument_leverage_caps(self):
         self.assertEqual(X.maintenance_rate('BTC-USDT-SWAP'), .005)
@@ -940,16 +962,9 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         finally:
             if saved is not None:
                 X.INST_MAX_LEVERAGE['BTC-USDT-SWAP'] = saved
-        # 100× on a 2.5 % MMR coin has negative maintenance room; leverage is reduced
-        mmr = X.MMR_OTHER
-        L = X.clamp_leverage(100, .003, cap=100, mmr=mmr)
-        self.assertLess(L, 100)
-        self.assertLessEqual(L, X.max_leverage_for_stop(.003, mmr=mmr))
-        self.assertLess(L * (mmr + X.FEE), 1)                             # room is no longer negative
-        liq = X.liquidation_price(100.0, 1, L, mmr=mmr)
-        self.assertLess(liq, 100.0 * (1 - .003))
-        # even a zero-width stop cannot keep 100× on an alt
-        self.assertLess(X.clamp_leverage(100, 0.0, cap=100, mmr=mmr), 40)
+        # under cross margin clamp_leverage no longer cuts 100× because of MMR; the per-coin cap still does
+        self.assertEqual(X.clamp_leverage(100, .003, cap=100, mmr=X.MMR_OTHER), 100)
+        self.assertEqual(X.inst_max_leverage('C0-USDT-SWAP', cap=100), 20)
 
     def test_paper_entry_uses_inst_cap_and_alt_mmr(self):
         # unknown alt, gene 100×, tight stop: cap 20× (fallback) and 2.5 % MMR still leaves room at 20×
@@ -967,27 +982,21 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         self.assertTrue(r2['positions'])
         self.assertGreater(r2['positions'][0]['lever'], 20)
 
-    def test_funding_recomputes_isolated_liquidation_price(self):
+    def test_funding_is_charged_to_shared_cash_and_can_trigger_cross_liquidation(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 16
         s = series_from(closes, 'BTC-USDT-SWAP')
-        # funding at every 8h after the open moves the isolated margin
         s.funding = {t: .01 for t in s.ts if t % (8 * H) == 0}
         r = X.simulate(base_genes(leverage=10, risk=.02), {'BTC-USDT-SWAP': s}, 30, s.n)
         self.assertTrue(r['positions'])
         p = r['positions'][0]
         self.assertGreater(p['funding'], 0)
+        # informational isolated-style estimate still tracks remaining margin after funding
         remaining = p['margin'] - p['funding']
         want = X.liquidation_price(p['entry'], 1, p['lever'], mmr=X.maintenance_rate('BTC-USDT-SWAP'),
                                    margin=remaining, qty=p['qty'])
         self.assertAlmostEqual(p['liq'], want, places=6)
-        # paying funding tightens a long's liq (moves it up toward the entry)
-        plain = X.liquidation_price(p['entry'], 1, p['lever'], mmr=X.maintenance_rate('BTC-USDT-SWAP'))
-        self.assertGreater(p['liq'], plain)
 
-    def test_account_equity_floor_closes_at_bar_close_not_as_liquidation(self):
-        # Two alts open. A huge funding payment on C0 is taken from the shared cash and wipes C0's
-        # isolated margin (C0 therefore liquidates). C1 never trades through its own liq, but the
-        # book equity is then <= 0, so C1 must close at the bar close with reason 'equity', not 'liquidation'.
+        # two alts open; a huge funding payment on C0 takes shared cash below total MM → both close as liquidation
         closes = [100.0] * 40 + [110.0] + [111.0] * 3
         sr = {k: series_from(list(closes), k) for k in ('C0-USDT-SWAP', 'C1-USDT-SWAP')}
         g = base_genes(risk=.02, leverage=10)
@@ -1000,12 +1009,49 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         sr['C0-USDT-SWAP'].funding = {last_ts: 50.0}   # test-only rate: pay 50× notional from shared cash
         r1 = X.simulate_account([dict(id='m', genes=g, from_i=0, wind_i=None, boosts=[])], sr, 30, sr['C0-USDT-SWAP'].n, equity=10000.0)
         liq = [t for t in r1['trades'] if t['reason'] == 'liquidation']
-        eq = [t for t in r1['trades'] if t['reason'] == 'equity']
-        self.assertTrue(any(t['inst'] == 'C0-USDT-SWAP' for t in liq))
-        self.assertTrue(any(t['inst'] == 'C1-USDT-SWAP' for t in eq), msg=[(t['inst'], t['reason']) for t in r1['trades']])
-        self.assertFalse(any(t['inst'] == 'C1-USDT-SWAP' and t['reason'] == 'liquidation' for t in r1['trades']))
-        self.assertAlmostEqual(eq[0]['exit'], sr['C1-USDT-SWAP'].c[-1], places=4)
+        self.assertEqual(sorted(t['inst'] for t in liq), ['C0-USDT-SWAP', 'C1-USDT-SWAP'])
+        self.assertFalse(any(t['reason'] == 'equity' for t in r1['trades']))
         self.assertEqual(r1['positions'], [])
+        self.assertEqual(r1['liquidations'], 1)                     # one account event, two closed positions
+        self.assertGreater(r1['funding'], 0)
+        self.assertGreaterEqual(r1['equity'], 0.0)
+        stats = E.portfolio_stats(r1)
+        self.assertEqual((stats['liquidations'], stats['liq_closes']), (1, 2))
+
+    def test_cross_open_allowed_rejects_a_stop_that_would_breach_maintenance_margin(self):
+        # a lone position whose stop would leave no cash must be skipped
+        wipe = dict(side=1, entry=100.0, qty=200.0, stop=1.0, fee=10.0, funding=0.0, lever=20, margin=1000.0, mmr=0.025)
+        ok, why = X.cross_open_allowed(10000.0, {}, 'C0-USDT-SWAP', wipe, {})
+        self.assertFalse(ok)
+        self.assertEqual(why, 'stop_before_liquidation')
+        # already-open book with a large maintenance margin: a wide new stop is rejected
+        existing = {'C0-USDT-SWAP': dict(side=1, entry=100.0, qty=3200.0, stop=99.5, fee=160.0, funding=0.0,
+                                         lever=20, margin=16000.0, mmr=0.025)}
+        prices = {'C0-USDT-SWAP': 100.0}
+        cash = 10000.0 - 160.0
+        wide = dict(side=1, entry=100.0, qty=80.0, stop=50.0, fee=4.0, funding=0.0, lever=20, margin=400.0, mmr=0.025)
+        ok, why = X.cross_open_allowed(cash, existing, 'C1-USDT-SWAP', wide, prices)
+        self.assertFalse(ok)
+        self.assertIn(why, ('stop_before_liquidation', 'equity_below_mm'))
+        # a tight, small add-on on a modest book is allowed
+        modest = {'C0-USDT-SWAP': dict(side=1, entry=100.0, qty=10.0, stop=99.0, fee=0.5, funding=0.0,
+                                       lever=20, margin=50.0, mmr=0.025)}
+        tight = dict(side=1, entry=100.0, qty=1.0, stop=99.0, fee=0.05, funding=0.0, lever=20, margin=5.0, mmr=0.025)
+        ok2, why2 = X.cross_open_allowed(10000.0 - 0.5, modest, 'C1-USDT-SWAP', tight, {'C0-USDT-SWAP': 100.0})
+        self.assertTrue(ok2, msg=why2)
+        self.assertIsNone(why2)
+        # a position with no managed stop (a manual one on the OKX demo account) keeps its maintenance margin in every
+        # scenario: 9,000 USDT of MM leaves too little room for this stop, although the same entry alone is fine
+        manual = {'M-USDT-SWAP#long#manual': dict(side=1, entry=1.0, qty=360000.0, mmr=0.025)}
+        mid = dict(side=1, entry=100.0, qty=100.0, stop=90.0, fee=5.0, funding=0.0, mmr=0.025)
+        self.assertEqual(X.cross_open_allowed(10000.0, {}, 'C1-USDT-SWAP', mid, {})[0], True)
+        ok3, why3 = X.cross_open_allowed(10000.0, {}, 'C1-USDT-SWAP', mid, {'M-USDT-SWAP#long#manual': 1.0}, fixed=manual)
+        self.assertEqual((ok3, why3), (False, 'stop_before_liquidation'))
+        # every stop at once: two open longs whose stops together nearly empty the account block a third
+        book = {k: dict(side=1, entry=100.0, qty=45.0, stop=0.5, fee=0.0, funding=0.0, mmr=0.005) for k in ('A', 'B')}
+        third = dict(side=1, entry=100.0, qty=30.0, stop=60.0, fee=1.5, funding=0.0, mmr=0.005)
+        ok4, why4 = X.cross_open_allowed(10000.0, book, 'C', third, {'A': 100.0, 'B': 100.0})
+        self.assertEqual((ok4, why4), (False, 'stop_before_liquidation'))
 
 
 class EntryGatePaperIntegrationTests(unittest.TestCase):
@@ -1178,6 +1224,174 @@ class RunTests(unittest.TestCase):
                 self.assertEqual(json.loads((out / 'dashboard.json').read_text())['generation'], 3)
         finally:
             dmod.load_series.__defaults__ = (orig, None, None)
+
+
+class PortfolioFitnessTests(unittest.TestCase):
+    def test_portfolio_score_penalises_daily_stops_drawdown_liquidations_and_fees(self):
+        good = dict(ret=20.0, max_dd=10.0, trades=40, daily_halts=0, halt_closes=0,
+                    liquidations=0, liq_closes=0, fee_pct=2.0, funding_pct=0.0)
+        halted = dict(good, daily_halts=8, halt_closes=24)
+        deep = dict(good, max_dd=35.0)
+        liq = dict(good, liquidations=2, liq_closes=8)
+        fees = dict(good, fee_pct=15.0)
+        self.assertGreater(E.portfolio_score(good), E.portfolio_score(halted))
+        self.assertGreater(E.portfolio_score(good), E.portfolio_score(deep))
+        self.assertGreater(E.portfolio_score(good), E.portfolio_score(liq))
+        self.assertGreater(E.portfolio_score(good), E.portfolio_score(fees))
+        # past 20 % and 30 % the drawdown penalty steepens: 35 % scores worse than 21 % by more than the Calmar gap alone
+        mid = dict(good, max_dd=21.0)
+        self.assertGreater(E.portfolio_score(mid), E.portfolio_score(deep))
+
+    def test_blended_fitness_weights_portfolio_over_solo(self):
+        # a high solo score with a poor portfolio term should lose to a modest solo with a strong portfolio term
+        a = E.blended_fitness(4.0, -2.0, 0.0)
+        b = E.blended_fitness(0.5, 1.5, 0.4)
+        self.assertGreater(b, a)
+
+    def test_entry_gate_uses_portfolio_oos_drawdown_when_present(self):
+        node = dict(id='s1', qualified=True, test=dict(ret=5, max_dd=10, trades=10),
+                    final=dict(ret=2, max_dd=12, trades=6), oos_dd=12.0, port_oos_dd=42.0)
+        g = E.entry_gate(node, streak=E.ENTRY_STREAK)
+        self.assertFalse(g['passed'])
+        self.assertEqual(g['max_dd'], 42.0)
+        node['port_oos_dd'] = 20.0
+        self.assertTrue(E.entry_gate(node, streak=E.ENTRY_STREAK)['passed'])
+        # without a portfolio figure, the individual combined window is used
+        node.pop('port_oos_dd')
+        self.assertAlmostEqual(E.oos_window_dd(node), 12.0)
+        self.assertTrue(E.entry_gate(node, streak=E.ENTRY_STREAK)['passed'])
+
+    def test_score_portfolio_sets_port_fields_and_rescoring_is_deterministic(self):
+        ev = EvolutionTests()
+        ev.sr = tiny_market(); ev.split = D.split(ev.sr)
+        st, ids = ev._setup([(3.0, True, 5, 10) for _ in range(10)])
+        for nid in st['population']:
+            st['nodes'][nid]['solo_fitness'] = st['nodes'][nid]['fitness']
+        E.score_portfolio(st, ev.sr, ev.split)
+        sample = st['nodes'][st['population'][0]]
+        self.assertEqual(st['fitness_version'], E.PORTFOLIO_FITNESS_VERSION)
+        self.assertIn('port_fitness', sample)
+        self.assertIn('port_oos_dd', sample)
+        self.assertIn('port_train', sample)
+        first = {nid: st['nodes'][nid]['fitness'] for nid in st['population']}
+        E.score_portfolio(st, ev.sr, ev.split)
+        self.assertEqual(first, {nid: st['nodes'][nid]['fitness'] for nid in st['population']})
+
+    def test_choose_team_prefers_higher_portfolio_fitness(self):
+        ev = EvolutionTests()
+        ev.sr = tiny_market(); ev.split = D.split(ev.sr)
+        # two qualified candidates; the second has the better portfolio fitness
+        st, ids = ev._setup([(1.0, True, 5, 8), (3.0, True, 5, 8)] + [(0.1, False, -1, 40)] * 8)
+        st['nodes'][ids[0]].update(fitness=1.0, solo_fitness=3.0, port_fitness=0.2, port_oos_dd=12.0)
+        st['nodes'][ids[1]].update(fitness=2.5, solo_fitness=0.8, port_fitness=2.0, port_oos_dd=11.0)
+        for nid in ids[2:]:
+            st['nodes'][nid].update(fitness=0.0, qualified=False)
+        E.update_hall(st)
+        E.choose_team(st, T0)
+        self.assertEqual(st['team'][0]['id'], ids[1])
+
+    def _scored(self):
+        ev = EvolutionTests()
+        ev.sr = tiny_market(); ev.split = D.split(ev.sr)
+        st = E.init_state(2, ev.sr, ev.split)
+        return ev, st
+
+    def test_stale_portfolio_drawdown_is_ignored_once_individual_metrics_are_overwritten(self):
+        ev, st = self._scored()
+        nid = E.score_pool(st)[0]
+        node = st['nodes'][nid]
+        node.update(qualified=True, port_oos_dd=55.0); node['port_basis'] = E._port_basis(node)   # as score_portfolio leaves it
+        self.assertTrue(E.port_fresh(node)); self.assertEqual(E.oos_window_dd(node), 55.0)
+        node.update(fitness=4.0, oos_dd=12.0)                  # a caller (or test) sets individual numbers afterwards
+        self.assertFalse(E.port_fresh(node)); self.assertEqual(E.oos_window_dd(node), 12.0)
+        self.assertTrue(E.entry_gate(node, streak=E.ENTRY_STREAK)['passed'])
+        node['port_oos_dd'] = 33.0                             # ... unless the portfolio figure is set in the same update
+        self.assertTrue(E.port_fresh(node)); self.assertFalse(E.entry_gate(node, streak=E.ENTRY_STREAK)['passed'])
+        # evaluate() during refresh rewrites fitness: the old figure stays out until score_portfolio stamps a new one
+        node.update(port_oos_dd=55.0, port_basis=E._port_basis(dict(node, port_oos_dd=55.0)))
+        node.update(E.evaluate(node['genes'], ev.sr, ev.split))
+        self.assertEqual(E._solo(node), node['fitness'])
+        self.assertNotEqual((node['fitness'], node['oos_dd']), (4.0, 12.0))
+        self.assertFalse(E.port_fresh(node)); self.assertEqual(E.oos_window_dd(node), node['oos_dd'])
+
+    def test_unscored_strategies_never_rank_above_portfolio_scored_ones(self):
+        self.addCleanup(setattr, E, 'PORT_TOP_K', E.PORT_TOP_K); E.PORT_TOP_K = 3
+        ev, st = self._scored()
+        nodes = st['nodes']
+        pool = set(E.score_pool(st))
+        rest = [nid for nid in st['population'] if nid not in pool]
+        self.assertTrue(rest)
+        worst_scored = min(nodes[nid]['fitness'] for nid in pool)
+        for nid in rest:
+            self.assertLess(nodes[nid]['fitness'], worst_scored)
+            self.assertNotIn('port_oos_dd', nodes[nid])
+        # among themselves they keep the order of their individual scores
+        order = sorted(rest, key=lambda n: nodes[n]['solo_fitness'])
+        self.assertEqual(order, sorted(rest, key=lambda n: nodes[n]['fitness']))
+        # scoring again does not mistake the placed fitness for the individual score
+        solos = {nid: nodes[nid]['solo_fitness'] for nid in rest}
+        E.score_portfolio(st, ev.sr, ev.split)
+        self.assertEqual(solos, {nid: nodes[nid]['solo_fitness'] for nid in rest})
+        self.assertEqual(set(E.score_pool(st)), pool)
+        self.assertEqual(st['fitness_version'], E.PORTFOLIO_FITNESS_VERSION)
+
+    def test_portfolio_runs_use_the_context_team_and_are_memoised_for_the_run(self):
+        ev, st = self._scored()
+        nodes = st['nodes']
+        ids = st['population'][:3]
+        st['team'] = [dict(id=nid, since=T0) for nid in ids]
+        st['champion'] = ids[0]
+        E.score_portfolio(st, ev.sr, ev.split)
+        for nid in ids:                       # a seat is scored next to the other seats (empty seats filled from the hall / population)
+            ctx = nodes[nid]['port_context']
+            self.assertTrue(set(ids) - {nid} <= set(ctx)); self.assertNotIn(nid, ctx); self.assertEqual(len(ctx), E.TEAM_SIZE - 1)
+        # a full team: an outsider is scored in place of the weakest seat
+        full = st['population'][:E.TEAM_SIZE]
+        st['team'] = [dict(id=nid, since=T0) for nid in full]
+        rank = {nid: nodes[nid]['fitness'] for nid in full}
+        weakest = min(full, key=lambda n: (rank[n], n))
+        out = next(nid for nid in st['population'] if nid not in full)
+        self.assertEqual(sorted(E.pick_context_ids(st, exclude={out})), sorted(set(full) - {weakest}))
+        st['team'] = [dict(id=nid, since=T0) for nid in ids]
+        cache = E._run_cache(ev.sr, ev.split)
+        before = len(cache['runs'])
+        calls = []
+        orig = E.simulate_account
+        self.addCleanup(setattr, E, 'simulate_account', orig)
+        E.simulate_account = lambda *a, **k: calls.append(1) or orig(*a, **k)
+        E.score_portfolio(st, ev.sr, ev.split)                   # nothing changed: every run comes from the memo
+        self.assertEqual((calls, len(cache['runs'])), ([], before))
+        # the memo gives the same numbers as a fresh simulate_account of the same set
+        team_ids = sorted(nodes[ids[0]]['port_context'] + [ids[0]])
+        seg = [dict(id=n, genes=nodes[n]['genes'], from_i=ev.split[0], wind_i=None, boosts=[]) for n in team_ids]
+        fresh = E.portfolio_stats(orig(seg, ev.sr, ev.split[0], ev.split[1], curve_every=0), days=(ev.split[1] - ev.split[0]) / 24)
+        self.assertEqual(nodes[ids[0]]['port_train'], fresh)
+
+    def test_simulate_account_with_precomputed_entries_is_identical(self):
+        sr = tiny_market(600)
+        gs = [G.random_genome(random.Random(k), sp) for k, sp in enumerate(G.SPECIES[:3])]
+        segs = [dict(id=f'g{k}', genes=g, from_i=50, wind_i=None, boosts=[]) for k, g in enumerate(gs)]
+        a = X.simulate_account(segs, sr, 50, 600, curve_every=0)
+        b = X.simulate_account(segs, sr, 50, 600, curve_every=0, events={s['id']: X.entries(s['genes'], sr) for s in segs})
+        self.assertEqual((a['metrics'], a['trades'], a['halts'], a['fees']), (b['metrics'], b['trades'], b['halts'], b['fees']))
+        self.assertAlmostEqual(a['fees'], sum(t['qty'] * (t['entry'] + t['exit']) * X.FEE for t in a['trades'])
+                               + sum(p['qty'] * p['entry'] * X.FEE for p in a['positions']), places=6)
+
+    def test_a_too_risky_team_is_not_swapped_for_equally_blocked_challengers(self):
+        ev = EvolutionTests(); ev.sr = tiny_market(); ev.split = D.split(ev.sr)
+        self.addCleanup(setattr, E, 'TEAM_SIZE', E.TEAM_SIZE); E.TEAM_SIZE = 3
+        st, ids = ev._setup([(5.0, True, 3, 10), (4.0, True, 3, 10), (3.0, True, 3, 10), (2.0, True, 3, 10), (1.0, True, 3, 10)])
+        for k, nid in enumerate(ids): st['nodes'][nid]['species'] = G.SPECIES[k % len(G.SPECIES)]
+        E.update_hall(st); E.choose_team(st, T0)
+        self.assertEqual([m['id'] for m in st['team']], ids[:3])
+        for nid in ids:                                         # the portfolio's unseen-window DD is 45 % for everyone
+            st['nodes'][nid]['port_oos_dd'] = 45.0
+        self.assertTrue(all(not E.entry_gate(st['nodes'][nid], streak=E.ENTRY_STREAK)['passed'] for nid in ids))
+        self.assertEqual(E.choose_team(st, T0 + H), [])          # no churn: the blocked seats stay and trade nothing
+        st['nodes'][ids[4]]['port_oos_dd'] = 18.0               # a challenger that brings the portfolio under 30 %
+        changes = E.choose_team(st, T0 + 2 * H)
+        self.assertTrue(changes); self.assertTrue(all(c[2] == ids[4] and c[3] == 'entry_gate' for c in changes))
+        self.assertEqual(len(changes), 1)
 
 
 if __name__ == '__main__':

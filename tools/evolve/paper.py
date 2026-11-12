@@ -2,9 +2,9 @@
 
 The team's strategies all trade the same account: every position is sized on the whole account's equity (the strategy's
 risk gene, 2–10 %, then major-coin doubling and crowding, capped at 10 %). Every seat, including the leader, uses its
-own risk and leverage genes (leverage 1–100×, reduced so the stop sits before the isolated liquidation price). Margin is
-shared, one position per coin; a liquidated position loses only its isolated margin. The same-side cap (20 %) and the
-daily halt (10 %) still apply to everyone, including the leader. The OKX demo mirror (tools/okx_demo_trader.py) follows the same 2–10 % / 1–100× genes on isolated margin,
+own risk and leverage genes (leverage 1–100×, clamped to that coin's OKX max). Margin is
+shared and cross (全仓): liquidation is when account equity falls to or below total maintenance margin, and then every position is closed. The same-side cap (20 %) and the
+daily halt (10 %) still apply to everyone, including the leader. The OKX demo mirror (tools/okx_demo_trader.py) follows the same 2–10 % / 1–100× genes on cross margin,
 clamped to each coin's OKX max leverage (20× if the public spec is missing). Live trading is decided separately.
 Each run replays the account from its start bar with the full seat history, so the result is exactly what the engine
 produces on live bars:
@@ -370,7 +370,7 @@ def update(state, series, changes, price_off=None):
                 rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
                            leader_risk=ACCOUNT_RULES['leader_risk'], leader_lever=ACCOUNT_RULES['leader_lever'],
                            max_risk=ACCOUNT_RULES['max_risk'], min_risk=ACCOUNT_RULES.get('min_risk', .02),
-                           min_lever=ACCOUNT_RULES.get('min_lever', 1),
+                           min_lever=ACCOUNT_RULES.get('min_lever', 1), margin_mode=ACCOUNT_RULES.get('margin_mode', 'cross'),
                            majors=list(ACCOUNT_RULES['majors']), major_factor=ACCOUNT_RULES['major_factor']),
                 curve=([p for p in legacy.get('curve') or [] if p[0] < acc['from_ts']] + [list(p) for p in res['curve']])[-400:],
                 # Recent trades and their counts are the current shared account only.

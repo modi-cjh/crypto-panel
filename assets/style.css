@@ -222,7 +222,7 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
 .okx-danger .trade-stop-button{background:transparent;color:var(--red);border:1px solid #efc3c9;font-weight:500;box-shadow:none}
 .sim-primary #pinned-source,.sim-primary #pinned-time{display:none}
 .sim-curve svg text{font-size:13px}@media(max-width:760px){.sim-curve svg text{font-size:21px}}
-@media(max-width:760px){#home-sim,#sim-page{padding-bottom:84px}}
+@media(max-width:760px){main{padding-bottom:calc(96px + env(safe-area-inset-bottom, 0px))}}
 @media(min-width:900px){
   #home-sim .okx-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);column-gap:32px;align-content:start}
   #home-sim .okx-hero>*{grid-column:1}

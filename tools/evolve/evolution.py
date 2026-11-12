@@ -5,9 +5,10 @@ immigrants) → TEST every child on the training window (fitness) and the unseen
 next population (elites survive, the rest are replaced) → DEPLOY: the qualified strategy with the best training fitness
 becomes the paper-trading champion.
 """
+import json
 import random
 
-from execution import simulate, entries
+from execution import simulate, simulate_account, entries, START_EQUITY, FEE, HOUR, ACCOUNT_RULES
 from genome import random_genome, crossover, mutate, fix, SPECIES
 import data as D
 
@@ -52,6 +53,20 @@ UNQUALIFIED_RUNS = 3      # a member that failed the gates this many runs in a r
 # signal priority; every seat, including the leader, sizes from its own risk and leverage genes.
 ENTRY_STREAK = 5
 ENTRY_MAX_DD = 30.0
+# Portfolio-level fitness (first refresh after this change rescores stored fitness).
+# Candidates are simulated with simulate_account alongside a context team so the 10 % daily stop,
+# 20 % same-side cap, cross liquidation, fees, funding and turnover enter the score.
+# 1–100× and 2–10 % gene ranges are unchanged.
+PORTFOLIO_FITNESS_VERSION = 'portfit-cross-1'
+PORT_DD_SOFT = 15.0
+PORT_DD_HARD = 20.0
+PORT_HALT_PENALTY = 0.15
+PORT_LIQ_PENALTY = 1.0
+PORT_FEE_UNIT = 0.06          # penalty per 1 % of starting equity paid in fees
+SOLO_BLEND, PORT_BLEND, MARGINAL_BLEND = 0.25, 0.75, 0.35
+# Runtime: besides the team, the leader, the hall and the qualified, only the best PORT_TOP_K of the population by
+# individual fitness are portfolio-scored each generation (results are memoised for the run, so a survivor is not re-run).
+PORT_TOP_K = 12
 
 
 def downsample(curve, n=CURVE_POINTS):
@@ -142,12 +157,41 @@ def _curve_dd(curves):
     return round(dd * 100, 3)
 
 
+def port_fresh(node):
+    """True when the node's portfolio figures (`port_oos_dd`, `port_fitness`) belong to its current metrics.
+
+    score_portfolio stamps `port_basis` with the fitness / individual drawdowns it wrote. When a caller later overwrites
+    `fitness`, `oos_dd` or the window metrics (refresh's evaluate(), or a test that sets individual numbers by hand) the
+    stamp no longer matches and the stale portfolio figures are ignored. A `port_oos_dd` that differs from the stamp was
+    set on purpose after scoring and is used as is; a node with no stamp uses whatever `port_oos_dd` it carries.
+    """
+    p = node.get('port_oos_dd')
+    if p is None:
+        return False
+    basis = node.get('port_basis')
+    if not basis:
+        return True
+    if p != basis.get('port_oos_dd'):
+        return True
+    return all(node.get(k) == basis.get(k) for k in ('fitness', 'oos_dd')) and \
+        (node.get('test') or {}).get('max_dd') == basis.get('test_dd') and (node.get('final') or {}).get('max_dd') == basis.get('final_dd')
+
+
+def _port_basis(node):
+    return dict(fitness=node.get('fitness'), oos_dd=node.get('oos_dd'), port_oos_dd=node.get('port_oos_dd'),
+                test_dd=(node.get('test') or {}).get('max_dd'), final_dd=(node.get('final') or {}).get('max_dd'))
+
+
 def oos_window_dd(node):
     """Max drawdown (%) on the unseen walk-forward window (out-of-sample + final, costs included).
 
-    Uses the stored `oos_dd` when present; otherwise the worse of the two window metrics and the
-    drawdown of the two curves stitched together (path-dependent combined DD can exceed either part).
+    Prefers `port_oos_dd` (the combined unseen window of a simulate_account run of this strategy next to its context
+    team, see score_portfolio) when it is current (port_fresh), so the 30 % entry gate is a portfolio figure.
+    Otherwise uses the stored individual `oos_dd` (older nodes, nodes outside the scored pool), or the worse of the two
+    window metrics and the drawdown of the two curves stitched together (path-dependent combined DD can exceed either part).
     """
+    if port_fresh(node):
+        return float(node['port_oos_dd'])
     if node.get('oos_dd') is not None:
         return float(node['oos_dd'])
     dds = []
@@ -157,6 +201,236 @@ def oos_window_dd(node):
         dds.append(node['final']['max_dd'])
     dds.append(_curve_dd([node.get('test_curve') or [], node.get('final_curve') or []]))
     return max(dds) if dds else 0.0
+
+
+def portfolio_stats(res, start_equity=START_EQUITY, days=None):
+    """Summarise a simulate_account run for portfolio scoring.
+
+    daily_halts / liquidations are events (account-level), not closed positions; fee_pct / funding_pct are % of the
+    starting equity. `days` (window length) lets portfolio_score compare windows of different lengths per 30 days.
+    """
+    trades = res.get('trades') or []
+    m = res.get('metrics') or {}
+    halt_closes = sum(1 for t in trades if t.get('reason') == 'daily_halt')
+    liq_closes = sum(1 for t in trades if t.get('reason') == 'liquidation')
+    if 'halts' in res:
+        halts, liqs = int(res['halts']), int(res['liquidations'])
+    else:          # older / hand-made results: count distinct close times
+        halts = len({(t['closed'] + 7 * HOUR) // (24 * HOUR) for t in trades if t.get('reason') == 'daily_halt'})
+        liqs = len({t['closed'] for t in trades if t.get('reason') == 'liquidation'})
+    if 'fees' in res:
+        fees, funding = res['fees'], res.get('funding', 0.0)
+    else:
+        fees = sum(abs((t.get('qty') or 0) * (t.get('entry') or 0) * FEE) + abs((t.get('qty') or 0) * (t.get('exit') or 0) * FEE) for t in trades)
+        funding = sum(t.get('funding') or 0.0 for t in trades)
+    pct = (lambda x: round(x / start_equity * 100, 4)) if start_equity else (lambda x: 0.0)
+    return dict(ret=float(m.get('ret') or 0.0), max_dd=float(m.get('max_dd') or 0.0), trades=int(m.get('trades') or 0),
+                daily_halts=halts, halt_closes=halt_closes, liquidations=liqs, liq_closes=liq_closes,
+                fee_pct=pct(fees), funding_pct=pct(funding), days=round(days, 2) if days else None)
+
+
+def portfolio_score(stats):
+    """Risk-adjusted portfolio score of a shared-account run (higher is better).
+
+    Calmar-like return ÷ max(drawdown, 5 %), minus:
+    - drawdown beyond PORT_DD_SOFT (15 %), steeper beyond PORT_DD_HARD (20 %) and again beyond the 30 % entry gate;
+    - PORT_HALT_PENALTY per 10 % daily-stop day and PORT_FEE_UNIT per 1 % of equity paid in fees (both per 30 days
+      when the window length is known, so windows of different lengths compare);
+    - PORT_LIQ_PENALTY per account liquidation (cross: every position closed).
+    A positive score is damped below 30 trades, as in the individual fitness.
+    """
+    dd = stats['max_dd']
+    calmar = stats['ret'] / max(dd, 5.0)
+    dd_pen = max(0.0, dd - PORT_DD_SOFT) / 10.0 * 0.7
+    dd_pen += max(0.0, dd - PORT_DD_HARD) / 10.0 * 1.4
+    if dd > ENTRY_MAX_DD:
+        dd_pen += (dd - ENTRY_MAX_DD) / 10.0 * 2.0
+    per30 = 30.0 / stats['days'] if stats.get('days') else 1.0
+    raw = (calmar - dd_pen - stats['daily_halts'] * per30 * PORT_HALT_PENALTY
+           - stats['liquidations'] * PORT_LIQ_PENALTY - stats['fee_pct'] * per30 * PORT_FEE_UNIT)
+    damp = min(1.0, max(stats['trades'], 0) / 30.0)
+    return round(raw * damp if raw > 0 else raw, 4)
+
+
+def blended_fitness(solo, port, marginal=0.0):
+    """Fitness = SOLO_BLEND × individual training fitness + PORT_BLEND × (portfolio score + MARGINAL_BLEND × marginal).
+
+    `marginal` = portfolio score with the candidate minus the score of its context alone (what the strategy adds)."""
+    port_term = port + MARGINAL_BLEND * marginal
+    return round(SOLO_BLEND * solo + PORT_BLEND * port_term, 4)
+
+
+def _solo(node):
+    """The individual training fitness. After score_portfolio `fitness` is the blend and `solo_fitness` the individual
+    score; a fitness written after scoring (evaluate(), or by hand) is itself the individual score."""
+    basis = node.get('port_basis')
+    if 'solo_fitness' in node and basis and node.get('fitness') == basis.get('fitness'):
+        return node['solo_fitness']
+    return node.get('fitness') or 0.0
+
+
+def pick_context_ids(state, exclude=None, size=None, rank=None):
+    """Deterministic context team (default TEAM_SIZE − 1 strategies) for scoring a candidate, never containing `exclude`.
+
+    The seated team comes first; when it is bigger than `size` the weakest seats (lowest `rank`, default current
+    fitness) are left out, so a newcomer is scored as the replacement of the weakest member — the swap choose_team would
+    make. Missing seats are filled from the hall and then the population by individual fitness, honouring the species
+    and direction caps when possible.
+    """
+    size = TEAM_SIZE - 1 if size is None else size
+    exclude = set(exclude or ())
+    nodes = state['nodes']
+    rank = rank or (lambda nid: nodes[nid].get('fitness') or 0.0)
+    seated = [m['id'] for m in state.get('team') or [] if m['id'] in nodes and m['id'] not in exclude]
+    if len(seated) > size:
+        keep = set(sorted(seated, key=lambda nid: (rank(nid), nid), reverse=True)[:size])
+        seated = [nid for nid in seated if nid in keep]
+    chosen = list(seated)
+    if len(chosen) >= size:
+        return chosen
+
+    def direction(nid):
+        return nodes[nid]['genes'].get('direction', 'both')
+
+    def allowed(nid, cap=True):
+        if nid in exclude or nid in chosen or nid not in nodes:
+            return False
+        if not cap:
+            return True
+        sp = nodes[nid]['species']
+        if sum(1 for c in chosen if nodes[c]['species'] == sp) >= TEAM_SPECIES_CAP:
+            return False
+        d = direction(nid)
+        return d == 'both' or sum(1 for c in chosen if direction(c) == d) < TEAM_DIRECTION_CAP
+
+    pool, seen = [], set(chosen) | exclude
+    for src in (state.get('hall') or [], state.get('population') or []):
+        for nid in src:
+            if nid not in seen and nid in nodes:
+                pool.append(nid); seen.add(nid)
+    pool.sort(key=lambda nid: (_solo(nodes[nid]), nid), reverse=True)
+    for cap in (True, False):
+        for nid in pool:
+            if len(chosen) >= size:
+                break
+            if allowed(nid, cap=cap):
+                chosen.append(nid)
+    return chosen[:size]
+
+
+def _run_cache(series, split):
+    """Per-series memo for score_portfolio: entries per genome and simulate_account results per (ids, genes, window).
+    Lives in the first Series' cache, so it lasts one run (the data and split are fixed) and never leaks across runs."""
+    first = next(iter(series.values()))
+    return first._get(('portfit', tuple(split)), lambda: dict(entries={}, runs={}))
+
+
+def _gkey(genes):
+    return json.dumps(genes, sort_keys=True)
+
+
+def score_pool(state):
+    """The nodes score_portfolio evaluates: the team, the leader, the hall and every qualified population member, plus
+    the best PORT_TOP_K of the population by individual fitness. Everything else ranks below them (see score_portfolio)."""
+    nodes = state['nodes']
+    pool, seen = [], set()
+
+    def add(nid):
+        if nid and nid not in seen and nid in nodes:
+            pool.append(nid); seen.add(nid)
+
+    for m in state.get('team') or []:
+        add(m['id'])
+    add(state.get('champion'))
+    for nid in state.get('hall') or []:
+        add(nid)
+    pop = [nid for nid in state.get('population') or [] if nid in nodes]
+    for nid in pop:
+        if nodes[nid].get('qualified'):
+            add(nid)
+    for nid in sorted(pop, key=lambda nid: (_solo(nodes[nid]), nid), reverse=True)[:PORT_TOP_K]:
+        add(nid)
+    return pool
+
+
+def score_portfolio(state, series, split):
+    """Portfolio-level fitness (deterministic). Called by init_state, refresh and every generation.
+
+    Each node in score_pool() is run through simulate_account (the paper engine: cross liquidation, 10 % daily stop,
+    20 % same-side cap, crowding, fees, funding, whole lots) on the training window together with a context team
+    (pick_context_ids: the seated team without the weakest seat, or the best hall / population members before there is
+    a team). Its fitness becomes blended_fitness(individual training score, portfolio score, marginal contribution).
+    Qualified nodes are also run on the combined unseen window (out-of-sample + final) with the same context; that max
+    drawdown is `port_oos_dd`, which the 30 % paper entry gate uses (oos_window_dd).
+
+    Nodes outside the pool keep their individual score but are placed below the worst scored node (still ordered by
+    their individual fitness), so an unscored strategy can never leapfrog a portfolio-scored one.
+    Stored fitness from before this change is rescored on the first refresh (fitness_version = PORTFOLIO_FITNESS_VERSION).
+    """
+    start, cut, mid, end = split if len(split) == 4 else (*split, split[-1])
+    nodes = state['nodes']
+    living = [nid for nid in dict.fromkeys(list(state.get('population') or []) + list(state.get('hall') or [])
+                                            + [m['id'] for m in state.get('team') or []] + [state.get('champion')]) if nid in nodes]
+    for nid in living:                               # individual score first, before any fitness is overwritten
+        nodes[nid]['solo_fitness'] = _solo(nodes[nid])
+    pool = score_pool(state)
+    rank0 = {nid: nodes[nid].get('fitness') or 0.0 for nid in living}
+    cache = _run_cache(series, split)
+    days = lambda a, b: max(b - a, 0) / 24.0          # 1H bars
+
+    def events(nid):
+        k = _gkey(nodes[nid]['genes'])
+        if k not in cache['entries']:
+            cache['entries'][k] = entries(nodes[nid]['genes'], series)
+        return cache['entries'][k]
+
+    def run(ids, a, b):
+        ids = tuple(sorted(ids))          # canonical order: the same team is simulated once
+        key = (tuple((nid, _gkey(nodes[nid]['genes'])) for nid in ids), a, b)
+        if key not in cache['runs']:
+            if not ids or a >= b:
+                res = dict(metrics=dict(ret=0.0, max_dd=0.0, trades=0), trades=[], halts=0, liquidations=0, fees=0.0, funding=0.0)
+            else:
+                res = simulate_account(_team_segs(nodes, ids, a), series, a, b, curve_every=0,
+                                       events={nid: events(nid) for nid in ids})
+            cache["runs"][key] = portfolio_stats(res, days=days(a, b))
+        return cache['runs'][key]
+
+    scored = []
+    for nid in pool:
+        node = nodes[nid]
+        ctx = pick_context_ids(state, exclude={nid}, rank=lambda x: rank0.get(x, 0.0))
+        train = run(ctx + [nid], start, cut)
+        port = portfolio_score(train)
+        marginal = round(port - portfolio_score(run(ctx, start, cut)), 4) if ctx else 0.0
+        node.update(port_train=train, port_fitness=port, port_marginal=marginal, port_context=sorted(ctx),
+                    fitness=blended_fitness(node['solo_fitness'], port, marginal))
+        if node.get('qualified') and end > cut:
+            oos = run(ctx + [nid], cut, end)
+            node.update(port_oos=oos, port_oos_dd=oos['max_dd'])
+        else:
+            for k in ('port_oos', 'port_oos_dd'):
+                node.pop(k, None)
+        node['port_basis'] = _port_basis(node)
+        scored.append(node['fitness'])
+    floor = min(scored) if scored else None
+    pset = set(pool)
+    rest = [nodes[nid] for nid in living if nid not in pset]     # dead lineage nodes keep their last fitness
+    if rest:
+        top = max(n['solo_fitness'] for n in rest)
+        for n in rest:
+            for k in ('port_train', 'port_fitness', 'port_marginal', 'port_context', 'port_oos', 'port_oos_dd', 'port_basis'):
+                n.pop(k, None)
+            if floor is not None:
+                n['fitness'] = round(min(SOLO_BLEND * n['solo_fitness'], floor - .001 - SOLO_BLEND * (top - n['solo_fitness'])), 4)
+            n['port_basis'] = _port_basis(n)          # so the next call still reads `solo_fitness` as the individual score
+    state['fitness_version'] = PORTFOLIO_FITNESS_VERSION
+    return state
+
+
+def _team_segs(nodes, ids, start):
+    return [dict(id=nid, genes=nodes[nid]['genes'], from_i=start, wind_i=None, boosts=[]) for nid in ids if nid in nodes]
+
 
 
 def update_defense_streak(prev_id, prev_streak, champ_id, qualified):
@@ -275,7 +549,7 @@ def evaluate(genes, series, split):
         + ([out['final']['max_dd']] if out.get('final') else [])
         + [_curve_dd([out.get('test_curve') or [], out.get('final_curve') or []])]
     )
-    return dict(out, fitness=fit, train=train, train_curve=downsample(tr['curve']))
+    return dict(out, fitness=fit, solo_fitness=fit, train=train, train_curve=downsample(tr['curve']))
 
 
 def add_migrants(state, migrants, series, split):
@@ -313,6 +587,7 @@ def init_state(seed, series, split):
                  defense_streaks={}, defense_id=None, defense_streak=0)
     for i in range(POPULATION):   # start with every species equally represented
         state['population'].append(new_node(state, random_genome(rng, SPECIES[i % len(SPECIES)]), [], 0, 'seed', series, split)['id'])
+    score_portfolio(state, series, split)
     update_hall(state)
     return state
 
@@ -321,6 +596,7 @@ def refresh(state, series, split):
     """The data window rolls forward every run: re-score the living population and the hall of fame on it.
 
     Does not call record_defense(): a refresh with no new generation must not increment any streak.
+    Existing stored fitness is always rescored (individual windows, then portfolio context).
     """
     team = {m['id'] for m in state.get('team', [])}
     for nid in set(state['population']) | set(state['hall']) | team | ({state['champion']} if state['champion'] else set()):
@@ -328,6 +604,7 @@ def refresh(state, series, split):
             n = state['nodes'][nid]
             n['genes'] = fix(n['genes'])
             n.update(evaluate(n['genes'], series, split))
+    score_portfolio(state, series, split)
     update_hall(state)
 
 
@@ -396,6 +673,7 @@ def generation(state, series, split, obs):
         nodes[nid]['died'] = gen
     state['stats']['killed'] = state['stats'].get('killed', 0) + len(killed)
     state['population'], state['generation'] = new_pop, gen
+    score_portfolio(state, series, split)
     update_hall(state)
     living = [nodes[i] for i in new_pop]
     best = max(living, key=lambda n: n['fitness'])
@@ -490,12 +768,15 @@ def choose_team(state, now_ms):
         return (not n.get('qualified')) or oos_window_dd(n) > ENTRY_MAX_DD
 
     def qualified_challengers(replacing=None):
+        # Only challengers that could pass the gate themselves (qualified, unseen-window DD ≤ 30 %). With the portfolio
+        # drawdown every seat of a too-risky team is blocked at once; swapping them for equally blocked strategies would
+        # churn the whole roster every run, so those seats stay (and trade nothing) until a passing candidate exists.
         gated, rest = [], []
         for nid in state['hall']:
-            if nid not in nodes or not nodes[nid].get('qualified'):
+            if nid not in nodes or blocked_from_gate(nid):
                 continue
             (gated if entry_gate(nodes[nid], state=state)['passed'] else rest).append(nid)
-        return (candidates(gated, replacing) or candidates(ready, replacing) or candidates(rest, replacing))
+        return (candidates(gated, replacing) or candidates([nid for nid in ready if nid in rest], replacing) or candidates(rest, replacing))
 
     for slot, m in enumerate(team):                            # clear breakdowns are replaced at once
         if breaks_retain(nodes[m['id']]):

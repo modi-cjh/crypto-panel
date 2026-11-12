@@ -220,8 +220,9 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
   /* the connection status is the first, narrow cell of the tab bar: on the right the floating companion docks over it */
   .header nav .connection{order:-1;margin:0;padding:6px 10px 6px 4px;align-self:center}
   .header nav .connection #connection-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-  main{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
-  footer{padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}
+  /* tab bar (~56px content + 16px gap) + iOS safe area, so daily-returns / evolve stats are not covered */
+  main{padding-bottom:calc(96px + env(safe-area-inset-bottom, 0px))}   /* every page lives in <main>: one layer, not one per section */
+  footer{padding-bottom:calc(104px + env(safe-area-inset-bottom, 0px))}
   .command-heading,.page-heading{padding:20px 0 12px;flex-direction:column;align-items:flex-start;gap:10px}
   .page-heading>div{max-width:none}
   .command-heading h1,.page-heading h1{font-size:30px}
