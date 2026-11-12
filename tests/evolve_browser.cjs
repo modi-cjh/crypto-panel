@@ -92,10 +92,10 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
     await still.route(/okx\.com/, r => r.abort()); await still.route('**/paper-data/evolve/dashboard.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(dash) }));
     const sp = await still.newPage(); await sp.goto(BASE + '#/evolve'); await sp.waitForSelector('#evolve-graph svg'); await sp.waitForTimeout(800);
     assert.equal(await sp.locator('#evolve-graph svg.replay').count(), 0); await still.close(); }
-  // Before the first run the page explains what will appear.
+  // A missing dashboard (including a transient 404) is a retryable read error, not “never run”.
   mode = 'missing'; const fresh = await context.newPage(); await fresh.goto(BASE + '#/evolve');
   await fresh.waitForSelector('#evolve-error:not([hidden])');
-  assert.match(await fresh.locator('#evolve-error').innerText(), /还没有运行过/);
+  assert.match(await fresh.locator('#evolve-error').innerText(), /暂时读取失败/);
   assert.deepEqual(errors, []);
   await browser.close();
   console.log('策略进化页验收通过：进化循环与代数、适应度曲线、基因池节点与谱系、点击 / 键盘查看基因与训练 vs 样本外回测、父代跳转、纸面交易、首页卡片、320/390 无溢出、首次运行前提示、pageerror=0。');

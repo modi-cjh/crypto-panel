@@ -59,7 +59,9 @@ test('demo quote connectivity requires fresh marks for every held instrument',()
   assert.equal(demoQuoteState({...data,positions:[]},new Map(),null,0,NOW).label,'账户快照');
   const note=accountDataNote(data,demoQuoteState(data,new Map(),null,0,NOW),NOW);
   assert.match(note,/距今 20 分钟/);assert.match(note,/使用上次快照/);assert.doesNotMatch(note,/更新延迟/);
-  assert.match(accountDataNote(data,demoQuoteState(data,new Map(),null,0,NOW+6*3600e3),NOW+6*3600e3),/更新延迟/);
+  assert.match(accountDataNote(data,demoQuoteState(data,new Map(),null,0,NOW),NOW),/上次更新/);
+  assert.match(accountDataNote(data,demoQuoteState(data,new Map(),null,0,NOW),NOW),/下次更新/);
+  assert.match(accountDataNote(data,demoQuoteState(data,new Map(),null,0,NOW+6*3600e3),NOW+6*3600e3),/已超过 5 小时没有更新/);
   assert.match(accountDataNote(data,demoQuoteState(data,marks,{state:'实时',lastData:NOW},0,NOW),NOW),/按模拟行情估值/);
 });
 

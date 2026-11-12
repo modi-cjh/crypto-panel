@@ -296,8 +296,8 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     cash, pos, trades, curve = equity, {}, [], []
     peak, max_dd, pending, dists = equity, 0.0, {}, {}
     rr, trail = g['target_rr'], g.get('trail', 0)
-    risk = g['risk'] if risk is None else risk
-    cap, extra = lever_cap or LEVERAGE, 0.0
+    risk = min(g['risk'] if risk is None else risk, MAX_TRADE_RISK)
+    cap, extra = min(lever_cap or LEVERAGE, LEVERAGE), 0.0
     hold = min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H)
     for i in range(start, end):
         if extra_equity is not None:
@@ -402,8 +402,11 @@ def fitness(m):
 MAJORS = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP')
 # major_factor: a trade on one of the five majors risks this many times the usual amount (chosen by the user; the majors are
 # the most liquid coins and the ones whose OKX demo prices follow the real market).
-ACCOUNT_RULES = dict(leader_risk=.05, leader_lever=50, lever=LEVERAGE, same_side_cap=.20, daily_halt=.10, day_shift=7 * HOUR,
-                     majors=MAJORS, major_factor=2.0)
+# Per-trade risk never exceeds 3 % of equity, for every seat including the leader. Leverage is capped at 10×.
+# major_factor still doubles a major-coin entry, then the 3 % cap is applied so a doubled 2 % gene becomes 3 %, not 4 %.
+MAX_TRADE_RISK = .03
+ACCOUNT_RULES = dict(leader_risk=MAX_TRADE_RISK, leader_lever=LEVERAGE, lever=LEVERAGE, same_side_cap=.20, daily_halt=.10,
+                     day_shift=7 * HOUR, majors=MAJORS, major_factor=2.0, max_risk=MAX_TRADE_RISK)
 CROWD_STEPS = ((6, .25), (3, .5))     # same-side positions already open → risk factor for the next entry on that side
 
 
@@ -411,6 +414,16 @@ def crowd_factor(same_side_open):
     """Many positions on one side are one bet: with 3 or more already open on that side a new entry risks half, with 6 or
     more a quarter (everyone, the leader included). The OKX mirror uses the same steps."""
     return next((f for n, f in CROWD_STEPS if same_side_open >= n), 1.0)
+
+
+def position_risk(base, inst, same_side_open=0, rules=None):
+    """Per-trade risk as a fraction of equity: base (gene or leader) × crowding × optional major-coin factor, then
+    clamped to rules['max_risk'] (3 %). Used by the paper account and the OKX demo follow."""
+    rules = rules or ACCOUNT_RULES
+    r = (base if base is not None else 0.0) * crowd_factor(same_side_open)
+    if inst in rules.get('majors', ()):
+        r *= rules.get('major_factor', 1.0)
+    return min(r, rules.get('max_risk', MAX_TRADE_RISK))
 
 
 def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None):
@@ -423,18 +436,19 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
 
     Same bar rules as simulate() (signal on a close, fill at the next open with slippage and fee, stop before target,
     gaps fill at the open, time exit, trailing stop, whole contract lots, funding). What is shared:
-    - size = account equity × risk ÷ stop distance (risk = the strategy's risk gene; the leader: rules['leader_risk']);
+    - size = account equity × risk ÷ stop distance (risk = the strategy's risk gene, or rules['leader_risk'] for the
+      leader), then clamped to rules['max_risk'] (3 %) after crowding and the major-coin factor;
     - one position per coin for the whole account, at most MAX_POSITIONS per strategy;
-    - margin = notional ÷ leverage (leverage = min(cap, 80 % ÷ stop distance), cap = rules['lever'] / 'leader_lever'), and
-      a new entry needs it to fit into 95 % of the free margin (equity − margin in use);
-    - a trade on one of rules['majors'] risks rules['major_factor'] times as much;
+    - margin = notional ÷ leverage (leverage = min(cap, 80 % ÷ stop distance), cap = rules['lever'] / 'leader_lever',
+      both 10×), and a new entry needs it to fit into 95 % of the free margin (equity − margin in use);
+    - a trade on one of rules['majors'] risks rules['major_factor'] times as much, still never above the 3 % cap;
     - `blocked` = {inst: [(i0, i1 or None)]}: bar ranges in which a coin takes no new entry (its OKX demo price was
       away from the real market, data.price_check); positions already open run on;
     - crowding: with 3+ positions already open on a side the next entry on that side risks half, with 6+ a quarter;
-    - same-side cap: the open risk of the non-leader positions on one side plus the new one stays within
-      rules['same_side_cap'] × equity (leader positions are outside it);
-    - daily halt (days start at UTC+7 midnight): when the non-leader positions have lost rules['daily_halt'] × the day's
-      starting equity, they are closed at that close and the non-leader strategies stay out until the next day;
+    - same-side cap: the open risk of every position on one side, including the leader, plus the new one stays within
+      rules['same_side_cap'] × equity (the leader is the largest seat, so leaving it out made the cap ineffective);
+    - daily halt (days start at UTC+7 midnight): when the whole account, including the leader, has lost
+      rules['daily_halt'] × the day's starting equity, every position is closed and no strategy opens until the next day;
     - liquidation is for the whole account: when equity at a close is at or below the maintenance margin
       (Σ notional × MMR) every position is closed.
     Returns dict(equity, curve, trades, positions, pending, pnl={seg id: realised + floating}, halted, metrics).
@@ -460,8 +474,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         cash += gain
         net = gain - p['fee'] - p['funding']
         pnl[p['seg']] += net
-        if not p['boost']:
-            others_real += gain - snap.pop(inst, 0.0)          # today's part: the result minus what it was worth at the day's start
+        others_real += gain - snap.pop(inst, 0.0)              # today's part: the result minus what it was worth at the day's start
         trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=px, opened=p['opened'], closed=ts0[i], pnl=net,
                            funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why, seg=p['seg'], boost=p['boost']))
 
@@ -477,7 +490,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         # 1) fills at this open: the leader's signals first, then the segments in their order
         for sid, inst, d, dist, boost in sorted(pending, key=lambda x: not x[4]):
             s, g = series[inst], by_id[sid]['genes']
-            if dist <= 0 or inst in pos or sum(1 for p in pos.values() if p['seg'] == sid) >= MAX_POSITIONS or (halted and not boost):
+            if dist <= 0 or inst in pos or sum(1 for p in pos.values() if p['seg'] == sid) >= MAX_POSITIONS or halted:
                 continue
             if blocked and any(a <= i and (b is None or i < b) for a, b in blocked.get(inst, ())):
                 continue
@@ -485,9 +498,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             if dist / px < MIN_STOP_DIST:
                 continue
             mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items())
-            r = (rules['leader_risk'] if boost else g['risk']) * crowd_factor(sum(1 for p in pos.values() if p['side'] == d))
-            if inst in rules.get('majors', ()):
-                r *= rules.get('major_factor', 1.0)
+            r = position_risk(rules['leader_risk'] if boost else g['risk'], inst, sum(1 for p in pos.values() if p['side'] == d), rules)
             qty = mark * r / dist
             if s.spec:
                 ct, lot, mn = s.spec
@@ -495,10 +506,9 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 if qty <= 0 or qty < mn - 1e-12:
                     continue
                 qty *= ct
-            if not boost:
-                same = sum(p['qty'] * max((p['entry'] - p['stop']) * p['side'], 0) for p in pos.values() if not p['boost'] and p['side'] == d)
-                if same + qty * dist > cap_side * mark * (1 + 1e-9):
-                    continue
+            same = sum(p['qty'] * max((p['entry'] - p['stop']) * p['side'], 0) for p in pos.values() if p['side'] == d)
+            if same + qty * dist > cap_side * mark * (1 + 1e-9):
+                continue
             lever = max(1, min(rules['leader_lever'] if boost else rules['lever'], int(.8 / (dist / px))))
             margin = qty * px / lever
             if qty <= 0 or margin > (mark - sum(p['margin'] for p in pos.values())) * MARGIN_USE:
@@ -541,13 +551,13 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         if d_now != day:                                        # a new day starts with this bar: yesterday's close is the baseline
             day, halted, others_real = d_now, False, 0.0
             day_start = eq
-            snap = {k: unreal[k] for k, p in pos.items() if not p['boost']}
-        others_day = others_real + sum(unreal[k] - snap.get(k, 0.0) for k, p in pos.items() if not p['boost'])
+            snap = {k: unreal[k] for k in pos}
+        others_day = others_real + sum(unreal[k] - snap.get(k, 0.0) for k in pos)
         if not halted and day_start > 0 and others_day <= -halt * day_start:
             halted = True
-            for inst in [k for k, p in pos.items() if not p['boost']]:
+            for inst in list(pos):
                 close(inst, series[inst].c[i], 'daily_halt', i)
-            eq = cash + sum(p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items())
+            eq = cash
         peak = max(peak, eq); max_dd = max(max_dd, (peak - eq) / peak if peak > 0 else 0)
         if curve_every and (i - start) % curve_every == 0:
             curve.append((ts0[i], round(eq, 2)))
@@ -555,7 +565,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         for s in segs:
             if s['from_i'] <= i and (s.get('wind_i') is None or i < s['wind_i']):
                 b = boosted(s, i)
-                if halted and not b:
+                if halted:
                     continue
                 for inst, d, dist in ev[s['id']].get(i, ()):
                     if inst not in pos:

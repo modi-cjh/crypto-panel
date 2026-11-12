@@ -14,7 +14,7 @@ Each run, against <data>/combined/state.json:
   - when the paper position is gone, the mirrored position is closed;
   - if the exchange stop already closed a mirrored position, it is marked done and never reopened.
 Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; leverage is capped at 10x; a UTC+7 day
-loss of 8% closes everything and blocks new entries until the next day; actions `pause`, `resume`,
+loss of 10% closes everything and blocks new entries until the next day; actions `pause`, `resume`,
 `flatten` (close all and pause) and `dry-run` (log intended orders, send nothing) are available.
 Secrets come from OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE, reach curl through stdin and are never logged.
 """
@@ -38,12 +38,13 @@ from runtime_guard import entries_allowed, atomic_json
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
 RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # daily loss halt: 10 % below the day's starting equity
-EVOLVED_DAILY_HALT = .10                         # following the evolution champions: 10 % too, counted WITHOUT the leader's result
-RISK_RANGE = (.01, .05)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
-# The team leader (signals with leader=True; chosen by the user): 5 % of the whole account per trade (20 % at first: the
-# backtest of the whole account lost 64 % in a year, nearly all of it the leader's size), up to 50× leverage
-# (never more than the coin allows), outside the same-side cap and outside the daily halt.
-LEADER_RISK, LEADER_LEVERAGE = .05, 50
+EVOLVED_DAILY_HALT = .10                         # following the evolution champions: 10 %, counted on the whole account including the leader
+RISK_RANGE = (.01, .03)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range (cap 3 %)
+MAX_TRADE_RISK = .03
+# Every seat including the leader: at most 3 % of the account per trade, leverage cap 10×. The leader still uses
+# LEADER_RISK (3 %) when flagged; majors may be doubled then clamped so the result never exceeds 3 %. The leader
+# counts toward the same-direction cap and is subject to the daily-loss stop, same as everyone else.
+LEADER_RISK, LEADER_LEVERAGE = MAX_TRADE_RISK, MAX_LEVERAGE
 MARGIN_MODE = 'isolated'          # evolved mode: 'cross' (全仓) — the team shares one account and its margin, like the paper account
 MAJORS, MAJOR_FACTOR = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'), 2.0   # majors risk twice as much (execution.ACCOUNT_RULES)
 PRICE_TOLERANCE = .01             # no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
@@ -66,14 +67,15 @@ def configure_evolved(universe=None):
     coin list the evolution trades (signals.json 'instruments', the top-100 perpetuals); without it, the five majors."""
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT, MARGIN_MODE
     MARGIN_MODE = 'cross'
-    # Chosen by the user: each order risks its strategy's own risk gene (1–5 %), at most 20 % in one direction, and a
-    # 10 % daily loss (the leader's result not counted) closes the other members' positions until tomorrow. The leader: see LEADER_RISK.
+    # Each order risks its strategy's own risk gene (1–5 %, capped at 3 % after crowding and the major-coin factor),
+    # at most 20 % in one direction (the leader included), and a 10 % daily loss on the whole account closes every
+    # position until tomorrow. The leader uses LEADER_RISK (3 %) and the same 10× leverage cap as everyone else.
     INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], .20, EVOLVED_DAILY_HALT
     if isinstance(universe, list) and universe and len(set(universe)) == len(universe) and all(
             isinstance(i, str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', i) for i in universe):
         INSTRUMENTS = list(universe)
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT,
-                          leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE, margin_mode=MARGIN_MODE, majors=list(MAJORS), major_factor=MAJOR_FACTOR)
+                          leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE, max_risk=MAX_TRADE_RISK, margin_mode=MARGIN_MODE, majors=list(MAJORS), major_factor=MAJOR_FACTOR)
     return ACTIVE_PROFILE
 
 
@@ -353,11 +355,10 @@ class Mirror:
             r *= next((f for n, f in CROWD_STEPS if crowd >= n), 1.0)
             if inst in MAJORS:
                 r *= MAJOR_FACTOR
+            r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 3 %
         risk = r * self.equity
         same_risk = 0.0
         for existing_key, m in self.s['mirrored'].items():
-            if leader or m.get('leader'):          # the leader is outside the same-side cap, both ways
-                continue
             if m.get('status') != 'open' or m.get('side') != side:
                 continue
             if existing_key in self.new_order_risk:
@@ -370,7 +371,7 @@ class Mirror:
             if avg <= 0 or not m.get('stop'):
                 return self.log('skip', inst, reason='existing_risk_unknown')
             same_risk += max((avg - float(m['stop'])) * side, 0) * abs(float(held['pos'])) * self.spec(m['inst'])['ctVal']
-        if not leader and same_risk + risk > SAME_SIDE_CAP * self.equity * (1 + 1e-9):
+        if same_risk + risk > SAME_SIDE_CAP * self.equity * (1 + 1e-9):
             return self.log('skip', inst, reason='same_side_risk')
         contracts = quantize(risk / (px * dist) / sp['ctVal'], sp['lotSz'])
         if float(contracts) < sp['minSz'] or contracts <= 0:
@@ -524,14 +525,12 @@ class Mirror:
         elif action == 'flatten':
             self.s['paused'] = True; self.flatten('manual_flatten'); self.log('flatten', '-')
             return
-        # Daily halt, counted without the leader: today's change in equity minus what the leader's positions made or lost
-        # today. It closes and blocks the other members only; the leader keeps trading.
-        leader_day = float(self.s.get('leader_realized') or 0) + leader_upl - float(self.s.get('leader_upl_start') or 0)
-        others_day = self.equity - (self.s.get('day_start') or self.equity) - leader_day
-        if not self.s['halted'] and self.s.get('day_start') and others_day <= -self.s['day_start'] * DAILY_HALT:
+        # Daily halt: today's change in equity for the whole account, including the leader. It closes and blocks everyone.
+        day_pnl = self.equity - (self.s.get('day_start') or self.equity)
+        if not self.s['halted'] and self.s.get('day_start') and day_pnl <= -self.s['day_start'] * DAILY_HALT:
             self.s['halted'] = True
-            self.log('daily_halt', '-', equity=self.equity, day_start=self.s['day_start'], others_day=round(others_day, 2), leader_day=round(leader_day, 2))
-            self.flatten('daily_halt', keep_leader=True)
+            self.log('daily_halt', '-', equity=self.equity, day_start=self.s['day_start'], others_day=round(day_pnl, 2), leader_day=0.0)
+            self.flatten('daily_halt', keep_leader=False)
         paper_positions = self.paper.get('positions', {})
         # Closes and stop updates for what we mirrored.
         for key, m in self.s['mirrored'].items():
@@ -565,7 +564,7 @@ class Mirror:
             key = f"{inst}|{int(p['opened'])}"
             if key in self.s['mirrored'] or inst not in INSTRUMENTS:
                 continue
-            if self.s['halted'] and not p.get('leader'):       # halted for the day: only the leader still opens
+            if self.s['halted']:                               # halted for the day: no new entries, including the leader
                 continue
             if self.held(inst, p['side']) or any(k[0] == inst for k in self.positions):
                 self.log('skip', inst, reason='exchange_position_exists_not_ours'); self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net')

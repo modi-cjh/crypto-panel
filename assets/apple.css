@@ -192,7 +192,8 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
 
 /* ---------- desktop ---------- */
 @media(min-width:761px){
-  .header{grid-template-columns:auto auto 1fr 210px}
+  .header{grid-template-columns:auto auto 1fr auto auto}
+  .theme-toggle{grid-column:5;grid-row:1;align-self:center;margin-left:4px}
 }
 
 /* ---------- phone: compact large-title bar, tab bar at the bottom ---------- */
@@ -203,11 +204,13 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
   .header-status{display:none}
   .brand{flex:none}.brand>span:not(.brand-icon){font-size:0;line-height:1;white-space:nowrap}.brand>span:not(.brand-icon) b{font-size:19px}   /* just “MODI” on a phone */
   .brand{font-size:11px}.brand-icon{width:30px;height:30px;min-width:30px;font-size:17px;border-radius:8px}.brand-sub{display:none}
-  .pinned-balance{grid-column:2;grid-row:1;border-left:0;padding-left:0}
+  .pinned-balance{grid-column:3;grid-row:1;border-left:0;padding-left:0}
   .pinned-balance strong{font-size:19px}
   .pinned-balance small,.pinned-label{display:none}
   #pinned-daily{font-size:11px;line-height:1.35;text-align:right;white-space:normal}
-  .pinned-balance{min-width:0;max-width:62vw}
+  .pinned-balance{min-width:0;max-width:58vw}
+  .header{grid-template-columns:auto auto minmax(0,1fr)}
+  .theme-toggle{grid-column:2;grid-row:1;width:auto;margin:0;padding:4px 8px;justify-self:start;font-size:11px}
   /* the navigation becomes a tab bar fixed to the bottom of the screen */
   .header nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:auto repeat(3,1fr);gap:0;padding:6px max(10px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));
     background:var(--bar);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--sep);overflow:visible}
@@ -238,3 +241,41 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
 .okx-daily-bar.up i{background:var(--green-fill)}.okx-daily-bar.down i{background:var(--red-fill)}
 .okx-daily-val{text-align:right;display:flex;flex-direction:column;line-height:1.25}
 .okx-daily-val b{font:600 15px var(--display)}.okx-daily-val small{color:var(--faint);font-size:11px}
+
+
+/* ---------- terminal polish (champion gate + freshness + theme toggle) ---------- */
+html{--num:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
+html,body{font-variant-numeric:tabular-nums}
+.equity-number strong,#pinned-equity,#okx-total-equity,#total-equity,.pinned-pct,.okx-ret,.evo-kpis b,.evo-stats strong,.evo-metrics td,.history-metrics strong,.up,.down{font-variant-numeric:tabular-nums}
+.equity-number strong,#pinned-equity,#okx-total-equity,#total-equity,.pinned-pct,.okx-ret,.evo-kpis b,.history-metrics strong{font-family:var(--num);letter-spacing:-.4px}
+#pinned-pct{display:block;font:600 13px/1.2 var(--num);margin-top:2px}
+.pinned-balance{display:flex;flex-direction:column;align-items:flex-end;gap:0;min-width:0}
+.theme-toggle{margin-left:8px;border:0;background:var(--fill);color:var(--text);border-radius:999px;padding:6px 10px;font:500 12px var(--font);cursor:pointer}
+.theme-toggle:hover{background:var(--fill-2)}
+.status-pill{margin:8px 0 0;border-radius:999px;background:var(--fill);color:var(--muted);font-size:12px;width:max-content;max-width:100%}
+.status-pill>summary{list-style:none;cursor:pointer;padding:5px 12px;font-weight:500}
+.status-pill>summary::-webkit-details-marker{display:none}
+.status-pill>div{margin:6px 0 0;padding:10px 12px;border-radius:12px;background:var(--panel);color:var(--text);font-size:12px;line-height:1.55;max-width:min(520px,92vw);box-shadow:var(--shadow)}
+.status-pill.stale>summary{color:var(--amber);background:var(--tint-amber)}
+.status-pill.error>summary{color:var(--red);background:var(--tint-red)}
+.evo-gate{display:flex;flex-wrap:wrap;gap:6px 12px;margin:6px 0 4px;font-size:12px;font-variant-numeric:tabular-nums}
+.evo-gate span{padding:2px 0}
+.evo-gate.fail,.evo-member.gate-fail{/* reason already in red */}
+.evo-gate.pending{color:var(--muted)}
+.evo-gate-reason{margin:2px 0 0;flex:1 1 100%;font-size:12px}
+.evo-kpis{display:flex;flex-wrap:wrap;gap:8px 16px;margin:8px 0 6px;font-size:15px;color:var(--muted)}
+.evo-kpis b{color:var(--text);font-size:18px}
+.evo-updated{color:var(--muted);font-size:12px}
+.evo-updated.stale,.pill.stale{color:var(--amber)}
+.skeleton{position:relative;overflow:hidden;color:var(--muted);background:var(--fill);border-radius:10px;padding:10px 12px;min-height:2.4em}
+.skeleton::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgb(255 255 255 / .35),transparent);animation:skel 1.2s infinite}
+:root[data-theme="dark"] .skeleton::after{background:linear-gradient(90deg,transparent,rgb(255 255 255 / .08),transparent)}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .skeleton::after{background:linear-gradient(90deg,transparent,rgb(255 255 255 / .08),transparent)} }
+@keyframes skel{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+@media(prefers-reduced-motion:reduce){.skeleton::after{animation:none}}
+/* shrink the mascot so it never covers cards; default dock hides the bubble */
+#mascot{width:44px;height:44px;z-index:40}
+.companion-bot{width:44px;height:44px;border-radius:14px}
+#mascot.docked[data-side=right] .companion-bot{transform:translateX(28px) rotate(-14deg)}
+#mascot.docked[data-side=left] .companion-bot{transform:translateX(-28px) rotate(14deg)}
+.companion-bubble{max-width:min(180px,calc(100vw - 72px));font-size:12px}

@@ -6,6 +6,13 @@ import { coinIcon } from './coins.mjs';
 export const OKX_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/okx_demo/summary.json';
 export const OKX_STALE = 6 * 3600000;        // runs every 4 hours; GitHub cron can lag by an hour or more
 export const OKX_SNAPSHOT_DELAY = 5 * 3600000;
+const clockPP = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Phnom_Penh', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+export function nextPaperUpdate(now = Date.now()) {
+  const d = new Date(now), hour = Math.floor(d.getUTCHours() / 4) * 4;
+  let cand = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour, 17, 0, 0);
+  if (cand <= now) cand = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour + 4, 17, 0, 0);
+  return cand;
+}
 export const OKX_COLOR = '#06727d';
 const RECENT = 3 * 3600000;
 const DEFAULT_START = 5000;
@@ -144,9 +151,10 @@ export function accountDataNote(d,quote,now=Date.now()) {
   if(!d)return '账户快照尚未读取。';
   const age=Math.max(0,now-Date.parse(d.updated_at));
   const elapsed=age<60000?'不足 1 分钟':`${Math.floor(age/60000)} 分钟`;
-  const title=`账户快照 ${time(d.updated_at)} UTC+7 · 距今 ${elapsed}`;
+  const last=clockPP.format(Date.parse(d.updated_at)), next=clockPP.format(nextPaperUpdate(now));
+  const title=`上次更新 ${last} · 下次更新 ${next}（金边时间） · 距今 ${elapsed}`;
   const pricing=quote.live||quote.polling?'持仓按模拟行情估值；成交与余额仍以账户快照为准。':quote.freshMarks?'行情连接已断，暂用最近收到的模拟标记价估值。':quote.needsQuotes?'行情未连接，账户权益使用上次快照值；持仓报价以各行标注为准。':'当前无持仓，无需持仓行情订阅。';
-  return `${title}。${pricing}${age>OKX_SNAPSHOT_DELAY?' 后台账户快照更新延迟。':''}`;
+  return `${title}。${pricing}${age>OKX_SNAPSHOT_DELAY?' 已超过 5 小时没有更新，定时任务可能延迟。':''}`;
 }
 
 export function okxCurveSVG(d) {
