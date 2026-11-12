@@ -415,13 +415,13 @@ function renderDecisions() {
 
 function navigate() {
   routeVersion++;
-  if (location.hash === '#/paper') { location.replace('#/sim'); return; }   // the old bot's history page is gone; the OKX account lives on 模拟交易
+  if (['#/paper', '#/sim'].includes(location.hash)) { location.replace('#/'); return; }   // 账户历史 and 模拟交易 were merged into 交易室
   const hash = location.hash || '#/';
   const match = /^#\/coin\/([A-Z0-9]+-USDT-SWAP)$/.exec(hash);
-  route = match ? 'coin' : hash === '#/market' ? 'market' : hash === '#/sim' ? 'sim' : hash === '#/evolve' ? 'evolve' : 'home';
+  route = match ? 'coin' : hash === '#/market' ? 'market' : hash === '#/evolve' ? 'evolve' : 'home';
   coin = match?.[1] || homeCoin;
   candleCharts?.destroy(); candleCharts = null;
-  for (const page of ['home', 'market', 'coin', 'sim', 'evolve']) $(`${page}-page`).hidden = route !== page;
+  for (const page of ['home', 'market', 'coin', 'evolve']) $(`${page}-page`).hidden = route !== page;
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === (route === 'coin' ? 'market' : route); a.classList.toggle('active', active); if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   $('home-price-slot').append($('price-panel'));
   $('home-analysis-slot').append($('analysis-content'));
@@ -683,7 +683,7 @@ async function refreshSim(){
   // One ticket per new exchange action, played one after another.
   fresh.map(a=>tradeBurst(a,lastUpl)).filter(Boolean).forEach((b,i)=>setTimeout(()=>mascot.burst(b),i*3400));
   updateCompanionWork();
- }catch{setError('sim-account','账户快照暂时读取失败，保留上次数据');if(route==='sim'){$('sim-error').hidden=false;$('sim-error').textContent='OKX 模拟账户数据暂时读取失败，保留已有数据，稍后自动重试。';}}
+ }catch{setError('sim-account','账户快照暂时读取失败，保留上次数据');if(route==='home'){$('sim-error').hidden=false;$('sim-error').textContent='OKX 模拟账户数据暂时读取失败，保留已有数据，稍后自动重试。';}}
  finally{simBusy=false;}
 }
 // The OKX demo account takes over the home page while the original bot is paused, stopped or stale;
@@ -856,22 +856,10 @@ function renderSim(){
   setText($('okx-total-updated'),`更新 ${time(simData.updated_at)} UTC+7`);statusPill($('home-okx-status'),simData);
   setHTML($('home-okx-curve'),okxCurveSVG(simData));
   renderOkxPositions('home-okx-positions',false);setText($('home-okx-pos-count'),String(simData.positions.length));
-  setHTML($('home-okx-actions'),okxActionsMarkup(simData,6,{kind:'trades'}));setHTML($('home-okx-log'),okxActionsMarkup(simData,10,{kind:'system'}));
+  setHTML($('home-okx-actions'),okxActionsMarkup(simData,15,{kind:'trades'}));setHTML($('home-okx-log'),okxActionsMarkup(simData,30,{kind:'system'}));
+  setHTML($('okx-compare'),mirrorCompareMarkup(simData,evolveData));
  }
  renderPinnedBalance();
- if(route!=='sim')return;
- if(!simData){$('okx-metrics').innerHTML='<p class="empty">正在读取 OKX 模拟账户…</p>';return;}
- const t=okxTotals(simData,okxMarks);
- setText($('sim-updated'),`更新 ${time(simData.updated_at)} UTC+7`);statusPill($('okx-status'),simData);
- setHTML($('okx-metrics'),`<div class="history-metrics">${[['权益 USDT',num(t.equity)],['累计收益',`${signed(t.ret)}%`,tone(t.ret)],['今日盈亏',Number.isFinite(t.day)?`${signed(t.day)} USDT`:'—',tone(t.day)],
-   ['可用 USDT',num(Number(simData.available))],['持仓',`${t.positions}`],['已平仓',`${t.trades} 笔`]].map(([k,v,c=''])=>`<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('')}</div>`);
- setText($('okx-start'),`起始 ${num(okxStart(simData))} USDT`);
- setHTML($('okx-curve'),okxCurveSVG(simData));
- renderOkxPositions('okx-positions',simData.positions.length<=3);   // a few positions: show the details; many: collapsed, tap to open
- setText($('okx-pos-count'),String(simData.positions.length));
- setHTML($('okx-compare'),mirrorCompareMarkup(simData,evolveData));
- setHTML($('okx-outlier'),okxOutlierNote(okxOutlier(simData,t)));$('okx-outlier').hidden=!okxOutlier(simData,t);
- setHTML($('okx-actions'),okxActionsMarkup(simData,30,{kind:'trades'}));setHTML($('okx-log'),okxActionsMarkup(simData,30,{kind:'system'}));
 }
 document.addEventListener('visibilitychange',()=>{
  if(document.hidden){quoteStream?.stop();candleStream?.stop();quoteStreamKey='';candleStreamKey='';syncOkxMarks();}

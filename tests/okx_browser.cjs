@@ -53,7 +53,7 @@ let feed = {
   assert.match(await page.locator('#home-okx-positions summary').innerText(), /BTC[\s\S]*多 5×[\s\S]*\+12\.50 USDT/);
   // The notices collapse into one line that expands on tap.
   assert.match(await page.locator('[data-notes-summary]').first().innerText(), /快照 .*分钟前|快照 刚刚/);
-  assert.equal(await page.locator('#home-sim [data-stop-demo]').count(), 0);            // stop control lives on the detail page
+  assert.equal(await page.locator('#home-sim [data-stop-demo]').count(), 1);            // stop control is on 交易室 (模拟交易 was merged in)
   assert.equal(paperRequests, 0, 'the paper account feed is no longer read');
   // With prices unchanged (OKX is blocked here) the equity numbers must not animate on each refresh.
   await page.evaluate(() => { window.__rolls = 0; for (const id of ['pinned-equity', 'okx-total-equity'])
@@ -88,22 +88,18 @@ let feed = {
   await page.locator('#legacy-toggle').click();
   assert.equal(await page.locator('#home-page > .execution-panel').isVisible(), true);   // original bot still reachable
   await page.locator('#legacy-toggle').click();
-  // The old bot's 账户历史 page is gone: no nav link, and old #/paper links land on 模拟交易.
-  assert.equal(await page.locator('[data-nav="paper"], #paper-page').count(), 0);
-  await page.evaluate(() => { location.hash = '#/paper'; });
-  await page.waitForFunction(() => location.hash === '#/sim');
-  await page.waitForSelector('#sim-page:not([hidden]) #okx-metrics .history-metrics');
-  assert.equal(await page.locator('[data-nav="sim"]').getAttribute('aria-current'), 'page');
-  const metrics = await page.locator('#okx-metrics').innerText();
-  assert.match(metrics, /5,01\d\.\d\d/);   // live demo mark while fresh, else the recorded equity
-  assert.match(metrics, /已平仓\s*1 笔/);
-  assert.equal(await page.locator('#okx-curve polyline').count(), 1);
-  assert.match(await page.locator('#okx-start').innerText(), /起始 5,000\.00/);
-  assert.equal(await page.locator('#okx-positions .sim-position').count(), 1);
-  assert.equal(await page.locator('#okx-actions li').count(), 1);                      // the open; the skip is in the run log
-  assert.equal(await page.locator('#okx-log li').count(), 1);
-  assert.equal(await page.locator('#okx-positions details[open]').count(), 1);          // detail page expands positions
-  assert.equal(await page.locator('#sim-page [data-stop-demo]').count(), 1);
+  // 账户历史 and 模拟交易 are both merged into 交易室: no nav link for either, and old links land on the home page.
+  assert.equal(await page.locator('[data-nav="paper"], #paper-page, [data-nav="sim"], #sim-page').count(), 0);
+  for (const old of ['#/paper', '#/sim']) {
+    await page.evaluate(h => { location.hash = h; }, old);
+    await page.waitForFunction(() => location.hash === '#/');
+  }
+  await page.waitForSelector('#home-page:not([hidden]) #home-sim:not([hidden])');
+  assert.equal(await page.locator('[data-nav="home"]').getAttribute('aria-current'), 'page');
+  assert.match(await page.locator('#okx-total-ret').innerText(), /已平仓 1 笔/);
+  assert.match(await page.locator('#okx-compare').innerText(), /纸面|等待纸面账户/);            // 跟单对照 now on 交易室
+  assert.equal(await page.locator('#home-page [data-stop-demo]').count(), 1);                  // so is 停止交易
+  assert.match(await page.locator('#home-page .panel-caption').first().innerText(), /规则：/);
   for (const width of [320, 360, 390]) {
     await page.setViewportSize({ width, height: 844 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `overflow at ${width}`);
@@ -135,7 +131,7 @@ let feed = {
   assert.match(await page.locator('#mascot-ticket').innerText(), /BTC 止盈触发 \+18\.00 U/);
   await page.waitForFunction(() => /^(等信号|扫描信号)/.test(document.querySelector('#mascot-status').textContent), null, { timeout: 8000 });
   await page.waitForFunction(() => document.querySelector('#toasts').textContent.includes('OKX 模拟 · BTC 交易所止损 / 止盈触发'));
-  assert.match(await page.locator('#okx-positions').innerText(), /当前没有持仓/);
+  assert.match(await page.locator('#home-okx-positions').innerText(), /当前没有持仓/);
   await page.locator('#mascot-touch').click(); await page.waitForSelector('#mascot-drawer[open]');
   assert.match(await page.locator('#companion-panel-status').innerText(), /账户权益/);
   assert.match(await page.locator('.companion-accounts').innerText(), /OKX 模拟账户/);

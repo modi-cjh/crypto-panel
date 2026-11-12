@@ -208,12 +208,13 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
   .pinned-balance small,.pinned-label{display:none}
   #pinned-daily{font-size:11px}
   /* the navigation becomes a tab bar fixed to the bottom of the screen */
-  .header nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:repeat(4,1fr) auto;gap:0;padding:6px max(10px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));
+  .header nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:auto repeat(3,1fr);gap:0;padding:6px max(10px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));
     background:var(--bar);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--sep);overflow:visible}
   .header nav>a{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;font-weight:500;padding:4px 0;border-radius:0;background:none;color:var(--faint);letter-spacing:0}
   .header nav>a svg{display:block;width:24px;height:24px;fill:currentColor}
   .header nav>a.active{color:var(--accent);background:none}
-  .header nav .connection{margin:0;padding:0 6px;align-self:center}
+  /* the connection status is the first, narrow cell of the tab bar: on the right the floating companion docks over it */
+  .header nav .connection{order:-1;margin:0;padding:6px 10px 6px 4px;align-self:center}
   .header nav .connection #connection-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   main{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
   footer{padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}
