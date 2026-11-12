@@ -24,7 +24,8 @@ GENES = {
     'target_rr': ('float', 0.0, 6.0),    # target as multiple of stop distance; < .5 means no target
     'max_hold': ('int', 4, 240),         # bars of the genome's timeframe (capped at MAX_HOLD_H hours)
     'trail': ('choice', [0, 1], None),   # 1: the stop trails the best price at the stop distance after every bar
-    'risk': ('float', .01, .05),         # equity at risk per trade, chosen by the strategy itself (2–5 %)
+    'risk': ('float', .02, .10),         # equity at risk per trade, chosen by the strategy itself (2–10 %)
+    'leverage': ('int', 1, 100),         # isolated leverage the strategy wants; actual leverage may be lowered so the stop sits before liquidation
     'vol_min': ('float', .3, 1.2),       # trade only when ATR% ÷ its baseline is inside [vol_min, vol_max]
     'vol_max': ('float', 1.0, 4.0),
 }
@@ -32,12 +33,14 @@ DECIMALS = {'vol_mult': 2, 'rs_th': 3, 'threshold': 2, 'expand': 2, 'stop_atr': 
 
 
 TF_NAMES = {1: '1 小时', 4: '4 小时', 24: '日线'}
-DEFAULTS = {'tf': 1, 'trail': 0, 'vol_mult': 3.0, 'rs_th': .1}
+# Genomes saved before a gene existed get these defaults (1H, no trailing, 10× leverage — the old cap).
+DEFAULTS = {'tf': 1, 'trail': 0, 'vol_mult': 3.0, 'rs_th': .1, 'leverage': 10}
 
 
 def fix(g):
     """Clamp to bounds, keep slow > fast, vol_max > vol_min, and treat tiny targets as 'no target'.
-    Genomes saved before a gene existed get its neutral default (1H, no trailing), so they behave exactly as before."""
+    Genomes saved before a gene existed get its neutral default (1H, no trailing, 10× leverage), so they
+    behave as before except out-of-range risk/leverage is clamped into the current 2–10 % / 1–100× bands."""
     for k, v in DEFAULTS.items():
         g.setdefault(k, v)
     for k, (kind, lo, hi) in GENES.items():
@@ -96,4 +99,4 @@ def describe(g):
     tf = TF_NAMES[g.get('tf', 1)]
     stop = '移动止损' if g.get('trail') else '止损'
     return (f"{SPECIES_NAMES[sp]} · {tf} · {core} · {side} · {stop} {g['stop_atr']}×ATR · {tgt} · "
-            f"最长 {g['max_hold']} 根 · 风险 {g['risk'] * 100:.1f}%")
+            f"最长 {g['max_hold']} 根 · 风险 {g['risk'] * 100:.1f}% · 杠杆 {int(g.get('leverage', 10))}×")

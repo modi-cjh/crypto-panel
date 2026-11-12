@@ -1,23 +1,50 @@
-"""Paper trading for the champion team: ONE shared account, cross margin (全仓), run by execution.simulate_account().
+"""Paper trading for the champion team: ONE shared account, run by execution.simulate_account().
 
-The team's strategies all trade the same account: every position is sized on the whole account's equity (risk gene × equity,
-capped at 3 %; an entry-gated leader also 3 %, leverage cap 10×), margin is shared, one position per coin, and the same-side cap and the daily halt are the OKX mirror's
-(tools/okx_demo_trader.py). Each run replays the account from its start bar with the full seat history, so the result is
-exactly what the engine produces on live bars:
+The team's strategies all trade the same account: every position is sized on the whole account's equity (the strategy's
+risk gene, 2–10 %, then major-coin doubling and crowding, capped at 10 %). Every seat, including the leader, uses its
+own risk and leverage genes (leverage 1–100×, reduced so the stop sits before the isolated liquidation price). Margin is
+shared, one position per coin; a liquidated position loses only its isolated margin. The same-side cap (20 %) and the
+daily halt (10 %) still apply to everyone, including the leader. The OKX demo mirror (tools/okx_demo_trader.py) currently
+keeps its own 3 % / 10× caps until demo/live limits are decided separately.
+Each run replays the account from its start bar with the full seat history, so the result is exactly what the engine
+produces on live bars:
   account = dict(from_ts, start_equity, segs=[dict(id, champion, slot, genes, species, from_ts, wind_ts, boosts, reason)])
 - a member that loses its seat gets wind_ts: no new signals, its open positions run to their own exits;
-- `boosts` are the [from_ts, to_ts] ranges in which the member held the bigger size (state['leader']: the best member that
-  passed both the out-of-sample and the final gate; nobody when no member qualifies).
+- `boosts` are the [from_ts, to_ts] ranges in which the member was the team leader (state['leader']: the best member that
+  passed the full entry gate — out-of-sample and final gate, defense streak ≥ 5, combined-OOS drawdown ≤ 30 %; nobody
+  when no member qualifies). The title only decides signal priority, not a bigger size.
 Before this, the account was five separate slots of 1/5 each; that history (curve, trades, seat changes) is kept as
 paper['legacy'] and the shared account starts from the slots' total equity. The slot code below `_legacy_update` only
 serves that one-time conversion.
 """
-from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS
+from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE
 from evolution import TEAM_SIZE, entry_gate
+from genome import fix
 
 HOUR = 3600_000
+# Caps (not a fixed leader size): published on the dashboard and used as leverage/risk ceilings.
 LEADER_RISK, LEADER_LEVERAGE = ACCOUNT_RULES['leader_risk'], ACCOUNT_RULES['leader_lever']
 _CTX = dict(extra={})        # per update(): {slot index: {ts: equity of the other slots}} for boosted segments
+
+
+def _size(genes, leader=False):
+    """Per-trade risk and requested leverage from the genome (clamped). The leader flag is for priority only."""
+    g = fix(dict(genes))
+    return dict(risk=min(g['risk'], ACCOUNT_RULES['max_risk']),
+                leverage=int(g.get('leverage', DEFAULT_LEVERAGE)),
+                **({'leader': True} if leader else {}))
+
+
+def _leader_view(leader, nodes=None):
+    """Dashboard card for the current leader: its gene values, plus the account caps."""
+    if not leader:
+        return None
+    genes = (nodes or {}).get(leader, {}).get('genes') or {}
+    g = fix(dict(genes)) if genes else None
+    return dict(id=leader,
+                risk=(min(g['risk'], ACCOUNT_RULES['max_risk']) if g else ACCOUNT_RULES['max_risk']),
+                leverage=int(g.get('leverage', DEFAULT_LEVERAGE) if g else ACCOUNT_RULES['leader_lever']),
+                max_risk=ACCOUNT_RULES['max_risk'], max_leverage=ACCOUNT_RULES['leader_lever'])
 
 
 def _index(series, ts):
@@ -33,9 +60,9 @@ def run_segment(seg, genes, series, close_at_end=False, wind_ts=None):
     start = _index(series, seg['from_ts'])
     if start >= s.n:
         return dict(equity=seg['start_equity'], trades=[], curve=[(seg['from_ts'], seg['start_equity'])], positions=[], pending={}, metrics=None)
-    boost = dict(risk=LEADER_RISK, lever_cap=LEADER_LEVERAGE, extra_equity=_CTX['extra'].get(seg.get('slot'), {})) if seg.get('boost') else {}
-    return simulate(genes, series, start, s.n, equity=seg['start_equity'], close_at_end=close_at_end, curve_every=1,
-                    stop_entries_at=_index(series, wind_ts) if wind_ts is not None else None, **boost)
+    extra = dict(extra_equity=_CTX['extra'].get(seg.get('slot'), {})) if seg.get('boost') else {}
+    return simulate(fix(dict(genes)), series, start, s.n, equity=seg['start_equity'], close_at_end=close_at_end, curve_every=1,
+                    stop_entries_at=_index(series, wind_ts) if wind_ts is not None else None, **extra)
 
 
 def _others_equity(slots, series):
@@ -131,7 +158,7 @@ def _signal_from_pending(inst, d, genes, series, last_ts, member):
     sr = series[inst]
     dist, px, rr = stop_distance(genes, sr, sr.n - 1), sr.c[-1], genes['target_rr']
     return dict(side=d, entry=px, stop=px - d * dist, tp=px + d * rr * dist if rr > 0 else None, opened=last_ts + HOUR,
-                strategy='evolved', leverage=10, champion=member, pending=True)
+                strategy='evolved', leverage=int(fix(dict(genes)).get('leverage', DEFAULT_LEVERAGE)), champion=member, pending=True)
 
 
 def _sum_curves(curves, starts):
@@ -160,14 +187,14 @@ def _legacy_update(state, series, changes):
         slot = slots[slot_i]
         equity = _retire(slot, series, last_ts) if slot['segments'] and slot['segments'][-1]['to_ts'] is None else _idle_equity(slot)
         node = nodes[new]
-        slot['segments'].append(dict(champion=new, slot=slot_i, genes=node['genes'], species=node['species'], from_ts=last_ts, reason=reason,
+        slot['segments'].append(dict(champion=new, slot=slot_i, genes=fix(node['genes']), species=node['species'], from_ts=last_ts, reason=reason,
                                      start_equity=round(equity, 2), to_ts=None, end_equity=None, boost=new == leader))
     for slot_i, m in enumerate(team):        # a seated member whose slot has no running segment (e.g. after migration) starts one
         slot = slots[slot_i]
         if not (slot['segments'] and slot['segments'][-1]['to_ts'] is None and slot['segments'][-1]['champion'] == m['id']):
             equity = _retire(slot, series, last_ts) if slot['segments'] and slot['segments'][-1]['to_ts'] is None else _idle_equity(slot)
             node = nodes[m['id']]
-            slot['segments'].append(dict(champion=m['id'], slot=slot_i, genes=node['genes'], species=node['species'], from_ts=last_ts,
+            slot['segments'].append(dict(champion=m['id'], slot=slot_i, genes=fix(node['genes']), species=node['species'], from_ts=last_ts,
                                          reason='carry', start_equity=round(equity, 2), to_ts=None, end_equity=None, boost=m['id'] == leader))
     for slot_i, m in enumerate(team):        # the leader title moved: the member continues in a new segment with the other size
         slot, seg = slots[slot_i], slots[slot_i]['segments'][-1]
@@ -211,7 +238,7 @@ def _legacy_update(state, series, changes):
     # 'rank' (1 = leader) also orders the OKX mirror's entries when its same-side risk cap fills up.
     for r, seg, res in sorted(order, key=lambda x: x[0]):
         member = seg['champion']
-        size = dict(risk=LEADER_RISK, leverage=LEADER_LEVERAGE, leader=True) if seg.get('boost') else dict(risk=seg['genes']['risk'], leverage=10)
+        size = _size(seg['genes'], leader=bool(seg.get('boost')))
         for p in res['positions']:
             signals.setdefault(p['inst'], dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], opened=p['opened'],
                                                strategy='evolved', champion=member, rank=r + 1, **size))
@@ -223,7 +250,7 @@ def _legacy_update(state, series, changes):
     trades = sorted(trades + paper.get('legacy_trades', []), key=lambda t: t['closed'], reverse=True)
     view = dict(equity=equity, start_equity=paper['start_equity'], ret=round((equity / paper['start_equity'] - 1) * 100, 3),
                 curve=curve[-400:], trades=trades[:50], positions=positions, pending=pending,
-                leader=dict(id=leader, risk=LEADER_RISK, leverage=LEADER_LEVERAGE) if leader else None,
+                leader=_leader_view(leader, nodes) if leader else None,
                 members=sorted(members, key=lambda m: m['rank']), segments=(segments + paper.get('legacy_segments', [])[::-1])[:30])
     return view, signals
 
@@ -266,7 +293,7 @@ def update(state, series, changes, price_off=None):
         if cur:
             wind(cur)
         acc['next'] += 1
-        acc['segs'].append(dict(id=f"a{acc['next']}", champion=nid, slot=slot_i, genes=nodes[nid]['genes'], species=nodes[nid]['species'],
+        acc['segs'].append(dict(id=f"a{acc['next']}", champion=nid, slot=slot_i, genes=fix(nodes[nid]['genes']), species=nodes[nid]['species'],
                                 from_ts=last_ts, wind_ts=None, boosts=[], reason=reason))
 
     for slot_i, old, new, reason in changes:
@@ -293,7 +320,7 @@ def update(state, series, changes, price_off=None):
             elif g['champion'] != leader and is_leader:
                 g['boosts'][-1][1] = last_ts
     idx = lambda ts: _index(series, ts)
-    segs = [dict(id=g['id'], genes=g['genes'], from_i=idx(g['from_ts']), wind_i=idx(g['wind_ts']) if g['wind_ts'] is not None else None,
+    segs = [dict(id=g['id'], genes=fix(g['genes']), from_i=idx(g['from_ts']), wind_i=idx(g['wind_ts']) if g['wind_ts'] is not None else None,
                  boosts=[(idx(a), idx(b) if b is not None else None) for a, b in g['boosts']]) for g in acc['segs']]
     blocked = {inst: [(idx(a), idx(b) if b is not None else None) for a, b in rs] for inst, rs in (price_off or {}).items()}
     off_now = {inst for inst, rs in (price_off or {}).items() if rs and rs[-1][1] is None}
@@ -325,14 +352,14 @@ def update(state, series, changes, price_off=None):
                                 entry_gate=entry_gate(nodes[g['champion']], state=state), trading=g['wind_ts'] is None and allowed(g['champion'])))
     # Mirror signals: one per coin (the account holds one position per coin). 'rank' orders the mirror's entries.
     signals = {}
-    size = lambda boost, risk: dict(risk=LEADER_RISK, leverage=LEADER_LEVERAGE, leader=True) if boost else dict(risk=risk, leverage=ACCOUNT_RULES['lever'])
     for p in res['positions']:
         signals[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], opened=p['opened'], strategy='evolved',
-                                  champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1, **size(p['boost'], by[p['seg']]['genes']['risk']))   # the base risk: the mirror applies the majors / crowding steps itself
+                                  champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1,
+                                  **_size(by[p['seg']]['genes'], leader=p['boost']))   # the base risk: the mirror applies the majors / crowding steps itself
     for sid, inst, d, dist, b in queue:
         g = by[sid]
         signals.setdefault(inst, dict(_signal_from_pending(inst, d, g['genes'], series, last_ts, g['champion']), rank=rank.get(g['champion'], 99) + 1,
-                                      **size(b, g['genes']['risk'])))
+                                      **_size(g['genes'], leader=b)))
     legacy = paper.get('legacy') or {}
     seats = [dict(champion=g['champion'], slot=g['slot'], species=g['species'], reason=g['reason'], from_ts=g['from_ts'], to_ts=g['wind_ts']) for g in acc['segs']]
     seats += [dict(champion=g['champion'], slot=g['slot'], species=g['species'], reason='leader', from_ts=a, to_ts=b) for g in acc['segs'] for a, b in g['boosts']]
@@ -342,13 +369,15 @@ def update(state, series, changes, price_off=None):
                 price_off=sorted(off_now), mode='cross', account_from=acc['from_ts'], account_start=acc['start_equity'], halted=res['halted'],
                 rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
                            leader_risk=ACCOUNT_RULES['leader_risk'], leader_lever=ACCOUNT_RULES['leader_lever'],
-                           max_risk=ACCOUNT_RULES['max_risk'], majors=list(ACCOUNT_RULES['majors']), major_factor=ACCOUNT_RULES['major_factor']),
+                           max_risk=ACCOUNT_RULES['max_risk'], min_risk=ACCOUNT_RULES.get('min_risk', .02),
+                           min_lever=ACCOUNT_RULES.get('min_lever', 1),
+                           majors=list(ACCOUNT_RULES['majors']), major_factor=ACCOUNT_RULES['major_factor']),
                 curve=([p for p in legacy.get('curve') or [] if p[0] < acc['from_ts']] + [list(p) for p in res['curve']])[-400:],
                 # Recent trades and their counts are the current shared account only.
                 # paper['legacy']['trades'] (old 5-slot book, including 'switch' closes before
                 # 2026-11-11T04:00Z) stay in state for history but are not published on the dashboard.
                 trades=sorted(trades, key=lambda t: t['closed'], reverse=True)[:50],
                 positions=positions, pending=pending,
-                leader=dict(id=leader, risk=LEADER_RISK, leverage=LEADER_LEVERAGE) if leader else None,
+                leader=_leader_view(leader, nodes) if leader else None,
                 members=sorted(members, key=lambda m: m['rank']), segments=(seats + (legacy.get('segments') or []))[:30])
     return view, signals
