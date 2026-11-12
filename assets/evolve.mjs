@@ -2,7 +2,7 @@
 export const EVOLVE_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/evolve/dashboard.json';
 // Schema 2 keeps lineage nodes slim; genes, summary and curves of every node are in nodes.json, loaded when a node is opened.
 export const EVOLVE_NODES_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/evolve/nodes.json';
-export const SPECIES_COLORS = { momentum: '#2f6fb0', mean_revert: '#7b4bd1', vol_breakout: '#d98200', trend: '#1f9d63', vol_surge: '#c2417a', rel_strength: '#138a9c' };
+export const SPECIES_COLORS = { momentum: '#5baaff', mean_revert: '#b58aff', vol_breakout: '#ffc36e', trend: '#4fdfb0', vol_surge: '#f783b7', rel_strength: '#58d9ed' };
 const SPECIES_ORDER = ['momentum', 'mean_revert', 'vol_breakout', 'trend', 'vol_surge', 'rel_strength'];
 const finite = Number.isFinite;
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -232,7 +232,7 @@ export function homeCardMarkup(d) {
   const lead = d.paper?.leader?.id && (d.team || []).find(t => t.id === d.paper.leader.id);
   const c = lead || d.champion, last = d.history.at(-1);
   const n = teamIds(d).length;
-  return `<span class="evo-home-gen">第 ${d.generation} 代</span><span class="evo-home-main">${c ? `冠军组合 ${n} 个 · ${lead ? '第一名' : '领头'} ${esc(c.id)} ${esc(speciesName(d, c.species))} · 样本外 <b class="${tone(c.test.ret)}">${signed(c.test.ret, 1)}%</b>` : '等待第一个样本外合格的策略'}</span>` +
+  return `<span class="module-label">02 / 自主进化引擎 <span class="module-arrow">↗</span></span><span class="evo-orbit" aria-hidden="true"><i></i><i></i><i></i><b>✦</b></span><span class="evo-home-gen">第 ${d.generation} 代</span><span class="evo-home-main">${c ? `冠军组合 ${n} 个 · ${lead ? '第一名' : '领头'} ${esc(c.id)} ${esc(speciesName(d, c.species))} · 样本外 <b class="${tone(c.test.ret)}">${signed(c.test.ret, 1)}%</b>` : '等待第一个样本外合格的策略'}</span>` +
     `<span class="muted">本代合格 ${last ? last.qualified : '—'} / ${d.stats.population} · 纸面 ${d.paper ? signed(d.paper.ret, 2) + '%' : '—'} · 查看进化 →</span>`;
 }
 
