@@ -1,6 +1,6 @@
 {
- "day": "2026-11-12",
- "day_start": 6878.296020913912,
+ "day": "2026-11-13",
+ "day_start": 7199.3257722222925,
  "halted": false,
  "history": [
   [
@@ -446,6 +446,10 @@
   [
    1794489998966,
    7191.02
+  ],
+  [
+   1794503691664,
+   7194.32
   ]
  ],
  "mirrored": {
@@ -789,7 +793,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "254",
-   "stop": 0.5035269058416524,
+   "stop": 0.4926269058416525,
    "target": 0.2825758142275384,
    "leverage": 5,
    "entry": 0.4572,
@@ -854,7 +858,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "7120",
-   "stop": 0.25872577700713234,
+   "stop": 0.2553257770071324,
    "target": 0.17363040208074262,
    "leverage": 7,
    "entry": 0.2419,
@@ -864,7 +868,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668701434597376",
-   "last_upl": 54.41390000000023
+   "last_upl": 55.12590000000015
   },
   "LPT-USDT-SWAP|1794441600000": {
    "inst": "LPT-USDT-SWAP",
@@ -872,7 +876,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "19407",
-   "stop": 1.3142531924294842,
+   "stop": 1.2982531924294842,
    "target": 0.9988163804403928,
    "leverage": 11,
    "entry": 1.262,
@@ -882,7 +886,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668738680016896",
-   "last_upl": 69.86980000000024
+   "last_upl": 83.45470000000005
   },
   "XTZ-USDT-SWAP|1794441600000": {
    "inst": "XTZ-USDT-SWAP",
@@ -947,7 +951,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "222",
-   "stop": 9.157670248211769,
+   "stop": 9.053670248211768,
    "target": 3.8823126936479917,
    "leverage": 3,
    "entry": 7.476,
@@ -982,7 +986,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "504",
-   "stop": 0.050536888427798014,
+   "stop": 0.050196888427798014,
    "target": 0.04324468988023428,
    "leverage": 10,
    "entry": 0.04947,
@@ -1006,11 +1010,13 @@
    "entry": 656.1,
    "clOrdId": "evbnb1794484800",
    "opened_at": 1794489998966,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
    "champion": "s13518",
-   "ordId": "4093224697822957568"
+   "ordId": "4093224697822957568",
+   "closed_reason": "exchange_stop_or_target",
+   "realized_pnl": 5.867758
   },
   "AVAX-USDT-SWAP|1794481200000": {
    "inst": "AVAX-USDT-SWAP",
@@ -1029,6 +1035,60 @@
    "mgnMode": "cross",
    "champion": "s13518",
    "ordId": "4093224722787454976"
+  },
+  "ETC-USDT-SWAP|1794492000000": {
+   "inst": "ETC-USDT-SWAP",
+   "side": 1,
+   "posSide": "long",
+   "strategy": "evolved",
+   "contracts": "70.959",
+   "stop": 6.2903143716843415,
+   "target": 6.76099573012202,
+   "leverage": 10,
+   "entry": 6.547,
+   "clOrdId": "evetc1794492000",
+   "opened_at": 1794503691664,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "isolated",
+   "champion": "s13518",
+   "ordId": "4093684206274068480"
+  },
+  "BTC-USDT-SWAP|1794499200000": {
+   "inst": "BTC-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "1.99",
+   "stop": 75295.27576665788,
+   "target": null,
+   "leverage": 10,
+   "entry": 71693.2,
+   "clOrdId": "evbtc1794499200",
+   "opened_at": 1794503691664,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "isolated",
+   "champion": "s13164",
+   "ordId": "4093684304085237760"
+  },
+  "DOGE-USDT-SWAP|1794499200000": {
+   "inst": "DOGE-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "13.66",
+   "stop": 0.07089946440569317,
+   "target": null,
+   "leverage": 10,
+   "entry": 0.06563,
+   "clOrdId": "evdoge1794499200",
+   "opened_at": 1794503691664,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "isolated",
+   "champion": "s13164",
+   "ordId": "4093684339183173632"
   }
  },
  "paused": false,
@@ -1117,6 +1177,6 @@
   "inst": "XRP-USDT-SWAP",
   "pnl": 2878.799155673374
  },
- "leader_realized": 25.577890000002988,
- "leader_upl_start": 0.0
+ "leader_realized": 0.0,
+ "leader_upl_start": 138.5806000000002
 }
