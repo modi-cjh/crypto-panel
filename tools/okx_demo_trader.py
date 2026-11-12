@@ -54,7 +54,7 @@ HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point pe
 OPEN_WINDOW = 5 * 3600_000        # paper entries at most this old are mirrored as they are (runs are 4 h apart, plus delay)
 LATE_BAND = (.5, 1.5)             # older entries are still followed while the price is within this band of the paper stop distance
 MIN_STOP_DIST = .002              # skip entries whose stop is already too close to the current price
-AMEND_TOLERANCE = .001            # amend the exchange stop when the paper stop moved more than 0.1%
+AMEND_TOLERANCE = .003            # amend the exchange stop when the paper stop moved more than 0.3% (0.1% logged a move every run)
 UTC7 = timezone(timedelta(hours=7))
 TAG = {'mean_reversion': 'mr', 'breakout_long': 'bl', 'breakout_daily': 'bd', 'evolved': 'ev'}
 EVOLVED_INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -396,7 +396,7 @@ class Mirror:
         if not ok(r):
             return self.log('error', inst, step='order', detail=first_error(r), size=fmt(contracts))
         self.s['mirrored'][key] = dict(inst=inst, side=side, posSide=pos_side or 'net', strategy=p.get('strategy'), contracts=fmt(contracts),
-                                       stop=p['stop'], target=p.get('tp'), leverage=lever, entry=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader, mgnMode=MARGIN_MODE,
+                                       stop=p['stop'], target=p.get('tp'), leverage=lever, entry=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader, mgnMode=MARGIN_MODE, champion=p.get('champion'),
                                        ordId=(r.get('data') or [{}])[0].get('ordId'))
         self.new_order_risk[key] = float(contracts) * sp['ctVal'] * abs(px - p['stop'])
         self.available -= margin

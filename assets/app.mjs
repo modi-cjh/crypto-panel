@@ -500,7 +500,8 @@ function renderPinnedSim(){
   const t=okxTotals(simData,okxMarks),stale=Date.now()-Date.parse(simData.updated_at)>OKX_STALE;
   $('pinned-label-text').textContent='OKX 模拟权益';$('pinned-mode').textContent='交易所模拟';
   rollNumber($('pinned-equity'),t.equity,EQUITY_ROLL_STEP);
-  $('pinned-daily').textContent=`今日 ${Number.isFinite(t.day)?signed(t.day):'—'} · 累计 ${signed(t.ret)}%${stale?' · 延迟':''}`;$('pinned-daily').className=tone(Number.isFinite(t.day)?t.day:t.ret);
+  const odd=okxOutlier(simData,t);   // one outsized trade: show the return without it, as the home card explains
+  $('pinned-daily').textContent=`今日 ${Number.isFinite(t.day)?signed(t.day):'—'} · ${odd?`累计 ${signed(odd.retWithout)}%（扣单笔 ${odd.inst.split('-')[0]}）`:`累计 ${signed(t.ret)}%`}${stale?' · 延迟':''}`;$('pinned-daily').className=tone(Number.isFinite(t.day)?t.day:t.ret);
   $('pinned-source').textContent='OKX 模拟交易 · 约每 4 小时更新';
   $('pinned-time').textContent=`${stale?'延迟 · ':''}${time(simData.updated_at)} UTC+7`;$('pinned-time').className=stale?'stale':'';
 }
@@ -735,7 +736,8 @@ const statusPill=(el,d)=>{const st=okxStatus(d),cls=`pill okx-pill ${st.cls}`;if
 // Prices tick several times a second. When the same positions are listed, patch only the parts whose text
 // changed (PnL, details) so icons and rows stay put instead of the whole list flashing; rebuild on open / close.
 function renderOkxPositions(id,openByDefault){
- const box=$(id),html=okxPositionsMarkup(simData,okxMarks,Date.now(),{open:openByDefault});
+ const owners=Object.fromEntries((evolveData?.paper?.positions||[]).map(x=>[x.inst,{champion:x.champion,boost:x.boost}]));   // which strategy holds each coin on paper
+ const box=$(id),html=okxPositionsMarkup(simData,okxMarks,Date.now(),{open:openByDefault,owners});
  const tpl=document.createElement('template');tpl.innerHTML=html;
  const next=[...tpl.content.querySelectorAll('details.okx-pos')],cur=[...box.querySelectorAll('details.okx-pos')];
  if(next.length && next.length===cur.length && next.every((n,i)=>n.dataset.inst===cur[i].dataset.inst && n.className===cur[i].className)){
@@ -755,9 +757,9 @@ function retLine(t){
 const PROFILE_SHORT={aggressive:'激进档',volume_test:'增量测试档',standard:'标准档',evolved:'进化冠军'};
 function notesSummary(d,quote,now=Date.now()){
  if(!d)return {text:'账户快照读取中…',warn:false};
- const age=Math.max(0,now-Date.parse(d.updated_at)),mins=Math.floor(age/60000),late=age>OKX_STALE/2;
- const p=d.execution_profile,risk=Number.isFinite(p?.risk)?` ${(p.risk*100).toFixed(0)}%`:'';
- const parts=[`快照 ${mins<1?'刚刚':mins+' 分钟前'}${late?'（延迟）':''}`,quote.live?'行情实时':quote.polling?'行情轮询':quote.needsQuotes?'行情未连接':null,p?`${PROFILE_SHORT[p.mode]||'策略档'}${risk}`:null,d.paused?'已暂停':null].filter(Boolean);
+ const age=Math.max(0,now-Date.parse(d.updated_at)),mins=Math.floor(age/60000),late=age>OKX_STALE*5/6;   // runs are 4 hours apart: late after 5
+ const p=d.execution_profile,pc=x=>(x*100).toFixed(0),risk=!Number.isFinite(p?.risk)?'':p.risk_max>p.risk?` 每笔 ${pc(p.risk)}–${pc(p.risk_max)}%${Number.isFinite(p.leader_risk)?`，第一名 ${pc(p.leader_risk)}%`:''}${p.major_factor>1?`，主流币 ×${p.major_factor}`:''}`:` ${pc(p.risk)}%`;
+ const parts=[`快照 ${mins<1?'刚刚':mins<90?mins+' 分钟前':Math.round(mins/60)+' 小时前'}${late?'（延迟）':''}`,quote.live?'行情实时':quote.polling?'行情轮询':quote.needsQuotes?'行情未连接':null,p?`${PROFILE_SHORT[p.mode]||'策略档'}${risk}`:null,d.paused?'已暂停':null].filter(Boolean);
  return {text:parts.join(' · '),warn:late||Boolean(quote.needsQuotes&&!quote.live&&!quote.polling)};
 }
 // ---- 策略进化 (tools/evolve → paper-data/evolve/dashboard.json) ----
@@ -767,7 +769,7 @@ async function refreshEvolve(){
  try{
   const r=await fetch(`${EVOLVE_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});
   if(!r.ok)throw new Error(r.status===404?'尚未生成':'读取失败');const d=await r.json();if(!validEvolve(d))throw new Error('格式不对');
-  evolveData=d;$('evolve-error').hidden=true;renderEvolve();if(route==='sim')renderSim();
+  evolveData=d;$('evolve-error').hidden=true;renderEvolve();if(route==='sim'||route==='home')renderSim();
  }catch(e){if(route==='evolve' && !evolveData){$('evolve-error').hidden=false;$('evolve-error').textContent=e.message==='尚未生成'?'进化系统还没有运行过：第一次运行后（约 3 分钟）这里会出现第一代策略。':'进化数据暂时读取失败，稍后自动重试。';}}
  finally{evolveBusy=false;}
 }
@@ -865,7 +867,7 @@ function renderSim(){
    ['可用 USDT',num(Number(simData.available))],['持仓',`${t.positions}`],['已平仓',`${t.trades} 笔`]].map(([k,v,c=''])=>`<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('')}</div>`);
  setText($('okx-start'),`起始 ${num(okxStart(simData))} USDT`);
  setHTML($('okx-curve'),okxCurveSVG(simData));
- renderOkxPositions('okx-positions',true);setText($('okx-pos-count'),String(simData.positions.length));
+ renderOkxPositions('okx-positions',simData.positions.length<=3);   // a few positions: show the details; many: collapsed, tap to opensetText($('okx-pos-count'),String(simData.positions.length));
  setHTML($('okx-compare'),mirrorCompareMarkup(simData,evolveData));
  setHTML($('okx-outlier'),okxOutlierNote(okxOutlier(simData,t)));$('okx-outlier').hidden=!okxOutlier(simData,t);
  setHTML($('okx-actions'),okxActionsMarkup(simData,30,{kind:'trades'}));setHTML($('okx-log'),okxActionsMarkup(simData,30,{kind:'system'}));
