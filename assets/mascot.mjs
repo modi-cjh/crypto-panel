@@ -119,7 +119,7 @@ export class Mascot {
     let saved=null;try{saved=JSON.parse(localStorage.getItem('modi-companion-position'));}catch{}
     this.pos={side:saved?.side==='left'?'left':'right',bottom:Number.isFinite(saved?.bottom)?saved.bottom:20};
     // First visit on a phone: start tucked at the edge so it does not cover the account; tap to bring it out.
-    this.docked=saved?saved.docked===true:innerWidth<760;this.place();
+    this.docked=saved?saved.docked===true:true;this.place();  // default docked so the bubble never covers cards
   }
   save(){try{localStorage.setItem('modi-companion-position',JSON.stringify({...this.pos,docked:this.docked}));}catch{}}
   place(){

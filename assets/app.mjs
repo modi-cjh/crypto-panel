@@ -4,13 +4,13 @@ import { runtimeConfig, refreshRuntimeHealth } from './runtime.mjs';
 import { coinIcon } from './coins.mjs';
 import { Mascot, fillLine, eventLine, reportLine } from './mascot.mjs';
 import { riskProgress } from './history.mjs';
-import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, okxDailyReturns, okxDailyMarkup, okxOutlier, okxOutlierNote, mirrorCompareMarkup, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261112-daily';
+import { OKX_URL, OKX_STALE, OKX_COLOR, validOkx, okxTotals, okxStatus, okxCurveSVG, okxPositionsMarkup, okxActionsMarkup, okxMascotState, okxChanges, okxNewActions, okxLive, okxFeed, okxStart, okxDailyReturns, okxDailyMarkup, okxOutlier, okxOutlierNote, mirrorCompareMarkup, OKX_DEMO_PUBLIC_WS, OKX_DEMO_FALLBACK_WS, demoQuoteState, accountDataNote } from './okx.mjs?v=20261112-gate';
 import { baseQuantity, positionAmounts, orderAmounts, quoteFor, manualOrders, pendingOrders, chartLevels } from './portfolio.mjs';
 import { NewRecords, recordKey, roleState, isStale, validEvents, eventText } from './state.mjs';
-import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261112-daily';
+import { PublicStream, mergeCandle, tradeMarkers } from './realtime.mjs?v=20261112-gate';
 import { configureMotion, rollNumber, toast, typeLine } from './effects.mjs';
 import { workState, pnlMood, tradeBurst, positionReport, pnlComment } from './robot-work.mjs';
-import { EVOLVE_URL, EVOLVE_NODES_URL, validNodeDetails, needsDetails, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays } from './evolve.mjs?v=20261112-daily';
+import { EVOLVE_URL, EVOLVE_NODES_URL, validNodeDetails, needsDetails, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays, updateSchedule, evolveIntroMarkup } from './evolve.mjs?v=20261112-gate';
 import { GeneFx } from './evolve-fx.mjs';
 import { mainAccounts, liveBalance, validAccount, summarizeAccounts, aggregateCurve, dayNumber } from './account.mjs';
 import { ROLES, validTeam, teamTime, timelineMarkup } from './team.mjs';
@@ -171,12 +171,7 @@ $('team-meeting').addEventListener('change', () => { teamMeeting = $('team-meeti
 
 function setError(key, message) {
   if (message) errors.set(key, message); else errors.delete(key);
-  const demoView=['home','sim'].includes(route)&&simPrimary()&&!showLegacy;
-  const list = [...errors].filter(([k])=>!demoView||!['prices','oi','funding','candles'].includes(k)).map(([,v])=>v);
-  // One compact line; details stay one tap away instead of stacking banners.
-  $('alerts').innerHTML = !list.length ? '' : list.length === 1
-    ? `<div class="alert"><span aria-hidden="true">⚠</span> ${escape(list[0])} · 已有数据保留，自动重试</div>`
-    : `<details class="alert"><summary><span aria-hidden="true">⚠</span> ${list.length} 项数据暂时无法更新 · 已有数据保留，自动重试</summary><ul>${list.map(m => `<li>${escape(m)}</li>`).join('')}</ul></details>`;
+  renderStatusPill();
 }
 function description(error) { return /^(OKX|接口|请求)/.test(error.message) ? error.message : '网络连接失败或请求超时'; }
 function badge(row) { return `${coinIcon(row.symbol)}<div><a href="#/coin/${encodeURIComponent(row.id)}">${escape(row.symbol)}</a><small>USDT 永续</small></div>`; }
@@ -482,13 +477,14 @@ function renderPinnedBalance(){
   if(route==='home')rollNumber($('total-equity'),current?.equity);
   // One writer per frame: writing the paused bot's 100.00 and then the paper equity made the
   // number change twice on every refresh, so it animated even when nothing had moved.
-  if(simPrimary())renderPinnedSim();
+  if(simPrimary()){if(simData)renderPinnedSim();else renderStatusPill();}
   else {
     $('pinned-label-text').textContent='主力盘余额';
     rollNumber($('pinned-equity'),current?.equity);
     $('pinned-mode').textContent=publicAccount?(publicAccount.mode==='live'?'实盘':'模拟盘'):'—';
     $('pinned-daily').textContent=current?.daily!=null?`当日 ${signed(current.daily)} / ${signed(current.percent)}%`:'当日盈亏 · 暂无当日起始权益';
     $('pinned-daily').className=tone(current?.daily);
+    const pctEl=$('pinned-pct');if(pctEl){pctEl.textContent=current?.percent!=null?`${signed(current.percent)}%`:'—';pctEl.className=`pinned-pct ${tone(current?.percent)}`;}
     $('pinned-source').textContent=current?.source || '暂无账户数据';
     const stale=publicAccount && (isStale(publicAccount.updated_at,Date.now(),config.offlineMinutes) || mainAccounts(publicAccount).filter(a=>!['未启动','已停止','暂停'].includes(a.status)).some(a=>isStale(a.updated_at,Date.now(),config.offlineMinutes)));
     $('pinned-time').textContent=publicAccount?`${stale?'延迟 · ':''}${time(publicAccount.updated_at)} UTC+7`:'— UTC+7';
@@ -500,10 +496,38 @@ function renderPinnedSim(){
   const t=okxTotals(simData,okxMarks),stale=Date.now()-Date.parse(simData.updated_at)>OKX_STALE;
   $('pinned-label-text').textContent='OKX 模拟权益';$('pinned-mode').textContent='交易所模拟';
   rollNumber($('pinned-equity'),t.equity,EQUITY_ROLL_STEP);
-  const odd=okxOutlier(simData,t);   // one outsized trade: show the return without it, as the home card explains
+  const pct=Number.isFinite(t.dayPct)?t.dayPct:t.ret;
+  const el=$('pinned-pct');
+  if(el){el.textContent=Number.isFinite(pct)?`${signed(pct)}%`:'—';el.className=`pinned-pct ${tone(pct)}`;}
+  const odd=okxOutlier(simData,t);   // one outsized trade: shown on the home card, not in the header
   $('pinned-daily').textContent=`今日 ${Number.isFinite(t.day)?`${signed(t.day)}（${signed(t.dayPct)}%）`:'—'} · ${odd?`累计 ${signed(odd.retWithout)}%（扣单笔 ${odd.inst.split('-')[0]}）`:`累计 ${signed(t.ret)}%`}${stale?' · 延迟':''}`;$('pinned-daily').className=tone(Number.isFinite(t.day)?t.day:t.ret);
   $('pinned-source').textContent='OKX 模拟交易 · 约每 4 小时更新';
   $('pinned-time').textContent=`${stale?'延迟 · ':''}${time(simData.updated_at)} UTC+7`;$('pinned-time').className=stale?'stale':'';
+  renderStatusPill();
+}
+function renderStatusPill(){
+  const pill=$('status-pill'), label=$('status-pill-label'), body=$('status-pill-body');
+  if(!pill||!label||!body)return;
+  const src=simPrimary()&&simData?simData:null;
+  const sched=src?updateSchedule(src.updated_at):null;
+  const demoView=['home','sim'].includes(route)&&simPrimary()&&!showLegacy;
+  // Home's live view is the paper-data OKX / evolve feeds. Errors from the retired paper/*.json
+  // snapshots (11/2 主力盘) must not paint warning banners on the trading terminal.
+  const hideOnHome=new Set(['prices','oi','funding','candles','account','snapshot','team','scan','events']);
+  const list=[...errors].filter(([k])=>!(demoView&&hideOnHome.has(k))).map(([,v])=>v);
+  const stale=!!sched?.stale;
+  const failed=list.length>0;
+  label.textContent=failed?`● ${list.length} 项读取失败`: (sched?sched.pill:'● 等待更新');
+  pill.classList.toggle('stale', stale && !failed);
+  pill.classList.toggle('error', failed);
+  const extra=[];
+  if(sched) extra.push(sched.line+(sched.warn?` ${sched.warn}`:''));
+  if(src) extra.push(`行情与账户快照来自 paper-data，定时 ${'17 分 / 每 4 小时'}（UTC，金边时间显示）。GitHub Actions 可能推迟。`);
+  if(list.length) extra.push('读取失败：'+list.join('；')+'。已有数据保留，自动重试。');
+  body.innerHTML=extra.map(s=>`<p>${escape(s)}</p>`).join('')||'<p>正在读取账户快照…</p>';
+  // Do not surface the retired 主力盘 pause banner on the OKX-primary home.
+  const banner=$('pause-banner');
+  if(banner && simPrimary() && !showLegacy) banner.hidden=true;
 }
 const BIAS={long:'偏多',short:'偏空',watch:'观察',ban:'禁开仓'};
 function updateCompanion(current=liveBalance(publicAccount,effectiveQuotes())){
@@ -726,9 +750,10 @@ async function pollOkxMarks(){
 // Floating PnL moves the equity by a few cents on every 8-second poll; only animate meaningful moves.
 const EQUITY_ROLL_STEP=.1;
 function simPrimary(){
-  if(!simData)return false;
-  const main=mainAccounts(publicAccount)[0];
-  return !publicAccount || Boolean(publicAccount.pause?.paused) || ['暂停','已停止','未启动'].includes(main?.status) || isStale(publicAccount.updated_at,Date.now(),config.offlineMinutes);
+  // Home is always the paper-data OKX / evolve feeds. The retired crypto-bot snapshots
+  // (paper/*.json, paused since 2026-11-02) stay behind “显示原主力盘”.
+  if(showLegacy)return false;
+  return true;
 }
 let showLegacy=false;
 $('legacy-toggle').addEventListener('click',()=>{showLegacy=!showLegacy;renderSim();});
@@ -769,8 +794,8 @@ async function refreshEvolve(){
  try{
   const r=await fetch(`${EVOLVE_URL}?t=${Math.floor(Date.now()/60000)}`,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});
   if(!r.ok)throw new Error(r.status===404?'尚未生成':'读取失败');const d=await r.json();if(!validEvolve(d))throw new Error('格式不对');
-  evolveData=d;$('evolve-error').hidden=true;renderEvolve();if(route==='sim'||route==='home')renderSim();
- }catch(e){if(route==='evolve' && !evolveData){$('evolve-error').hidden=false;$('evolve-error').textContent=e.message==='尚未生成'?'进化系统还没有运行过：第一次运行后（约 3 分钟）这里会出现第一代策略。':'进化数据暂时读取失败，稍后自动重试。';}}
+  evolveData=d;$('evolve-error').hidden=true;setError('evolve',null);renderEvolve();if(route==='sim'||route==='home')renderSim();
+ }catch(e){const msg=e.message==='尚未生成'?'进化系统还没有运行过：第一次运行后（约 3 分钟）这里会出现第一代策略。':'进化数据暂时读取失败，稍后自动重试。';setError('evolve',msg);if(!evolveData){const intro=$('evolve-intro');if(intro)intro.innerHTML=`<p class="alert" role="alert">${msg}</p>`;if(route==='evolve'){$('evolve-error').hidden=false;$('evolve-error').textContent=msg;}}}
  finally{evolveBusy=false;}
 }
 // Per-node genes and curves (nodes.json), fetched only when a node without them is opened; once per generation.
@@ -788,7 +813,7 @@ function renderEvolve(){
  $('home-evolve').hidden=!d;if(d)setHTML($('home-evolve'),homeCardMarkup(d));
  if(route!=='evolve' || !d)return;
  if(!evolveSel || !d.nodes.some(n=>n.id===evolveSel))evolveSel=d.champion?.id || d.nodes[0]?.id || null;
- setText($('evolve-updated'),`第 ${d.generation} 代 · 更新 ${time(d.updated_at)} UTC+7`);
+ {const u=updateSchedule(d.updated_at);setText($('evolve-updated'),`第 ${d.generation} 代 · ${u.line}`);$('evolve-updated').classList.toggle('stale',u.stale);const intro=$('evolve-intro');if(intro)intro.innerHTML=evolveIntroMarkup(d);}
  setHTML($('evolve-loop'),loopSVG(d));setHTML($('evolve-stats'),statsMarkup(d));setHTML($('evolve-fitness'),fitnessSVG(d.history));
  setHTML($('evolve-graph'),graphSVG(d,evolveSel));geneFx.refresh();setHTML($('evolve-detail'),detailMarkup(d,evolveSel,evolveDetails.data,evolveDetails.failed));
  if(needsDetails(d,evolveSel,evolveDetails.data))loadEvolveDetails();
@@ -850,6 +875,7 @@ function renderSim(){
  $('home-sim').hidden=!primary;
  setText($('legacy-toggle'),showLegacy?'收起原主力盘':'显示原主力盘（crypto-bot · 已暂停）');$('legacy-toggle').setAttribute('aria-expanded',String(showLegacy));
  if(primary && route==='home'){
+  if(!simData){renderPinnedBalance();return;}
   const t=okxTotals(simData,okxMarks);
   rollNumber($('okx-total-equity'),t.equity,EQUITY_ROLL_STEP);
   setHTML($('okx-total-ret'),retLine(t));
@@ -873,7 +899,15 @@ async function refreshDecisionHistory(){
 }
 document.addEventListener('modi-decisions-open',refreshDecisionHistory);
 
-initTradeControls();refreshRuntimeHealth();navigate();refreshPrices();refreshEvents();
+initTradeControls();refreshRuntimeHealth();navigate();
+(function initTheme(){
+  const btn=$('theme-toggle'); if(!btn)return;
+  const effective=()=>document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+  const paint=()=>{const now=effective();btn.textContent=now==='dark'?'亮':'暗';btn.setAttribute('aria-pressed',String(now==='dark'));btn.title=now==='dark'?'切换到浅色':'切换到深色';};
+  paint();
+  btn.addEventListener('click',()=>{const next=effective()==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',next);try{localStorage.setItem('modi-theme',next);}catch{}paint();});
+})();
+refreshPrices();refreshEvents();
 setInterval(()=>{if(!document.hidden){refreshPrices();pollOkxMarks();renderPinnedBalance();updateStreamStatus();updateCompanionWork();if(route==='home')renderHome();}},8000);
 setInterval(()=>{if(!document.hidden){
  if(['home','coin'].includes(route))refreshCandles();

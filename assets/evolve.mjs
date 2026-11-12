@@ -10,8 +10,61 @@ const fmt = (v, d = 2) => finite(v) ? v.toLocaleString('zh-CN', { minimumFractio
 const signed = (v, d = 2) => finite(v) ? (v > 0 ? '+' : '') + fmt(v, d) : '—';
 const tone = v => finite(v) ? v >= 0 ? 'up' : 'down' : '';
 const clock = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Bangkok', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+const clockPP = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Phnom_Penh', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 const day = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' });
 const time = t => finite(typeof t === 'number' ? t : Date.parse(t)) ? clock.format(typeof t === 'number' ? t : Date.parse(t)) : '—';
+export const PAPER_STALE_MS = 5 * 3600 * 1000;
+export const PAPER_CRON_MINUTE = 17;
+export const PAPER_CRON_HOUR_STEP = 4;
+export function nextPaperUpdate(now = Date.now()) {
+  const d = new Date(now);
+  const hour = Math.floor(d.getUTCHours() / PAPER_CRON_HOUR_STEP) * PAPER_CRON_HOUR_STEP;
+  let cand = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour, PAPER_CRON_MINUTE, 0, 0);
+  if (cand <= now) cand = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour + PAPER_CRON_HOUR_STEP, PAPER_CRON_MINUTE, 0, 0);
+  return cand;
+}
+export function updateSchedule(updatedAt, now = Date.now()) {
+  const last = typeof updatedAt === 'number' ? updatedAt : Date.parse(updatedAt);
+  const next = nextPaperUpdate(now);
+  const stale = Number.isFinite(last) && now - last > PAPER_STALE_MS;
+  const fmt = ts => Number.isFinite(ts) ? clockPP.format(ts) : '—';
+  const age = Number.isFinite(last) ? Math.max(0, now - last) : NaN;
+  let ago = '待下次更新';
+  if (Number.isFinite(age)) {
+    const h = Math.floor(age / 3600000), m = Math.floor((age % 3600000) / 60000);
+    ago = h >= 1 ? `${h} 小时前` : m >= 1 ? `${m} 分钟前` : '刚刚';
+  }
+  return { last, next, stale, ago, lastText: fmt(last), nextText: fmt(next),
+    line: Number.isFinite(last) ? `上次更新 ${fmt(last)} · 下次更新 ${fmt(next)}（金边时间）` : '待下次更新',
+    pill: Number.isFinite(last) ? `● ${ago}更新` : '● 等待更新',
+    warn: stale ? '已超过 5 小时没有更新，定时任务可能延迟。' : '' };
+}
+export function entryGateView(node) {
+  const g = node?.entry_gate;
+  if (!g) return { pending: true, oos: '待下次更新', streak: '待下次更新', dd: '待下次更新', passed: null, reasons: [], cls: 'pending' };
+  const need = g.streak_needed ?? 5, lim = g.max_dd_limit ?? 30;
+  const ddVal = finite(g.max_dd) ? Number(g.max_dd) : null;
+  return { pending: false, oos: g.oos_ok ? '通过' : '未通过', streak: `守擂 ${g.streak ?? 0}/${need} 代`,
+    dd: `最大回撤 ${ddVal == null ? '—' : ddVal.toFixed(1)}%（≤${lim}%）`, passed: !!g.passed, reasons: g.reasons || [],
+    oosOk: !!g.oos_ok, streakOk: (g.streak ?? 0) >= need, ddOk: ddVal != null && ddVal <= lim, cls: g.passed ? 'pass' : 'fail' };
+}
+export function entryGateMarkup(node) {
+  const v = entryGateView(node);
+  if (v.pending) return '<div class="evo-gate pending">上场门槛 · 待下次更新</div>';
+  const reason = !v.passed && v.reasons.length ? `<p class="evo-gate-reason down">${v.reasons.map(esc).join('；')}</p>` : '';
+  return `<div class="evo-gate ${v.cls}"><span class="${v.oosOk ? 'up' : 'down'}">样本外 ${esc(v.oos)}</span>` +
+    `<span class="${v.streakOk ? 'up' : 'down'}">${esc(v.streak)}</span>` +
+    `<span class="${v.ddOk ? 'up' : 'down'}">${esc(v.dd)}</span>${reason}</div>`;
+}
+export function evolveIntroMarkup(d) {
+  if (!d) return '<p class="skeleton" role="status">数据加载中</p>';
+  const c = d.champion, u = updateSchedule(d.updated_at);
+  const ret = c?.test?.ret, dd = c?.entry_gate?.max_dd ?? c?.oos_dd ?? c?.test?.max_dd;
+  return `<p>策略由程序自主进化；样本外与终审合格、连续守擂 5 代、回撤不超过 30% 的策略才会接入模拟盘。</p>` +
+    `<p class="evo-kpis"><span>第 <b>${d.generation}</b> 代</span><span>冠军样本外 <b class="${tone(ret)}">${signed(ret, 1)}%</b></span><span>回撤 <b>${fmt(dd, 1)}%</b></span></p>` +
+    `<p class="evo-updated${u.stale ? ' stale' : ''}">${esc(u.line)}${u.warn ? ` · <span class="down">${esc(u.warn)}</span>` : ''}</p>` +
+    `<details class="evo-more"><summary>了解进化规则</summary><p>每一代先观察波动率，再通过选择、交叉和突变产生新策略；约 60% 数据训练、20% 样本外检验、最新 20% 终审。两段都合格的策略里，训练适应度最高的成为当代冠军。连续 5 代守擂且合并样本外窗口最大回撤 ≤ 30%，才允许进入纸面组合并由 OKX 模拟盘跟单。未过关的成员已有持仓按止损 / 止盈 / 到期走完，账户不会改用未过关的策略；若无人过关则持有现金。仅为模拟资金，不构成投资建议。</p></details>`;
+}
 const date = t => finite(Date.parse(t)) ? day.format(Date.parse(t)) : '—';
 const coin = inst => String(inst).split('-')[0];
 const GENE_NAMES = { species: '物种', direction: '方向', tf: '周期', trail: '移动止损', lookback: '回看窗口', vol_mult: '放量倍数', rs_th: '强弱阈值', threshold: '偏离阈值 σ', expand: '振幅倍数', fast: '快线 EMA', slow: '慢线 EMA',
@@ -163,7 +216,9 @@ export function detailMarkup(d, id, details = null, detailsFailed = false) {
   const n = fullNode(d, id, details);
   if (!n) return '<p class="empty">点击基因池里的任意节点，查看它的基因与回测</p>';
   const pop = new Set(d.population || []), champ = d.champion?.id === n.id, seat = teamIds(d).indexOf(n.id);
-  const status = champ ? '<span class="pill okx-pill up">冠军组合领头 · 纸面交易中</span>' : seat >= 0 ? '<span class="pill okx-pill up">冠军组合成员 · 纸面交易中</span>' : pop.has(n.id) ? '<span class="pill">存活</span>' : `<span class="pill muted">第 ${n.died ?? '—'} 代淘汰</span>`;
+  const trading = (d.paper?.members || []).some(m => m.id === n.id && m.trading !== false && entryGateView(n).passed !== false);
+  const gated = entryGateView(n);
+  const status = champ ? `<span class="pill okx-pill ${gated.passed ? 'up' : 'down'}">冠军组合领头 · ${gated.pending ? '待下次更新' : gated.passed && trading ? '纸面交易中' : '未接入模拟盘'}</span>` : seat >= 0 ? `<span class="pill okx-pill ${gated.passed ? 'up' : 'down'}">冠军组合成员 · ${gated.pending ? '待下次更新' : gated.passed && trading ? '纸面交易中' : '未接入模拟盘'}</span>` : pop.has(n.id) ? '<span class="pill">存活</span>' : `<span class="pill muted">第 ${n.died ?? '—'} 代淘汰</span>`;
   const hasFinal = !!n.final, share = d.data || {}, pct = x => Math.round(x * 100);
   const trainLabel = `训练集 ${pct(share.train_share ?? .7)}%`, testLabel = `样本外 ${hasFinal ? pct(share.test_share ?? .2) : 100 - pct(share.train_share ?? .7)}%`;
   const gate = !hasFinal ? (n.qualified ? '<span class="pill okx-pill up">样本外合格</span>' : '<span class="pill okx-pill down">样本外不合格</span>')
@@ -179,7 +234,7 @@ export function detailMarkup(d, id, details = null, detailsFailed = false) {
   }).join('');
   const parents = n.parents.length ? n.parents.map(p => d.nodes.some(x => x.id === p) ? `<button type="button" class="pill" data-node="${esc(p)}">${esc(p)}</button>` : `<span class="pill muted">${esc(p)}</span>`).join(' ') : '无（随机生成）';
   const curves = [{ pts: n.train_curve, cls: 'evo-train', label: '训练集' }, { pts: n.test_curve, cls: 'evo-test', label: '样本外' }].filter(c => c.pts && c.pts.length);
-  return `<div class="evo-detail-head"><h3><i class="evo-dot" style="background:${SPECIES_COLORS[n.species]}"></i>${esc(speciesName(d, n.species))} · ${esc(n.id)}</h3>${status}${gate}</div>` +
+  return `<div class="evo-detail-head"><h3><i class="evo-dot" style="background:${SPECIES_COLORS[n.species]}"></i>${esc(speciesName(d, n.species))} · ${esc(n.id)}</h3>${status}${gate}</div>` + entryGateMarkup(n) +
     `<p class="evo-summary">${esc(n.summary || '')}</p>` +
     `<p class="muted evo-origin">第 ${n.born} 代出生 · ${HOW[n.how] || esc(n.how)} · 父代 ${parents} · 训练适应度 <b>${fmt(n.fitness, 3)}</b></p>` +
     `<div class="table-scroll"><table class="evo-metrics"><thead><tr><th></th><th>收益</th><th>最大回撤</th><th>交易次数</th><th>胜率</th><th>盈亏比</th></tr></thead><tbody>${metricRow(trainLabel, n.train)}${metricRow(testLabel, n.test)}${hasFinal ? metricRow(`终审 ${100 - pct(share.train_share ?? .6) - pct(share.test_share ?? .2)}%`, n.final) : ''}</tbody></table></div>` + foldsLine(n) + regLine +
@@ -193,7 +248,7 @@ const curveRange = pts => { if (!pts || pts.length < 2) return ''; const v = pts
 
 export function paperMarkup(d) {
   const p = d.paper, c = d.champion;
-  if (!p || !c) return '<p class="empty">还没有样本外合格的策略，纸面交易等待冠军出现</p>';
+    if (!p) return '<p class="empty">还没有样本外合格的策略，纸面交易等待冠军出现</p>';
   const who = x => x.champion ? ` <small class="muted">${esc(x.champion)}</small>` : '';
   const pos = (p.positions || []).map(x => `<li><span><b class="${x.side === 1 ? 'up' : 'down'}">${x.side === 1 ? '多' : '空'}</b> ${esc(coin(x.inst))} @ ${fmt(x.entry, 4)} · 止损 ${fmt(x.stop, 4)}${x.target ? ` · 止盈 ${fmt(x.target, 4)}` : ''}${finite(x.lever) ? ` · ${x.lever}x ${p.mode === 'cross' ? '全仓' : '逐仓'} · 保证金 ${fmt(x.margin)} U${finite(x.liq) ? ` · 强平 ${fmt(x.liq, 4)}` : ''}` : ''}${finite(x.funding) && x.funding ? ` · 资金费 ${signed(-x.funding, 2)} U` : ''}${x.boost ? ' · <b>第一名仓位</b>' : ''}${x.winding ? ' · <b>已换下，持仓走完为止</b>' : ''}${who(x)}</span><time>${time(x.opened)}</time></li>`).join('');
   const pend = (p.pending || []).map(x => `<li><span><b class="${x.side === 1 ? 'up' : 'down'}">${x.side === 1 ? '多' : '空'}</b> ${esc(coin(x.inst))} · 下一根 K 线开盘成交${who(x)}</span></li>`).join('');
@@ -208,19 +263,22 @@ export function paperMarkup(d) {
     const dir = t?.genes?.direction ? ` · <span class="${t.genes.direction === 'long' ? 'up' : t.genes.direction === 'short' ? 'down' : ''}">${DIRECTION[t.genes.direction] || esc(t.genes.direction)}</span>` : '';
     const result = finite(m.pnl) ? `贡献 <b class="${tone(m.pnl)}">${signed(m.pnl)} U</b>（占账户 ${signed(m.ret, 2)}%）` : `权益 ${fmt(m.equity)} · <b class="${tone(m.ret)}">${signed(m.ret, 2)}%</b>`;
     const gates = t ? `样本外 <b class="${tone(t.test.ret)}">${signed(t.test.ret, 1)}%</b>${t.final ? ` · 终审 <b class="${tone(t.final.ret)}">${signed(t.final.ret, 1)}%</b>` : ''}${t.qualified === false ? ' · <span class="down">不合格</span>' : ''}` : '';
-    return `<li data-node="${esc(m.id)}" class="evo-member" tabindex="0" role="button"><div class="evo-member-top"><span class="evo-rank${m.boost ? ' lead' : ''}">${m.rank === 1 ? (m.boost ? '第一名' : '领头') : `#${m.rank}`}</span>` +
+    const gateNode = t || m;
+    const gateCls = entryGateView(gateNode).cls;
+    return `<li data-node="${esc(m.id)}" class="evo-member${gateCls === 'fail' ? ' gate-fail' : ''}${m.trading === false ? ' winding' : ''}" tabindex="0" role="button"><div class="evo-member-top"><span class="evo-rank${m.boost ? ' lead' : ''}">${m.rank === 1 ? (m.boost ? '第一名' : '领头') : `#${m.rank}`}</span>` +
       `<span class="evo-member-name"><i class="evo-dot" style="background:${SPECIES_COLORS[m.species]}"></i>${esc(m.id)} · ${esc(speciesName(d, m.species))}${dir}${m.boost ? ' · <b>加大仓位</b>' : ''}</span></div>` +
-      `<div class="evo-member-sub">${gates}</div><div class="evo-member-sub">${result} · 持仓 ${m.positions} · 任期 ${held === null ? '—' : held >= 48 ? fmt(held / 24, 1) + ' 天' : fmt(held, 1) + ' 小时'}</div></li>`; }).join('');
-  const rules = r ? `<p class="muted evo-rules">样本外${d.final_gate ? '与终审都' : ''}合格的策略中训练适应度最高的 ${r.team_size || 5} 个组成冠军组合（同一物种最多 ${r.species_cap || 2} 个${r.direction_cap ? `，只做多、只做空各最多 ${r.direction_cap} 个` : ''}），${p.mode === 'cross' ? '共用一个账户（全仓）：每笔仓位按整个账户的权益计算，保证金共用，同一个币全账户只持一个仓' : `各分 1/${r.team_size || 5} 资金独立交易`}。每个成员最短任期 ${r.min_tenure_hours >= 48 ? `${Math.round(r.min_tenure_hours / 24)} 天` : `${r.min_tenure_hours} 小时`}；期满后，连续 ${r.streak} 次样本外合格、训练适应度高出最弱成员 ${Math.round((r.margin - 1) * 100)}% 的挑战者替换它（每次运行最多换一个）；成员样本外亏损超过 ${-r.retain.min_ret}% 或回撤超过 ${r.retain.max_dd}% 时立即换下。被换下的成员不再开新仓，已有持仓不强平，按自己的止损 / 止盈 / 到期走完。OKX 模拟盘同一币种只跟排名靠前的成员。</p>${p.leader ? `<p class="muted evo-rules"><b>第一名（${esc(p.leader.id)}）加大仓位</b>：每笔风险 = 整个账户的 ${Math.round(p.leader.risk * 100)}%，杠杆上限 ${p.leader.leverage}×（实际杠杆仍按止损距离定，保证止损在强平之前），不计入同方向上限，也不计入日亏停手。只有样本外和终审都合格的成员才能当第一名，不再合格立即取消；头衔在任期内不变，期满后有合格成员训练适应度明显更高才易主。其他成员每笔 1%–5%（各自的风险基因）${p.mode === 'cross' ? '，同样按整个账户算' : '，按自己那 1/5 资金算'}。</p>` : p.mode === 'cross' ? '<p class="muted evo-rules">目前没有成员同时通过样本外和终审，所以没有“第一名加大仓位”，全部成员按各自的 1%–5% 交易。</p>' : ''}<p class="muted evo-rules">${p.mode === 'cross' ? `全仓规则（纸面与 OKX 模拟盘相同）：每笔开仓都带止损；按合约面值整张下单（不足最小张数不开）；杠杆 = min(上限, 80% ÷ 止损距离)，保证金不超过可用的 95%；${(p.price_off || []).length ? `模拟盘价格偏离真实行情超过 1% 的币暂不开新仓（现在 ${p.price_off.length} 个：${p.price_off.slice(0, 12).map(coin).join('、')}${p.price_off.length > 12 ? ' 等' : ''}）；` : ''}${p.rules?.major_factor > 1 ? `${(p.rules.majors || []).map(coin).join(' / ')} 这 ${(p.rules.majors || []).length} 个主流币每笔风险 ×${p.rules.major_factor}；` : ''}同方向已有 3 个以上持仓时新开仓风险减半，6 个以上减到四分之一；除第一名外同方向合计风险 ≤ ${Math.round((p.rules?.same_side_cap ?? .2) * 100)}%；除第一名外当日亏损达 ${Math.round((p.rules?.daily_halt ?? .1) * 100)}% 时其他成员全部平仓并停手到次日${p.halted ? '（<b class="down">今日已停手</b>）' : ''}；账户权益跌到维持保证金以下时全部强平；每个资金费时间按真实费率收付。` : '纸面交易按 OKX 合约规则计算：按合约面值整张下单（不足最小张数不开），逐仓杠杆 = min(10, 80% ÷ 止损距离)，保证金不超过可用的 95%，跳空穿过强平价亏掉整笔保证金，每个资金费时间按真实费率收付（无记录时按 0.01% / 8 小时）。'}</p>` : '';
+      `${entryGateMarkup(gateNode)}` +
+      `<div class="evo-member-sub">${gates}</div><div class="evo-member-sub">${result} · 持仓 ${m.positions} · 任期 ${held === null ? '—' : held >= 48 ? fmt(held / 24, 1) + ' 天' : fmt(held, 1) + ' 小时'}${m.trading === false ? ' · <span class="down">未接入模拟盘</span>' : ''}</div></li>`; }).join('');
+  const rules = r ? `<p class="muted evo-rules">样本外${d.final_gate ? '与终审都' : ''}合格的策略中训练适应度最高的 ${r.team_size || 5} 个组成冠军组合（同一物种最多 ${r.species_cap || 2} 个${r.direction_cap ? `，只做多、只做空各最多 ${r.direction_cap} 个` : ''}），${p.mode === 'cross' ? '共用一个账户（全仓）：每笔仓位按整个账户的权益计算，保证金共用，同一个币全账户只持一个仓' : `各分 1/${r.team_size || 5} 资金独立交易`}。每个成员最短任期 ${r.min_tenure_hours >= 48 ? `${Math.round(r.min_tenure_hours / 24)} 天` : `${r.min_tenure_hours} 小时`}；期满后，连续 ${r.streak} 次样本外合格、训练适应度高出最弱成员 ${Math.round((r.margin - 1) * 100)}% 的挑战者替换它（每次运行最多换一个）；成员样本外亏损超过 ${-r.retain.min_ret}% 或回撤超过 ${r.retain.max_dd}% 时立即换下。被换下的成员不再开新仓，已有持仓不强平，按自己的止损 / 止盈 / 到期走完。OKX 模拟盘同一币种只跟排名靠前的成员。</p>${p.leader ? `<p class="muted evo-rules"><b>第一名（${esc(p.leader.id)}）加大仓位</b>：每笔风险 = 整个账户的 ${Math.round(p.leader.risk * 100)}%，杠杆上限 ${p.leader.leverage}×（实际杠杆仍按止损距离定，保证止损在强平之前），计入同方向上限，也计入日亏停手。只有通过上场门槛（样本外与终审合格、连续守擂 5 代、回撤 ≤ 30%）的成员才能当第一名，不再合格立即取消；头衔在任期内不变，期满后有合格成员训练适应度明显更高才易主。其他成员每笔按风险基因 1%–5%，但单笔最多 3%${p.mode === 'cross' ? '，同样按整个账户算' : '，按自己那 1/5 资金算'}。</p>` : p.mode === 'cross' ? '<p class="muted evo-rules">目前没有成员通过上场门槛担任第一名，全部成员按各自风险基因交易（单笔最多 3%）。</p>' : ''}<p class="muted evo-rules">${p.mode === 'cross' ? `全仓规则（纸面与 OKX 模拟盘相同）：每笔开仓都带止损；按合约面值整张下单（不足最小张数不开）；杠杆 = min(上限, 80% ÷ 止损距离)，保证金不超过可用的 95%；${(p.price_off || []).length ? `模拟盘价格偏离真实行情超过 1% 的币暂不开新仓（现在 ${p.price_off.length} 个：${p.price_off.slice(0, 12).map(coin).join('、')}${p.price_off.length > 12 ? ' 等' : ''}）；` : ''}${p.rules?.major_factor > 1 ? `${(p.rules.majors || []).map(coin).join(' / ')} 这 ${(p.rules.majors || []).length} 个主流币每笔风险 ×${p.rules.major_factor}，但仍不超过 ${Math.round((p.rules?.max_risk ?? .03) * 100)}%；` : ''}同方向已有 3 个以上持仓时新开仓风险减半，6 个以上减到四分之一；同方向合计风险（含第一名） ≤ ${Math.round((p.rules?.same_side_cap ?? .2) * 100)}%；当日亏损达 ${Math.round((p.rules?.daily_halt ?? .1) * 100)}% 时全部成员平仓并停手到次日${p.halted ? '（<b class="down">今日已停手</b>）' : ''}；账户权益跌到维持保证金以下时全部强平；每个资金费时间按真实费率收付。` : '纸面交易按 OKX 合约规则计算：按合约面值整张下单（不足最小张数不开），逐仓杠杆 = min(10, 80% ÷ 止损距离)，保证金不超过可用的 95%，跳空穿过强平价亏掉整笔保证金，每个资金费时间按真实费率收付（无记录时按 0.01% / 8 小时）。'}</p>` : '';
   const pct = x => Math.round(x * 100);
-  const digest = [`${(p.members || []).length} 个策略${p.mode === 'cross' ? '共用一个全仓账户' : '各管一份资金'}`, p.leader ? `第一名每笔 ${pct(p.leader.risk)}%` : '暂无第一名', '其他 1%–5%',
+  const digest = [`${(p.members || []).length} 个策略${p.mode === 'cross' ? '共用一个全仓账户' : '各管一份资金'}`, p.leader ? `第一名每笔 ${pct(p.leader.risk)}%` : '暂无第一名', '其他最多 3%',
     p.rules?.major_factor > 1 ? `主流币 ×${p.rules.major_factor}` : null, p.rules ? `日亏 ${pct(p.rules.daily_halt)}% 停手` : null, (p.price_off || []).length ? `${p.price_off.length} 个币暂停开仓` : null].filter(Boolean).join(' · ');
   const chal = (d.challengers || []).map(x => `<li><span>${esc(x.id)} · ${esc(speciesName(d, x.species))} · 适应度 ${fmt(x.fitness, 2)}</span><span>连续合格 <b>${x.streak}</b> / ${r ? r.streak : 3}</span></li>`).join('');
   return `<div class="history-metrics evo-stats">${[['纸面权益 USDT', fmt(p.equity)], ['收益', `${signed(p.ret, 2)}%`, tone(p.ret)], ['组合成员', `${(p.members || []).length}`], ['持仓', `${(p.positions || []).length}`], ['保证金占用', `${fmt((p.positions || []).reduce((a, x) => a + (finite(x.margin) ? x.margin : 0), 0))} U`], ['已平仓', `${(p.trades || []).length}`]]
       .map(([k, v, cl = '']) => `<div><span>${k}</span><strong class="${cl}">${v}</strong></div>`).join('')}</div>` +
     `${miniCurve([{ pts: p.curve, cls: 'evo-test', label: '纸面' }])}` + curveRange(p.curve) +
     (members ? `<h4>冠军组合</h4><ul class="evo-team">${members}</ul>` :
-      `<h4>当前冠军 · ${esc(c.id)}</h4><p class="evo-summary">${esc(c.summary)}</p>`) +
+      c ? `<h4>当前冠军 · ${esc(c.id)}</h4><p class="evo-summary">${esc(c.summary)}</p>` : '<p class="empty">当前没有通过上场门槛的策略，模拟盘持有现金，等待下一位守擂满 5 代的冠军。</p>') +
     (rules ? `<details class="evo-more evo-rules-fold"><summary>规则：${digest}（点开看全文）</summary>${rules}</details>` : '') +
     `<h4>持仓</h4><ul class="evo-list">${pos + pend || '<li class="empty">空仓，等待组合成员的信号</li>'}</ul>` +
     `<h4>纸面成交</h4><ul class="evo-list">${trades || '<li class="empty">还没有平仓</li>'}</ul>` +
@@ -239,5 +297,5 @@ export function homeCardMarkup(d) {
 export function dataCaption(d) {
   const x = d.data, g = d.gate;
   return `数据：${x.instruments.length > 8 ? `成交额前 ${x.instruments.length} 的 USDT 永续（${x.instruments.slice(0, 5).map(coin).join(' / ')} 等）` : x.instruments.map(coin).join(' / ')} · 1 小时 K 线 · 共 ${fmt(x.bars, 0)} 根。训练集 ${date(x.train_from)} – ${date(x.train_to)}（${Math.round((x.train_share ?? .7) * 100)}%），样本外 ${date(x.test_from)} – ${date(x.test_to)}${x.final_from ? `，终审 ${date(x.final_from)} – ${date(x.final_to)}（最新的一段，不参与打分和繁殖，只决定谁能上场）` : '（策略进化时从没见过）'}。` +
-    `样本外合格条件：收益 > ${g.min_ret}%、最大回撤 < ${g.max_dd}%、交易 ≥ ${g.min_trades} 次${d.final_gate ? `；终审：收益 > ${d.final_gate.min_ret}%、最大回撤 < ${d.final_gate.max_dd}%、交易 ≥ ${d.final_gate.min_trades} 次` : ''}。回测与纸面交易共用同一套执行逻辑（下一根开盘成交、手续费 0.05%、滑点 0.02%、同根 K 线同时触及止损与止盈按止损计）。更新 ${time(d.updated_at)} UTC+7`;
+    `样本外合格条件：收益 > ${g.min_ret}%、最大回撤 < ${g.max_dd}%、交易 ≥ ${g.min_trades} 次${d.final_gate ? `；终审：收益 > ${d.final_gate.min_ret}%、最大回撤 < ${d.final_gate.max_dd}%、交易 ≥ ${d.final_gate.min_trades} 次` : ''}。回测与纸面交易共用同一套执行逻辑（下一根开盘成交、手续费 0.05%、滑点 0.02%、同根 K 线同时触及止损与止盈按止损计）。更新 ${time(d.updated_at)} UTC+7。${updateSchedule(d.updated_at).line}`;
 }

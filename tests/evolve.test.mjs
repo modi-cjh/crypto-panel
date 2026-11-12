@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { replayGenerations, replayState, replayDelays, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphLayout, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, miniCurve } from '../assets/evolve.mjs';
+import { replayGenerations, replayState, replayDelays, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphLayout, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, miniCurve, updateSchedule, nextPaperUpdate, evolveIntroMarkup, entryGateMarkup, entryGateView, PAPER_STALE_MS } from '../assets/evolve.mjs';
 
 const d = JSON.parse(fs.readFileSync(new URL('./fixtures/evolve-dashboard.json', import.meta.url), 'utf8'));
 
@@ -45,15 +45,16 @@ test('node detail: genes with bounds, training vs out-of-sample metrics, parents
   assert.match(html, child.qualified ? /样本外与终审都合格/ : /不合格/);
   const old = d.nodes.find(n => !n.final);                                            // scored before the final window existed
   if (old) { assert.match(detailMarkup(d, old.id), /样本外 40%/); assert.doesNotMatch(detailMarkup(d, old.id), /终审 20%/); }
-  assert.match(detailMarkup(d, d.champion.id), /冠军组合领头 · 纸面交易中/);
-  assert.match(detailMarkup(d, d.team[1].id), /冠军组合成员 · 纸面交易中/);
+  assert.match(detailMarkup(d, d.champion.id), /冠军组合领头 · 待下次更新/);
+  assert.match(detailMarkup(d, d.team[1].id), /冠军组合成员 · 待下次更新/);
   assert.match(detailMarkup(d, 'nope'), /点击基因池/);
 });
 
 test('paper account, home card and data caption', () => {
   assert.match(paperMarkup(d), /纸面权益/); assert.match(paperMarkup(d), /<h4>冠军组合<\/h4>/);
   for (const t of d.team) assert.match(paperMarkup(d), new RegExp(`data-node="${t.id}"`));
-  assert.match(paperMarkup({ ...d, champion: null }), /还没有样本外合格的策略/);
+  assert.match(paperMarkup({ ...d, paper: null }), /还没有样本外合格的策略/);
+  assert.match(paperMarkup({ ...d, champion: null, paper: { ...d.paper, members: [] } }), /持有现金/);
   const pm = paperMarkup(d);
   assert.match(pm, /最短任期 7 天/); assert.match(pm, /已有持仓不强平/); assert.match(pm, /连续 3 次样本外合格/); assert.match(pm, /补入空位|沿用原冠军/); assert.match(pm, /席位 1 ·/);
   assert.match(pm, /同一物种最多 2 个/); assert.match(homeCardMarkup(d), /冠军组合 8 个/);
@@ -151,18 +152,19 @@ test('the leader is shown with its bigger size and the rules explain it', async 
   const { executionProfileText } = await import('../assets/control.mjs');
   const html = paperMarkup(d);
   assert.match(html, /<span class="evo-rank lead">第一名<\/span>[\s\S]*?<b>加大仓位<\/b>/);
-  assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）加大仓位[\\s\\S]*整个账户的 5%[\\s\\S]*杠杆上限 50×[\\s\\S]*不计入同方向上限[\\s\\S]*日亏停手`));
-  assert.match(html, /其他成员每笔 1%–5%/); assert.match(html, /升为第一名（加大仓位）/);
-  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, leader_risk: .05, leader_leverage: 50, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
-  assert.match(text, /每笔止损风险 1%–5%（按策略）/); assert.match(text, /第一名每笔 5%、最高 50×/); assert.match(text, /日亏 10% 停手/);
+  assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）加大仓位[\\s\\S]*整个账户的 5%[\\s\\S]*杠杆上限 50×[\\s\\S]*计入同方向上限[\\s\\S]*日亏停手`));
+  assert.match(html, /其他成员每笔按风险基因 1%–5%，但单笔最多 3%/); assert.match(html, /升为第一名（加大仓位）/);
+  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .03, same_side_cap: .2, daily_halt: .1, leader_risk: .03, leader_leverage: 10, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
+  assert.match(text, /每笔止损风险 1%–3%（按策略）/); assert.match(text, /第一名每笔 3%、最高 10×（计入同向上限和日亏停手）/); assert.match(text, /日亏 10% 停手/);
 });
+
 
 test('shared cross-margin account: members show what they contributed, positions say 全仓, rules list the shared limits', () => {
   const html = paperMarkup(d);
   assert.equal(d.paper.mode, 'cross');
   assert.match(html, /贡献 <b class="[a-z]*">[+-]?[\d,.]+ U<\/b>（占账户/); assert.match(html, /样本外 <b[^>]*>[^<]+<\/b> · 终审 <b/); assert.match(html, /共用一个账户（全仓）/);
   assert.match(html, /每笔开仓都带止损/); assert.match(html, /同方向已有 3 个以上持仓时新开仓风险减半，6 个以上减到四分之一/);
-  assert.match(html, /当日亏损达 10% 时其他成员全部平仓/); assert.match(html, /同样按整个账户算/);
+  assert.match(html, /当日亏损达 10% 时全部成员平仓/); assert.match(html, /同样按整个账户算/);
   const t0 = Date.parse(d.updated_at);
   const one = paperMarkup({ ...d, paper: { ...d.paper, halted: true, positions: [{ inst: 'BTC-USDT-SWAP', side: 1, entry: 100, stop: 95, target: null, opened: t0, lever: 16, margin: 50, funding: 0, champion: 's1', boost: true }],
     trades: [{ inst: 'ETH-USDT-SWAP', side: 1, pnl: -30, reason: 'daily_halt', closed: t0, lever: 10, funding: 0, champion: 's2' }] } });
@@ -171,14 +173,14 @@ test('shared cross-margin account: members show what they contributed, positions
 });
 
 test('the bigger size needs a member that passed both gates; without one the page says so', () => {
-  assert.match(paperMarkup(d), /只有样本外和终审都合格的成员才能当第一名/);
+  assert.match(paperMarkup(d), /只有通过上场门槛（样本外与终审合格、连续守擂 5 代、回撤 ≤ 30%）的成员才能当第一名/);
   const none = paperMarkup({ ...d, paper: { ...d.paper, leader: null, members: d.paper.members.map(m => ({ ...m, boost: false })) } });
-  assert.match(none, /目前没有成员同时通过样本外和终审/); assert.doesNotMatch(none, /<b>加大仓位<\/b>/); assert.match(none, /暂无第一名/);
+  assert.match(none, /目前没有成员通过上场门槛担任第一名/); assert.doesNotMatch(none, /<b>加大仓位<\/b>/); assert.match(none, /暂无第一名/);
 });
 
 test('the rules name the five majors and their doubled risk', async () => {
   const { executionProfileText } = await import('../assets/control.mjs');
-  assert.match(paperMarkup(d), /BTC \/ ETH \/ SOL \/ XRP \/ DOGE 这 5 个主流币每笔风险 ×2/);
+  assert.match(paperMarkup(d), /BTC \/ ETH \/ SOL \/ XRP \/ DOGE 这 5 个主流币每笔风险 ×2，但仍不超过 3%/);
   const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, majors: ['BTC-USDT-SWAP', 'ETH-USDT-SWAP'], major_factor: 2, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
   assert.match(text, /主流币（BTC\/ETH）风险 ×2/);
 });
@@ -193,10 +195,54 @@ test('coins whose demo price is off are listed, and a replaced unqualified membe
 
 test('phone layout: rules are folded behind a one-line digest, the curve shows its range, the home card names the first place', () => {
   const html = paperMarkup(d);
-  assert.match(html, /<details class="evo-more evo-rules-fold"><summary>规则：8 个策略共用一个全仓账户 · 第一名每笔 5% · 其他 1%–5% · 主流币 ×2 · 日亏 10% 停手/);
+  assert.match(html, /<details class="evo-more evo-rules-fold"><summary>规则：8 个策略共用一个全仓账户 · 第一名每笔 5% · 其他最多 3% · 主流币 ×2 · 日亏 10% 停手/);
   assert.match(html, /evo-curve-range[\s\S]*最低 [\d,.]+ · 最高 [\d,.]+ · 现在 [\d,.]+/);
   assert.doesNotMatch(html, /<table class="evo-metrics evo-team">/);
   const lead = d.team.find(t => t.id === d.paper.leader.id);
   assert.match(homeCardMarkup(d), new RegExp(`第一名 ${lead.id}`));
   assert.match(homeCardMarkup({ ...d, paper: { ...d.paper, leader: null } }), new RegExp(`领头 ${d.champion.id}`));
+});
+
+test('missing entry_gate fields stay compatible and say 待下次更新', () => {
+  assert.equal(entryGateView(d.champion).pending, true);
+  assert.match(entryGateMarkup(d.champion), /上场门槛 · 待下次更新/);
+  const gated = { ...d.champion, entry_gate: { passed: true, oos_ok: true, streak: 5, streak_needed: 5, max_dd: 12.3, max_dd_limit: 30, reasons: [] } };
+  const html = entryGateMarkup(gated);
+  assert.match(html, /样本外 通过/); assert.match(html, /守擂 5\/5 代/); assert.match(html, /最大回撤 12\.3%（≤30%）/);
+  const fail = entryGateMarkup({ ...d.champion, entry_gate: { passed: false, oos_ok: true, streak: 2, streak_needed: 5, max_dd: 31, max_dd_limit: 30, reasons: ['连续守擂 2/5 代，未满 5 代', '最大回撤 31.0% 超过 30%'] } });
+  assert.match(fail, /未满 5 代/); assert.match(fail, /class="evo-gate fail"/);
+  const patch = (node, gate, trading) => ({ ...d, champion: node.id === d.champion.id ? { ...node, entry_gate: gate } : d.champion,
+    nodes: d.nodes.map(n => n.id === node.id ? { ...n, entry_gate: gate } : n),
+    team: d.team.map(m => m.id === node.id ? { ...m, entry_gate: gate } : m),
+    paper: { ...d.paper, members: (d.paper.members || []).map(m => m.id === node.id ? { ...m, trading } : m) } });
+  assert.match(detailMarkup(patch(gated, gated.entry_gate, true), gated.id), /纸面交易中/);
+  const failGate = { ...gated.entry_gate, passed: false, streak: 2 };
+  assert.match(detailMarkup(patch(gated, failGate, false), gated.id), /未接入模拟盘/);
+});
+
+test('update schedule uses the 5-hour warning and Phnom Penh last/next labels', () => {
+  const last = Date.parse('2026-11-12T08:17:00Z');
+  const fresh = updateSchedule(last, last + 60 * 60 * 1000);
+  assert.equal(fresh.stale, false);
+  assert.match(fresh.pill, /1 小时前更新/);
+  assert.match(fresh.line, /上次更新/);
+  assert.match(fresh.line, /下次更新/);
+  assert.match(fresh.line, /金边时间/);
+  assert.equal(fresh.warn, '');
+  const stale = updateSchedule(last, last + PAPER_STALE_MS + 1000);
+  assert.equal(stale.stale, true);
+  assert.match(stale.warn, /已超过 5 小时没有更新/);
+  const next = nextPaperUpdate(Date.parse('2026-11-12T08:00:00Z'));
+  assert.equal(next, Date.parse('2026-11-12T08:17:00Z'));
+  const later = nextPaperUpdate(Date.parse('2026-11-12T08:17:00Z'));
+  assert.equal(later, Date.parse('2026-11-12T12:17:00Z'));
+});
+
+test('evolve intro is one sentence plus key numbers, with the full explanation folded', () => {
+  const html = evolveIntroMarkup(d);
+  assert.match(html, /第 <b>\d+<\/b> 代/);
+  assert.match(html, /冠军样本外/);
+  assert.match(html, /<details class="evo-more"><summary>了解进化规则<\/summary>/);
+  assert.match(html, /连续 5 代守擂/);
+  assert.match(evolveIntroMarkup(null), /数据加载中/);
 });
