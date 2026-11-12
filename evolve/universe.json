@@ -599,6 +599,10 @@
    [
     1794427200000,
     1794441600000
+   ],
+   [
+    1794510000000,
+    null
    ]
   ],
   "NEO-USDT-SWAP": [
@@ -611,6 +615,10 @@
    [
     1794438000000,
     1794499200000
+   ],
+   [
+    1794510000000,
+    null
    ]
   ],
   "H-USDT-SWAP": [
@@ -639,25 +647,38 @@
    [
     1794484800000,
     1794499200000
+   ],
+   [
+    1794510000000,
+    null
    ]
   ],
   "BIO-USDT-SWAP": [
    [
     1794499200000,
+    1794510000000
+   ]
+  ],
+  "QTUM-USDT-SWAP": [
+   [
+    1794510000000,
     null
    ]
   ]
  },
  "price_off_now": {
-  "ARB-USDT-SWAP": -0.046,
-  "ASTER-USDT-SWAP": -0.1012,
-  "H-USDT-SWAP": 0.4664,
-  "JUP-USDT-SWAP": 0.0153,
-  "BARD-USDT-SWAP": 0.0277,
-  "HOME-USDT-SWAP": 0.0261,
-  "BIO-USDT-SWAP": 0.0148,
-  "SPK-USDT-SWAP": 2.6966,
-  "SKY-USDT-SWAP": -0.9652,
-  "COAI-USDT-SWAP": 0.5507
+  "ARB-USDT-SWAP": -0.0688,
+  "AAVE-USDT-SWAP": 0.0158,
+  "XPL-USDT-SWAP": 0.1721,
+  "ASTER-USDT-SWAP": -0.1051,
+  "H-USDT-SWAP": 0.0774,
+  "JUP-USDT-SWAP": 0.0452,
+  "BARD-USDT-SWAP": 0.0112,
+  "HOME-USDT-SWAP": 0.0276,
+  "SPK-USDT-SWAP": -0.6141,
+  "A-USDT-SWAP": -0.0198,
+  "SKY-USDT-SWAP": -0.9656,
+  "QTUM-USDT-SWAP": -0.2601,
+  "COAI-USDT-SWAP": 0.5345
  }
 }

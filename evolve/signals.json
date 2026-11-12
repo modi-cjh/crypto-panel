@@ -1,10 +1,10 @@
 {
- "updated_at": "2026-11-12T17:13:51Z",
+ "updated_at": "2026-11-12T20:59:14Z",
  "champion": "s13604",
  "team": [
   "s13215",
   "s13518",
-  "s13660",
+  "s14653",
   "s14934",
   "s13604",
   "s14155",
@@ -207,7 +207,7 @@
    "opened": 1794481200000,
    "strategy": "evolved",
    "champion": "s13518",
-   "rank": 5,
+   "rank": 4,
    "risk": 0.0253,
    "leverage": 10
   },
@@ -219,7 +219,7 @@
    "opened": 1794481200000,
    "strategy": "evolved",
    "champion": "s13518",
-   "rank": 5,
+   "rank": 4,
    "risk": 0.0253,
    "leverage": 10
   },
@@ -231,7 +231,7 @@
    "opened": 1794492000000,
    "strategy": "evolved",
    "champion": "s13518",
-   "rank": 5,
+   "rank": 4,
    "risk": 0.0253,
    "leverage": 10
   },
