@@ -300,7 +300,7 @@ class MirrorTests(unittest.TestCase):
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
             caps = {k: dict(SPECS[k], lever='100') for k in px}
             sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.03) for k, v in px.items()}
-            # XRP is a 0.5 % MMR major: a 1 % stop can keep 50×. (DOGE uses 2.5 % MMR, so 50× would be reduced.)
+            # XRP is a 0.5 % MMR major: a 1 % stop can keep 50×.
             sig['XRP-USDT-SWAP'].update(rank=1, leader=True, risk=.08, leverage=50, stop=px['XRP-USDT-SWAP'] * 1.01)
             fake = FakeOKX(equity=100000, prices=px, instruments=caps); m, state = run(fake, paper(**sig))
             opened = {a['inst']: a for a in m.actions if a['action'] == 'open'}
@@ -375,7 +375,7 @@ class MirrorTests(unittest.TestCase):
         SPECS.setdefault('PEPE-USDT-SWAP', dict(ctVal='10000000', lotSz='1', minSz='1', tickSz='0.00000001'))
         try:
             odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP'])
-            self.assertEqual((odt.MAJORS, odt.MAJOR_FACTOR), (('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'), 2.0))
+            self.assertEqual((odt.MAJORS, odt.MAJOR_FACTOR), (('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'), 2.0))
             px = {'BTC-USDT-SWAP': 78000.0, 'PEPE-USDT-SWAP': .00000537}
             sig = {k: dict(strategy='evolved', side=1, entry=v, stop=v * .96, tp=None, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.02) for k, v in px.items()}
             fake = FakeOKX(equity=100000, prices=px); m, _ = run(fake, paper(**sig))
@@ -470,6 +470,42 @@ class MirrorTests(unittest.TestCase):
             m, _ = run(fake, paper(**sig))
             self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 20)
             self.assertEqual(odt.FALLBACK_INST_LEVERAGE, 20)
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
+    def test_a_major_missing_from_the_spec_falls_back_to_twenty_like_paper(self):
+        try:
+            odt.configure_evolved()
+            self.assertIs(odt.MAJORS, __import__('execution', fromlist=['MAJORS']).MAJORS)
+            self.assertEqual(odt.FALLBACK_INST_LEVERAGE, 20)
+            px, stop = 78000.0, 78000.0 * 0.997
+            sig = {'BTC-USDT-SWAP': dict(long_btc(stop=stop), strategy='evolved', risk=.02, leverage=80, entry=px)}
+            class BareMajor(FakeOKX):
+                def request(self, method, path, body=None):
+                    if path.startswith('/api/v5/public/instruments') and 'instId=' in path:
+                        inst = path.split('instId=')[1].split('&')[0]
+                        return {'code': '0', 'data': [dict(SPECS[inst], instId=inst)]}  # no lever
+                    if path.startswith('/api/v5/public/instruments'):
+                        return {'code': '50014', 'msg': 'unavailable', 'data': []}
+                    return super().request(method, path, body)
+            fake = BareMajor(equity=100000, prices={'BTC-USDT-SWAP': px})
+            m, _ = run(fake, paper(**sig))
+            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 20)
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
+    def test_evolved_entry_is_skipped_when_even_one_x_cannot_place_the_stop_before_liq(self):
+        try:
+            odt.configure_evolved()
+            px = 78000.0
+            stop = px * 0.001   # ~99.9 % stop, wider than 1× room under 0.5 % MMR
+            sig = {'BTC-USDT-SWAP': dict(long_btc(stop=stop), strategy='evolved', risk=.02, leverage=10, entry=px)}
+            caps = {'BTC-USDT-SWAP': dict(SPECS['BTC-USDT-SWAP'], lever='100')}
+            fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps)
+            m, _ = run(fake, paper(**sig))
+            self.assertFalse([a for a in m.actions if a['action'] == 'open'])
+            skips = [a for a in m.actions if a.get('reason') == 'stop_before_liquidation']
+            self.assertTrue(skips)
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 

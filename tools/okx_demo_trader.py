@@ -38,7 +38,7 @@ from volume_test import profile as volume_profile, describe as describe_volume
 from runtime_guard import entries_allowed, atomic_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
-from execution import clamp_leverage, DEFAULT_LEVERAGE, maintenance_rate  # noqa: E402
+from execution import clamp_leverage, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FALLBACK_INST_LEVERAGE, FEE  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -47,7 +47,7 @@ EVOLVED_DAILY_HALT = .10                         # following the evolution champ
 RISK_RANGE = (.02, .10)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
 MAX_TRADE_RISK = .10
 EVOLVED_MAX_LEVERAGE = 100
-FALLBACK_INST_LEVERAGE = 20       # when the OKX public instrument spec has no usable `lever`
+# FALLBACK_INST_LEVERAGE and MAJORS come from execution (20× if the public spec has no usable `lever`)
 # Every seat including the leader uses its own risk and leverage genes (2–10 %, 1–100×). Majors may be doubled then
 # clamped so the result never exceeds 10 %. The leader counts toward the same-direction cap and is subject to the
 # daily-loss stop, same as everyone else. LEADER_RISK / LEADER_LEVERAGE are the caps, not a fixed bigger size.
@@ -57,7 +57,7 @@ MARGIN_MODE = 'isolated'          # evolved and legacy modes both use isolated m
 DEMO_ONLY = True
 SIMULATED_HEADER = 'x-simulated-trading'
 SIMULATED_VALUE = '1'
-MAJORS, MAJOR_FACTOR = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'), 2.0   # majors risk twice as much (execution.ACCOUNT_RULES)
+MAJOR_FACTOR = 2.0   # majors (execution.MAJORS) risk twice as much (execution.ACCOUNT_RULES)
 PRICE_TOLERANCE = .01             # no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
 CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
 SAME_SIDE_CAP = .05
@@ -449,8 +449,11 @@ class Mirror:
                 want = DEFAULT_LEVERAGE
             want = max(1, min(want, EVOLVED_MAX_LEVERAGE))
             # stop before liquidation first (this coin's MMR), then the per-instrument OKX cap
-            lever = clamp_leverage(want, dist, cap=EVOLVED_MAX_LEVERAGE, mmr=maintenance_rate(inst))
+            mmr = maintenance_rate(inst)
+            lever = clamp_leverage(want, dist, cap=EVOLVED_MAX_LEVERAGE, mmr=mmr)
             lever = max(1, min(lever, self.inst_max_lever(inst)))
+            if dist >= (1 / lever - mmr - FEE):
+                return self.log('skip', inst, reason='stop_before_liquidation', leverage=lever, stop_frac=round(dist, 6))
         else:
             cap = MAX_LEVERAGE
             try:

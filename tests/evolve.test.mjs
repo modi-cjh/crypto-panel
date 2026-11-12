@@ -154,7 +154,7 @@ test('the leader is shown with its bigger size and the rules explain it', async 
   assert.match(html, /<span class="evo-rank lead">第一名<\/span>[\s\S]*?<b>第一名（信号优先）<\/b>/);
   assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）信号优先[\\s\\S]*风险基因 5%[\\s\\S]*杠杆基因 50×[\\s\\S]*计入同方向上限[\\s\\S]*日亏停手`));
   assert.match(html, /所有席位（含第一名）每笔按风险基因 2%–10%、杠杆基因 1–100×，单笔风险（含主流币加倍）最多 10%/);
-  assert.match(html, /BTC\/ETH\/SOL\/BNB\/XRP 维持保证金率 0\.5%，其他币 2\.5%/);
+  assert.match(html, /BTC\/ETH\/SOL\/BNB\/XRP\/DOGE 维持保证金率 0\.5%，其他币 2\.5%/);
 
   assert.match(html, /OKX 模拟盘跟单使用同一套风险\/杠杆基因（2%–10%、1–100×），逐仓下单/);
 
@@ -186,9 +186,9 @@ test('the bigger size needs a member that passed both gates; without one the pag
   assert.match(none, /暂无通过上场门槛的成员，已有持仓走完后持有现金/); assert.doesNotMatch(none, /<b>加大仓位<\/b>/); assert.match(none, /暂无第一名/);
 });
 
-test('the rules name the five majors and their doubled risk', async () => {
+test('the rules name the six majors and their doubled risk', async () => {
   const { executionProfileText } = await import('../assets/control.mjs');
-  assert.match(paperMarkup(d), /BTC \/ ETH \/ SOL \/ XRP \/ DOGE 这 5 个主流币每笔风险 ×2，但仍不超过 10%/);
+  assert.match(paperMarkup(d), /BTC \/ ETH \/ SOL \/ BNB \/ XRP \/ DOGE 这 6 个主流币每笔风险 ×2，但仍不超过 10%/);
   const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, majors: ['BTC-USDT-SWAP', 'ETH-USDT-SWAP'], major_factor: 2, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
   assert.match(text, /主流币（BTC\/ETH）风险 ×2/);
 });

@@ -531,7 +531,11 @@ class EvolutionTests(unittest.TestCase):
         r2 = X.simulate_account([dict(id='m', genes=base_genes(risk=.08), from_i=0, wind_i=None, boosts=[])], sr, 30, 71, equity=10000.0)
         risk2 = {p['inst']: round(p['qty'] * (p['entry'] - p['stop']) / 10000.0, 3) for p in r2['positions']}
         self.assertEqual(risk2, {'BTC-USDT-SWAP': .10, 'PEPE-USDT-SWAP': .08})   # 8 % × 2 is clamped to 10 %
-        self.assertEqual(X.ACCOUNT_RULES['major_factor'], 2.0); self.assertIn('DOGE-USDT-SWAP', X.MAJORS)
+        self.assertEqual(X.ACCOUNT_RULES['major_factor'], 2.0)
+        self.assertEqual(X.MAJORS, ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'))
+        self.assertEqual(X.ACCOUNT_RULES['majors'], X.MAJORS)
+        self.assertEqual(X.position_risk(.02, 'BNB-USDT-SWAP'), .04)
+        self.assertEqual(X.position_risk(.02, 'DOGE-USDT-SWAP'), .04)
         self.assertEqual(X.position_risk(.02, 'BTC-USDT-SWAP'), .04)
         self.assertEqual(X.position_risk(.08, 'BTC-USDT-SWAP'), .10)
         self.assertEqual(X.position_risk(.05, 'PEPE-USDT-SWAP'), .05)
@@ -922,15 +926,20 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         self.assertEqual(X.maintenance_rate('SOL-USDT-SWAP'), .005)
         self.assertEqual(X.maintenance_rate('BNB-USDT-SWAP'), .005)
         self.assertEqual(X.maintenance_rate('XRP-USDT-SWAP'), .005)
-        self.assertEqual(X.maintenance_rate('DOGE-USDT-SWAP'), .025)
+        self.assertEqual(X.maintenance_rate('DOGE-USDT-SWAP'), .005)
         self.assertEqual(X.maintenance_rate('PEPE-USDT-SWAP'), .025)
         self.assertEqual(X.maintenance_rate('C0-USDT-SWAP'), .025)
         self.assertEqual(X.inst_max_leverage('BTC-USDT-SWAP'), 100)
         self.assertEqual(X.inst_max_leverage('BNB-USDT-SWAP'), 50)          # OKX snapshot, not forced to 100
         self.assertEqual(X.inst_max_leverage('C0-USDT-SWAP'), 20)           # unknown alt → 20×
-        self.assertEqual(X.inst_max_leverage('UNKNOWN-MAJOR-USDT-SWAP'), 20)
-        # an unlisted name that is in MMR_MAJORS still may go to 100
         self.assertEqual(X.FALLBACK_INST_LEVERAGE, 20)
+        # a major missing from the snapshot also falls back to 20× (same as the OKX demo), not 100×
+        saved = X.INST_MAX_LEVERAGE.pop('BTC-USDT-SWAP', None)
+        try:
+            self.assertEqual(X.inst_max_leverage('BTC-USDT-SWAP'), 20)
+        finally:
+            if saved is not None:
+                X.INST_MAX_LEVERAGE['BTC-USDT-SWAP'] = saved
         # 100× on a 2.5 % MMR coin has negative maintenance room; leverage is reduced
         mmr = X.MMR_OTHER
         L = X.clamp_leverage(100, .003, cap=100, mmr=mmr)

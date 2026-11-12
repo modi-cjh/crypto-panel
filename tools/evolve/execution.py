@@ -37,8 +37,12 @@ MIN_LEVERAGE = 1
 MMR_MAJOR = .005
 MMR_OTHER = .025
 MMR = MMR_MAJOR      # default for helpers called without an instrument
-MMR_MAJORS = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP', 'XRP-USDT-SWAP')
-FALLBACK_INST_LEVERAGE = 20   # unknown coins in the paper engine (same fallback as the OKX demo follower)
+# One shared major-coin list for paper and the OKX demo follower: risk is doubled (then capped at 10 %),
+# and isolated MMR is 0.5 % (every other coin uses 2.5 %). BTC/ETH/SOL/XRP typically allow 100× on OKX;
+# BNB and DOGE allow 50× — the per-instrument cap still applies. A major missing from the leverage
+# snapshot (paper) or the public instruments response (demo) falls back to 20×, same as unknown alts.
+MAJORS = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP')
+FALLBACK_INST_LEVERAGE = 20   # unknown coins in the paper engine and the OKX demo follower
 MARGIN_USE = .95     # an entry may use at most this share of the free margin
 MIN_STOP_DIST = .002 # stops closer than this (fraction of price) are skipped, as on OKX
 START_EQUITY = 10000.0
@@ -296,8 +300,8 @@ def _species_signal(g, s, i):
 
 # ----------------------------------------------------------------- isolated liquidation
 def maintenance_rate(inst):
-    """Per-coin MMR: 0.5 % for BTC/ETH/SOL/BNB/XRP, 2.5 % for every other coin."""
-    return MMR_MAJOR if inst in MMR_MAJORS else MMR_OTHER
+    """Per-coin MMR: 0.5 % for MAJORS (BTC/ETH/SOL/BNB/XRP/DOGE), 2.5 % for every other coin."""
+    return MMR_MAJOR if inst in MAJORS else MMR_OTHER
 
 
 def _load_inst_caps():
@@ -318,14 +322,12 @@ def inst_max_leverage(inst, cap=LEVERAGE):
     """Highest leverage this coin may use on the paper account, consistent with the OKX demo follower.
 
     Uses the static OKX `lever` snapshot when the instrument is listed, then caps at `cap` (100×).
-    Unknown majors (BTC/ETH/SOL/BNB/XRP) may go up to `cap`; any other unknown coin falls back to 20×.
+    Any coin missing from the snapshot — majors included — falls back to 20×, the same default as the demo follower.
     """
     cap = max(MIN_LEVERAGE, int(cap))
     listed = INST_MAX_LEVERAGE.get(inst)
     if listed and listed >= 1:
         return max(MIN_LEVERAGE, min(int(listed), cap))
-    if inst in MMR_MAJORS:
-        return cap
     return max(MIN_LEVERAGE, min(FALLBACK_INST_LEVERAGE, cap))
 
 
@@ -538,9 +540,8 @@ def fitness(m):
 
 
 # ----------------------------------------------------------------- the shared (cross-margin) team account
-MAJORS = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP')
-# major_factor: a trade on one of the five majors risks this many times the usual amount (chosen by the user; the majors are
-# the most liquid coins and the ones whose OKX demo prices follow the real market).
+# major_factor: a trade on one of MAJORS risks this many times the usual amount (the most liquid coins, and the ones
+# whose OKX demo prices follow the real market). The same MAJORS list sets the 0.5 % MMR tier.
 # Per-trade risk never exceeds 10 % of equity, for every seat including the leader (the gene itself is 2–10 %).
 # Leverage is chosen by the gene (1–100×) and then reduced so the stop sits before the isolated liquidation price.
 # major_factor still doubles a major-coin entry, then the 10 % cap is applied so a doubled 8 % gene becomes 10 %, not 16 %.
