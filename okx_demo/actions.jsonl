@@ -75,3 +75,11 @@
 {"ts": "2026-11-11T13:24:10Z", "action": "skip", "inst": "H-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-11T17:07:22Z", "action": "amend_stop", "inst": "GRASS-USDT-SWAP", "dry_run": false, "old": 0.5155269058416524, "new": 0.5144269058416524}
 {"ts": "2026-11-11T21:46:21Z", "action": "amend_stop", "inst": "GRASS-USDT-SWAP", "dry_run": false, "old": 0.5144269058416524, "new": 0.5095269058416524}
+{"ts": "2026-11-12T00:33:47Z", "action": "amend_stop", "inst": "GRASS-USDT-SWAP", "dry_run": false, "old": 0.5095269058416524, "new": 0.5035269058416524}
+{"ts": "2026-11-12T00:33:47Z", "action": "open", "inst": "CRV-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "7120", "price": 0.2419, "stop": "0.2662", "target": "0.1736", "leverage": 7, "risk_usdt": 173.22, "leader": true}
+{"ts": "2026-11-12T00:33:47Z", "action": "open", "inst": "LPT-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "19407", "price": 1.262, "stop": "1.351", "target": "0.999", "leverage": 11, "risk_usdt": 173.22, "leader": true}
+{"ts": "2026-11-12T00:33:47Z", "action": "open", "inst": "XTZ-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "8354", "price": 0.2398, "stop": "0.2605", "target": "0.1768", "leverage": 9, "risk_usdt": 173.22, "leader": true}
+{"ts": "2026-11-12T00:33:47Z", "action": "open", "inst": "AUCTION-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "4394.5", "price": 2.824, "stop": "3.021", "target": "2.247", "leverage": 11, "risk_usdt": 86.61, "leader": true}
+{"ts": "2026-11-12T00:33:47Z", "action": "open", "inst": "1INCH-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "16577.6", "price": 0.0737, "stop": "0.0789", "target": "0.0594", "leverage": 10, "risk_usdt": 86.61, "leader": true}
+{"ts": "2026-11-12T00:33:47Z", "action": "open", "inst": "INJ-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "222", "price": 7.476, "stop": "9.305", "target": "3.882", "leverage": 3, "risk_usdt": 40.71}
+{"ts": "2026-11-12T00:33:47Z", "action": "open", "inst": "NOT-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "9415", "price": 0.0003271, "stop": "0.0003639", "target": "0.0002759", "leverage": 7, "risk_usdt": 34.64}
