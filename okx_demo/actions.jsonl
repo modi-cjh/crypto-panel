@@ -90,3 +90,7 @@
 {"ts": "2026-11-12T01:26:06Z", "action": "amend_stop", "inst": "INJ-USDT-SWAP", "dry_run": false, "old": 9.30467024821177, "new": 9.248670248211768}
 {"ts": "2026-11-12T01:26:06Z", "action": "close", "inst": "NOT-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
 {"ts": "2026-11-12T01:26:06Z", "action": "open", "inst": "CRO-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "504", "price": 0.04947, "stop": "0.05294", "target": "0.04324", "leverage": 10, "risk_usdt": 17.47}
+{"ts": "2026-11-12T05:13:18Z", "action": "amend_stop", "inst": "CRV-USDT-SWAP", "dry_run": false, "old": 0.2648257770071324, "new": 0.26322577700713234}
+{"ts": "2026-11-12T05:13:18Z", "action": "amend_stop", "inst": "LPT-USDT-SWAP", "dry_run": false, "old": 1.3512531924294842, "new": 1.3362531924294843}
+{"ts": "2026-11-12T05:13:18Z", "action": "amend_stop", "inst": "INJ-USDT-SWAP", "dry_run": false, "old": 9.248670248211768, "new": 9.193670248211768}
+{"ts": "2026-11-12T05:13:18Z", "action": "amend_stop", "inst": "CRO-USDT-SWAP", "dry_run": false, "old": 0.052936888427798014, "new": 0.05200688842779801}
