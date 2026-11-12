@@ -86,7 +86,7 @@ export function fitnessSVG(history) {
   return `<svg viewBox="0 0 ${W} ${H}" class="evo-fitness" role="img" aria-label="每代最佳与平均适应度">${grid}` +
     `<polyline points="${line('mean')}" class="evo-mean"/><polyline points="${line('best')}" class="evo-best"/>` +
     `<text x="${L}" y="${H - 8}">第 ${g0} 代</text><text x="${W - R}" y="${H - 8}" text-anchor="end">第 ${history.at(-1).gen} 代</text></svg>` +
-    `<div class="sim-legend"><span><i style="background:#06727d"></i>最佳</span><span><i style="background:#9aa4b2"></i>种群平均</span></div>`;
+    `<div class="sim-legend"><span><i class="evo-test"></i>最佳</span><span><i style="background:#9aa4b2"></i>种群平均</span></div>`;
 }
 
 // ---- gene pool: x = generation born, y = species band (+ stable jitter), edges = parent → child
