@@ -532,6 +532,17 @@ class EvolutionTests(unittest.TestCase):
         view2, signals2 = P.update(st, self.sr, [], {k: [[self.sr[k].ts[0], None]] for k in self.sr})
         self.assertEqual(view2['price_off'], sorted(self.sr)); self.assertEqual(view2['pending'], []); self.assertEqual(signals2, {})
 
+    def test_pending_signals_stop_at_a_strategys_free_position_slots(self):
+        closes = [100.0] * 40 + [110.0]                                        # the data ends on the breakout bar: every coin is pending
+        sr = {f'C{k}-USDT-SWAP': series_from(list(closes), f'C{k}-USDT-SWAP') for k in range(6)}
+        st, ids = self._setup([(5.0, True, 3, 10)])
+        st['nodes'][ids[0]]['genes'] = base_genes(risk=.02)
+        st['team'] = [dict(id=ids[0], since=0)]; st['champion'] = st['leader'] = None
+        st['paper'] = dict(start_equity=10000.0, account=dict(from_ts=sr['C0-USDT-SWAP'].ts[30], start_equity=10000.0, next=0, segs=[]))
+        view, signals = P.update(st, sr, [])
+        self.assertEqual(len(view['pending']), X.MAX_POSITIONS); self.assertEqual(len(signals), X.MAX_POSITIONS)   # six signals, three free slots
+        self.assertEqual(sorted(signals), [f'C{k}-USDT-SWAP' for k in range(3)])                                     # the ones the account fills
+
     def test_daily_halt_closes_the_other_members_and_leaves_the_leader(self):
         closes = [100.0] * 40 + [110.0, 111.0, 111.0] + [104.0] * 20                     # breakout, then a fall that stays above the stops
         sr = {f'C{k}-USDT-SWAP': series_from(list(closes), f'C{k}-USDT-SWAP') for k in range(6)}

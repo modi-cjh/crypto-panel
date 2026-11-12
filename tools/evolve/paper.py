@@ -12,7 +12,7 @@ Before this, the account was five separate slots of 1/5 each; that history (curv
 paper['legacy'] and the shared account starts from the slots' total equity. The slot code below `_legacy_update` only
 serves that one-time conversion.
 """
-from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES
+from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS
 from evolution import TEAM_SIZE
 
 HOUR = 3600_000
@@ -292,10 +292,15 @@ def update(state, series, changes, price_off=None):
     tag = lambda x: dict({k: v for k, v in x.items() if k != 'seg'}, champion=who(x['seg']), slot=by[x['seg']]['slot'])
     positions = [dict(tag(p), **({'winding': True} if by[p['seg']]['wind_ts'] is not None else {})) for p in res['positions']]
     trades = [tag(t) for t in res['trades']]
-    pending, seen = [], set()
-    for sid, inst, d, dist, b in sorted(res['pending'], key=lambda x: not x[4]):     # one per coin: the order the account fills them in
-        if inst not in seen and inst not in off_now:
-            seen.add(inst); pending.append(dict(inst=inst, side=d, champion=who(sid)))
+    # Signals waiting for the next open, as far as the account will take them: one per coin, the leader's first, and no more
+    # than a strategy's free position slots (otherwise the mirror would open entries the account itself never fills).
+    held = {g['id']: sum(1 for p in res['positions'] if p['seg'] == g['id']) for g in acc['segs']}
+    queue, seen = [], {p['inst'] for p in res['positions']}
+    for sid, inst, d, dist, b in sorted(res['pending'], key=lambda x: not x[4]):
+        if inst in seen or inst in off_now or held[sid] >= MAX_POSITIONS or (res['halted'] and not b):
+            continue
+        seen.add(inst); held[sid] += 1; queue.append((sid, inst, d, dist, b))
+    pending = [dict(inst=inst, side=d, champion=who(sid)) for sid, inst, d, dist, b in queue]
     members = []
     for g in acc['segs']:
         if g['wind_ts'] is None:
@@ -311,9 +316,7 @@ def update(state, series, changes, price_off=None):
     for p in res['positions']:
         signals[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], opened=p['opened'], strategy='evolved',
                                   champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1, **size(p['boost'], by[p['seg']]['genes']['risk']))   # the base risk: the mirror applies the majors / crowding steps itself
-    for sid, inst, d, dist, b in res['pending']:
-        if inst in off_now:                              # the account will not fill it, so the mirror must not either
-            continue
+    for sid, inst, d, dist, b in queue:
         g = by[sid]
         signals.setdefault(inst, dict(_signal_from_pending(inst, d, g['genes'], series, last_ts, g['champion']), rank=rank.get(g['champion'], 99) + 1,
                                       **size(b, g['genes']['risk'])))
