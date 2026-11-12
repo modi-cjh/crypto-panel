@@ -4,8 +4,8 @@
 import { coinIcon } from './coins.mjs';
 
 export const OKX_URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/okx_demo/summary.json';
-export const OKX_STALE = 90 * 60000;       // runs every 5 minutes; GitHub cron can lag
-export const OKX_SNAPSHOT_DELAY = 10 * 60000;
+export const OKX_STALE = 6 * 3600000;        // runs every 4 hours; GitHub cron can lag by an hour or more
+export const OKX_SNAPSHOT_DELAY = 5 * 3600000;
 export const OKX_COLOR = '#06727d';
 const RECENT = 3 * 3600000;
 const DEFAULT_START = 5000;
@@ -127,13 +127,14 @@ export function okxCurveSVG(d) {
 }
 
 // Compact position rows: coin, side, leverage and floating PnL stay visible; tap to expand the details.
-export function okxPositionsMarkup(d, marks = new Map(), now = Date.now(), { open = false } = {}) {
+export function okxPositionsMarkup(d, marks = new Map(), now = Date.now(), { open = false, owners = null } = {}) {   // owners: {inst: {champion, boost}} from the paper account
   const { positions } = okxLive(d, marks, now);
   if (!positions.length) return '<p class="empty">当前没有持仓，等待策略信号</p>';
   const mirrors = Object.fromEntries((d.open_mirrors || []).map(m => [m.inst, m]));
   return positions.map(p => {
     const m = mirrors[p.inst], margin = num(p.margin), pct = margin > 0 && finite(p.upl) ? p.upl / margin * 100 : null;
-    const tag = p.ours ? esc(STRATEGIES[m?.strategy] || '跟单') : '非本程序仓位';
+    const own = m?.champion ? { champion: m.champion, boost: m.leader } : owners?.[p.inst];
+    const tag = !p.ours ? '非本程序仓位' : own?.champion ? `${esc(own.champion)}${own.boost ? ' · <b>第一名</b>' : ''}` : esc(STRATEGIES[m?.strategy] || '跟单');
     const pnl = finite(p.upl) ? `${signed(p.upl)} USDT` : '—';
     return `<details class="okx-pos sim-position${p.ours ? '' : ' manual'}" data-inst="${esc(p.inst)}"${open ? ' open' : ''}><summary>` +
       `<span class="okx-pos-coin">${coinIcon(p.inst)}<b>${esc(coin(p.inst))}</b><i class="okx-side ${p.side === 1 ? 'up' : 'down'}">${p.side === 1 ? '多' : '空'} ${esc(p.lever)}×</i></span>` +
@@ -158,7 +159,7 @@ const realised = a => {
 function actionDetail(a) {
   if (a.action === 'skip') return SKIPS[a.reason] || a.reason || '';
   if (a.action === 'open') return `${STRATEGIES[a.strategy] ? STRATEGIES[a.strategy] + ' · ' : ''}${a.side === 1 ? '多' : '空'} ${a.contracts} 张 @ ${a.price} · 止损 ${a.stop}${a.target ? ' · 止盈 ' + a.target : ''} · ${a.leverage}×`;
-  if (a.action === 'amend_stop') return `止损 ${a.old} → ${a.new}`;
+  if (a.action === 'amend_stop') return `止损 ${px(num(a.old))} → ${px(num(a.new))}`;
   if (a.action === 'restore_stop') return `持仓在交易所没有止损单，已按 ${a.stop} 补挂`;
   if (a.action === 'close') return a.execution_test ? `${CLOSES.execution_test} · ${a.contracts} 张 @ ${a.price} · 净损益 ${signed(num(a.net_pnl), 4)} USDT（含手续费）` : [CLOSES[a.reason] || a.reason || '', finite(num(a.close_price)) ? `平仓价 ${px(num(a.close_price))}` : '', realised(a)].filter(Boolean).join(' · ');
   if (a.action === 'closed_on_exchange') return [finite(num(a.close_price)) ? `成交价 ${px(num(a.close_price))}` : '', realised(a) || '金额待下次运行从交易所补全'].filter(Boolean).join(' · ');
@@ -169,7 +170,7 @@ function actionDetail(a) {
 }
 
 // Fills and risk events versus housekeeping (pause / resume / skips), so real trades are not buried.
-const TRADE_ACTIONS = new Set(['open', 'close', 'closed_on_exchange', 'amend_stop', 'restore_stop', 'daily_halt', 'error']);
+const TRADE_ACTIONS = new Set(['open', 'close', 'closed_on_exchange', 'restore_stop', 'daily_halt', 'error']);   // stop moves are housekeeping: 运行记录
 const ACTION_TONE = { open: 'open', close: 'close', closed_on_exchange: 'stop', amend_stop: 'info', restore_stop: 'info', daily_halt: 'stop', error: 'stop' };
 const toneOf = a => a.action === 'closed_on_exchange' && finite(num(a.pnl)) ? (num(a.pnl) >= 0 ? 'close' : 'stop') : ACTION_TONE[a.action] || 'muted';
 export const isTradeAction = a => TRADE_ACTIONS.has(a.action);
@@ -208,7 +209,7 @@ export function okxChanges(prev, next) {
 }
 
 export function okxMascotState(d, now = Date.now()) {
-  if (!d || now - Date.parse(d.updated_at) > OKX_STALE) return { state: 'offline', label: '离线', message: 'OKX 模拟账户超过 90 分钟没有更新，我在等下一次运行' };
+  if (!d || now - Date.parse(d.updated_at) > OKX_STALE) return { state: 'offline', label: '离线', message: 'OKX 模拟账户超过 6 小时没有更新，我在等下一次运行' };
   if (d.halted) return { state: 'paused', label: '停手', message: '今日触发日亏停手，不再开新仓' };
   if (d.paused) return { state: 'paused', label: '暂停', message: '跟单已暂停，恢复后我会播报开平仓' };
   const recent = (d.recent_actions || []).filter(a => finite(Date.parse(a.ts)) && now - Date.parse(a.ts) >= 0 && now - Date.parse(a.ts) <= RECENT);

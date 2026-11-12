@@ -54,9 +54,9 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
   await page.locator(`#evolve-graph [data-node="${other.id}"]`).focus(); await page.keyboard.press('Enter');
   await page.waitForFunction(id => document.querySelector('#evolve-detail h3').textContent.includes(id), other.id);
   assert.match(await page.locator('#evolve-paper').innerText(), /纸面权益[\s\S]*冠军组合/);
-  assert.equal(await page.locator('#evolve-paper tr.evo-member').count(), dash.team.length);
+  assert.equal(await page.locator('#evolve-paper li.evo-member').count(), dash.team.length);
   assert.equal(await page.locator('#evolve-graph .team-ring, #evolve-graph .champ-ring').count(), dash.team.length);   // every member ringed
-  await page.locator(`#evolve-paper tr.evo-member[data-node="${dash.team[2].id}"]`).click();                          // member row opens its detail
+  await page.locator(`#evolve-paper li.evo-member[data-node="${dash.team[2].id}"]`).click();                          // member row opens its detail
   await page.waitForFunction(id => document.querySelector('#evolve-detail h3').textContent.includes(id), dash.team[2].id);
   assert.match(await page.locator('#evolve-caption').innerText(), /训练集[\s\S]*样本外/);
   for (const width of [320, 390]) {

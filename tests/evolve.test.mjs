@@ -128,7 +128,7 @@ test('compat output: schema 1 with genes on every node still passes the pre-node
 
 test('team table shows each member\'s direction and the rules mention the direction quota', () => {
   const html = paperMarkup(d);
-  assert.match(html, /<tr data-node="[^"]+" class="evo-member">[\s\S]*(只做多|只做空|多空)/);
+  assert.match(html, /<li data-node="[^"]+" class="evo-member"[\s\S]*(只做多|只做空|多空)/);
   assert.match(paperMarkup({ ...d, champion_rules: { ...d.champion_rules, direction_cap: 3 } }), /只做多、只做空各最多 3 个/);
   assert.match(paperMarkup({ ...d, paper: { ...d.paper, segments: [{ slot: 4, champion: 's1', species: 'trend', reason: 'balance', from_ts: Date.parse(d.updated_at), to_ts: null }] } }), /方向配额调整/);
 });
@@ -150,7 +150,7 @@ test('paper positions and trades show contract details: leverage, margin, liquid
 test('the leader is shown with its bigger size and the rules explain it', async () => {
   const { executionProfileText } = await import('../assets/control.mjs');
   const html = paperMarkup(d);
-  assert.match(html, /第一名<br><small class="muted">加大仓位<\/small>/);
+  assert.match(html, /<span class="evo-rank lead">第一名<\/span>[\s\S]*?<b>加大仓位<\/b>/);
   assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）加大仓位[\\s\\S]*整个账户的 5%[\\s\\S]*杠杆上限 50×[\\s\\S]*不计入同方向上限[\\s\\S]*日亏停手`));
   assert.match(html, /其他成员每笔 1%–5%/); assert.match(html, /升为第一名（加大仓位）/);
   const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, leader_risk: .05, leader_leverage: 50, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
@@ -160,7 +160,7 @@ test('the leader is shown with its bigger size and the rules explain it', async 
 test('shared cross-margin account: members show what they contributed, positions say 全仓, rules list the shared limits', () => {
   const html = paperMarkup(d);
   assert.equal(d.paper.mode, 'cross');
-  assert.match(html, /<th>贡献盈亏<\/th><th>占账户<\/th>/); assert.match(html, /共用一个账户（全仓）/);
+  assert.match(html, /贡献 <b class="[a-z]*">[+-]?[\d,.]+ U<\/b>（占账户/); assert.match(html, /样本外 <b[^>]*>[^<]+<\/b> · 终审 <b/); assert.match(html, /共用一个账户（全仓）/);
   assert.match(html, /每笔开仓都带止损/); assert.match(html, /同方向已有 3 个以上持仓时新开仓风险减半，6 个以上减到四分之一/);
   assert.match(html, /当日亏损达 10% 时其他成员全部平仓/); assert.match(html, /同样按整个账户算/);
   const t0 = Date.parse(d.updated_at);
@@ -173,7 +173,7 @@ test('shared cross-margin account: members show what they contributed, positions
 test('the bigger size needs a member that passed both gates; without one the page says so', () => {
   assert.match(paperMarkup(d), /只有样本外和终审都合格的成员才能当第一名/);
   const none = paperMarkup({ ...d, paper: { ...d.paper, leader: null, members: d.paper.members.map(m => ({ ...m, boost: false })) } });
-  assert.match(none, /目前没有成员同时通过样本外和终审/); assert.doesNotMatch(none, /加大仓位<\/small>/);
+  assert.match(none, /目前没有成员同时通过样本外和终审/); assert.doesNotMatch(none, /<b>加大仓位<\/b>/); assert.match(none, /暂无第一名/);
 });
 
 test('the rules name the five majors and their doubled risk', async () => {
@@ -189,4 +189,14 @@ test('coins whose demo price is off are listed, and a replaced unqualified membe
   assert.match(html, new RegExp(`模拟盘价格偏离真实行情超过 1% 的币暂不开新仓（现在 ${d.paper.price_off.length} 个`));
   assert.match(html, /原成员连续不合格/); assert.equal(d.champion_rules.team_size, 8);
   assert.doesNotMatch(paperMarkup({ ...d, paper: { ...d.paper, price_off: [] } }), /暂不开新仓/);
+});
+
+test('phone layout: rules are folded behind a one-line digest, the curve shows its range, the home card names the first place', () => {
+  const html = paperMarkup(d);
+  assert.match(html, /<details class="evo-more evo-rules-fold"><summary>规则：8 个策略共用一个全仓账户 · 第一名每笔 5% · 其他 1%–5% · 主流币 ×2 · 日亏 10% 停手/);
+  assert.match(html, /evo-curve-range[\s\S]*最低 [\d,.]+ · 最高 [\d,.]+ · 现在 [\d,.]+/);
+  assert.doesNotMatch(html, /<table class="evo-metrics evo-team">/);
+  const lead = d.team.find(t => t.id === d.paper.leader.id);
+  assert.match(homeCardMarkup(d), new RegExp(`第一名 ${lead.id}`));
+  assert.match(homeCardMarkup({ ...d, paper: { ...d.paper, leader: null } }), new RegExp(`领头 ${d.champion.id}`));
 });

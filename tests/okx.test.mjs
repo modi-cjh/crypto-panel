@@ -42,11 +42,11 @@ test('totals report return against the starting equity and today against the day
 
 test('trading switch and delayed account snapshots are distinct', () => {
   assert.equal(okxStatus(summary({updated_at:new Date(NOW-300e3).toISOString()}), NOW).label, '允许开仓');
-  assert.equal(okxStatus(summary(), NOW).label, '快照延迟 · 未暂停');
+  assert.equal(okxStatus(summary(), NOW).label, '允许开仓');                                   // 20 minutes old: runs are 4 hours apart
+  assert.equal(okxStatus(summary(), NOW + 4.5 * 3600e3).label, '允许开仓');
   assert.equal(okxStatus(summary({ paused: true }), NOW).label, '已暂停');
   assert.equal(okxStatus(summary({ halted: true, paused: true }), NOW).label, '日亏停手');
   assert.equal(okxStatus(summary(), NOW + 6 * 3600e3).label, '快照延迟 · 未暂停');
-  assert.equal(okxStatus(summary(), Date.parse('2026-11-03T13:00:00Z')).label, '快照延迟 · 未暂停');
   assert.equal(okxStatus(summary({paused:true}), NOW + 6 * 3600e3).label, '已暂停');
 });
 
@@ -58,7 +58,8 @@ test('demo quote connectivity requires fresh marks for every held instrument',()
   assert.equal(demoQuoteState(data,marks,{state:'实时',lastData:NOW},NOW,NOW+31000).label,'行情断开');
   assert.equal(demoQuoteState({...data,positions:[]},new Map(),null,0,NOW).label,'账户快照');
   const note=accountDataNote(data,demoQuoteState(data,new Map(),null,0,NOW),NOW);
-  assert.match(note,/距今 20 分钟/);assert.match(note,/使用上次快照/);assert.match(note,/更新延迟/);
+  assert.match(note,/距今 20 分钟/);assert.match(note,/使用上次快照/);assert.doesNotMatch(note,/更新延迟/);
+  assert.match(accountDataNote(data,demoQuoteState(data,new Map(),null,0,NOW+6*3600e3),NOW+6*3600e3),/更新延迟/);
   assert.match(accountDataNote(data,demoQuoteState(data,marks,{state:'实时',lastData:NOW},0,NOW),NOW),/按模拟行情估值/);
 });
 
@@ -153,4 +154,18 @@ test('headline return names one outsized trade, and the mirror is compared with 
   assert.match(html, /纸面持仓 <b>2<\/b> 个，OKX 跟上 <b>1<\/b> 个，另有 1 个等待平仓/);
   assert.match(html, /SOL[\s\S]*已跟上/); assert.match(html, /BTC[\s\S]*没跟上[\s\S]*信号太旧/); assert.match(html, /ICP[\s\S]*纸面已平/);
   assert.match(mirrorCompareMarkup(d, null), /等待纸面账户/);
+});
+
+test('positions name the strategy that opened them; stop moves are rounded and listed under the run log', async () => {
+  const { okxPositionsMarkup: pm, okxActionsMarkup: am } = await import('../assets/okx.mjs');
+  const d = summary({ positions: [{ inst: 'CRV-USDT-SWAP', side: -1, ours: true, contracts: '7120', avgPx: '0.2419', markPx: '0.24', upl: '-1.1', lever: '7', margin: '245.9', ctVal: 1 }],
+    open_mirrors: [{ inst: 'CRV-USDT-SWAP', strategy: 'evolved', champion: 's13215', leader: true, stop: .2662 }],
+    recent_actions: [{ ts: '2026-11-03T11:39:00Z', action: 'amend_stop', inst: 'GRASS-USDT-SWAP', old: 0.5095269058416524, new: 0.5035269058416524 }] });
+  assert.match(pm(d), /s13215 · <b>第一名<\/b>/);
+  const old = { ...d, open_mirrors: [{ inst: 'CRV-USDT-SWAP', strategy: 'evolved', stop: .2662 }] };              // opened before the mirror stored the strategy
+  assert.match(pm(old), /进化冠军/); assert.match(pm(old, new Map(), NOW, { owners: { 'CRV-USDT-SWAP': { champion: 's12821', boost: false } } }), /okx-pos-tag">s12821</);
+  assert.doesNotMatch(pm(d), /<details[^>]* open/);                                   // collapsed until tapped
+  assert.equal(am(d, 10, { kind: 'trades' }).includes('GRASS'), false);
+  const log = am(d, 10, { kind: 'system' });
+  assert.match(log, /止损 0\.50953 → 0\.50353/); assert.doesNotMatch(log, /0\.5095269/);
 });
