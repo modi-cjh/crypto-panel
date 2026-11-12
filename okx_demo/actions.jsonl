@@ -94,3 +94,7 @@
 {"ts": "2026-11-12T05:13:18Z", "action": "amend_stop", "inst": "LPT-USDT-SWAP", "dry_run": false, "old": 1.3512531924294842, "new": 1.3362531924294843}
 {"ts": "2026-11-12T05:13:18Z", "action": "amend_stop", "inst": "INJ-USDT-SWAP", "dry_run": false, "old": 9.248670248211768, "new": 9.193670248211768}
 {"ts": "2026-11-12T05:13:18Z", "action": "amend_stop", "inst": "CRO-USDT-SWAP", "dry_run": false, "old": 0.052936888427798014, "new": 0.05200688842779801}
+{"ts": "2026-11-12T09:13:59Z", "action": "amend_stop", "inst": "CRV-USDT-SWAP", "dry_run": false, "old": 0.26322577700713234, "new": 0.26112577700713235}
+{"ts": "2026-11-12T09:13:59Z", "action": "amend_stop", "inst": "LPT-USDT-SWAP", "dry_run": false, "old": 1.3362531924294843, "new": 1.3302531924294843}
+{"ts": "2026-11-12T09:13:59Z", "action": "amend_stop", "inst": "INJ-USDT-SWAP", "dry_run": false, "old": 9.193670248211768, "new": 9.157670248211769}
+{"ts": "2026-11-12T09:13:59Z", "action": "amend_stop", "inst": "CRO-USDT-SWAP", "dry_run": false, "old": 0.05200688842779801, "new": 0.051016888427798016}

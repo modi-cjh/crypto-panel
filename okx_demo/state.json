@@ -438,6 +438,10 @@
   [
    1794460398424,
    7046.12
+  ],
+  [
+   1794474839429,
+   7092.2
   ]
  ],
  "mirrored": {
@@ -846,7 +850,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "7120",
-   "stop": 0.26322577700713234,
+   "stop": 0.26112577700713235,
    "target": 0.17363040208074262,
    "leverage": 7,
    "entry": 0.2419,
@@ -856,7 +860,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668701434597376",
-   "last_upl": 13.117900000000233
+   "last_upl": 38.749900000000174
   },
   "LPT-USDT-SWAP|1794441600000": {
    "inst": "LPT-USDT-SWAP",
@@ -864,7 +868,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "19407",
-   "stop": 1.3362531924294843,
+   "stop": 1.3302531924294843,
    "target": 0.9988163804403928,
    "leverage": 11,
    "entry": 1.262,
@@ -874,7 +878,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668738680016896",
-   "last_upl": 29.115099999999988
+   "last_upl": 40.759299999999996
   },
   "XTZ-USDT-SWAP|1794441600000": {
    "inst": "XTZ-USDT-SWAP",
@@ -939,7 +943,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "222",
-   "stop": 9.193670248211768,
+   "stop": 9.157670248211769,
    "target": 3.8823126936479917,
    "leverage": 3,
    "entry": 7.476,
@@ -974,7 +978,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "504",
-   "stop": 0.05200688842779801,
+   "stop": 0.051016888427798016,
    "target": 0.04324468988023428,
    "leverage": 10,
    "entry": 0.04947,
