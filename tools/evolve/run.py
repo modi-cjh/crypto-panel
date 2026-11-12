@@ -25,12 +25,14 @@ def iso(ms):
     return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
 
 
-GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'origin', 'fitness', 'qualified', 'train', 'test', 'final', 'test_ok', 'final_ok')
+GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'origin', 'fitness', 'qualified', 'train', 'test', 'final', 'test_ok', 'final_ok', 'oos_dd')
 
 
-def node_view(n, curves=False, slim=False):
+def node_view(n, curves=False, slim=False, state=None):
     v = {k: n[k] for k in GRAPH_KEYS if k in n}
     v['genes'] = n['genes']                    # kept even when slim: pages from before nodes.json require genes on every node
+    if state is not None:
+        v['entry_gate'] = E.entry_gate(n, state=state)
     if slim:                                   # summary and curves live in nodes.json
         return v
     v['summary'] = describe(n['genes'])
@@ -41,9 +43,9 @@ def node_view(n, curves=False, slim=False):
 
 
 def node_details(state):
-    keep = ('genes', 'summary', 'test_curve')
+    keep = ('genes', 'summary', 'test_curve', 'entry_gate', 'oos_dd')
     return dict(schema=1, generation=state['generation'], updated_at=iso(int(time.time() * 1000)),
-                nodes={nid: {k: v for k, v in node_view(n).items() if k in keep} for nid, n in state['nodes'].items()})
+                nodes={nid: {k: v for k, v in node_view(n, state=state).items() if k in keep} for nid, n in state['nodes'].items()})
 
 
 def dashboard(state, series, split, obs, paper_view, timing):
@@ -59,13 +61,16 @@ def dashboard(state, series, split, obs, paper_view, timing):
                   train_share=D.TRAIN_SHARE, test_share=D.TEST_SHARE),
         gate=E.GATE, final_gate=E.FINAL_GATE, volatility=obs, history=state['history'][-500:], timing=timing,
         species_names=SPECIES_NAMES, gene_bounds={k: [v[1], v[2]] if v[0] != 'choice' else v[1] for k, v in GENES.items()},
-        nodes=[node_view(n, curves=n['id'] == champ, slim=n['id'] not in seated) for n in nodes.values()],
-        hall=state['hall'], champion=node_view(nodes[champ], curves=True) if champ in nodes else None,
+        nodes=[node_view(n, curves=n['id'] == champ, slim=n['id'] not in seated, state=state) for n in nodes.values()],
+        hall=state['hall'], champion=node_view(nodes[champ], curves=True, state=state) if champ in nodes else None,
         champion_since=iso(state['champion_since']) if state.get('champion_since') else None,
         champion_rules=dict(min_tenure_hours=E.MIN_TENURE // 3600_000, streak=E.STREAK, retain=E.RETAIN, margin=E.SWITCH_MARGIN,
                             team_size=E.TEAM_SIZE, species_cap=E.TEAM_SPECIES_CAP, direction_cap=E.TEAM_DIRECTION_CAP),
-        team=[dict(node_view(nodes[m['id']]), since=iso(m['since'])) for m in state.get('team', []) if m['id'] in nodes],
-        challengers=[dict(id=nid, species=nodes[nid]['species'], fitness=nodes[nid]['fitness'], test=nodes[nid]['test'], streak=state.get('streaks', {}).get(nid, 0))
+        entry_rules=dict(streak=E.ENTRY_STREAK, max_dd=E.ENTRY_MAX_DD, generations_per_run=5,
+                         note='每个 Actions 运行最多进化 5 代；守擂按代累计、跨运行保留。同一策略连续 5 代既是当代冠军又样本外合格，即可在一次运行内满门槛。三项全过才接入模拟盘；不过则持仓走完，账户持有现金，不会改用未过关的策略。'),
+        team=[dict(node_view(nodes[m['id']], state=state), since=iso(m['since'])) for m in state.get('team', []) if m['id'] in nodes],
+        challengers=[dict(id=nid, species=nodes[nid]['species'], fitness=nodes[nid]['fitness'], test=nodes[nid]['test'],
+                          streak=state.get('streaks', {}).get(nid, 0), entry_gate=E.entry_gate(nodes[nid], state=state))
                      for nid in state['hall'] if nid not in {m['id'] for m in state.get('team', [])} and nid in nodes][:5],
         paper=paper_view)
 

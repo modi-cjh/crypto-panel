@@ -38,6 +38,14 @@ TEAM_SIZE, TEAM_SPECIES_CAP = 8, 2      # 8 seats (5 before): more trades a day,
 # the quota keeps seats for qualified strategies of the other direction, so a trend reversal does not hit every seat.
 TEAM_DIRECTION_CAP = 5
 UNQUALIFIED_RUNS = 3      # a member that failed the gates this many runs in a row gives its seat to a qualified candidate
+# Paper / OKX-demo entry gate (hard; never live). Ported from the old lineage CANDIDATE_STREAK=5:
+# the same individual must be the generation champion AND out-of-sample qualified for 5 consecutive
+# generations. Each Actions run breeds up to 5 generations, so a stable champion can satisfy the
+# streak in a single run; the count is persisted in state['defense_id'] / state['defense_streak']
+# across runs. The drawdown check is on the combined unseen window (样本外 + 终审, costs included)
+# and passes at max_dd <= 30 % (inclusive). GATE / FINAL_GATE (25 %) still decide `qualified`.
+ENTRY_STREAK = 5
+ENTRY_MAX_DD = 30.0
 
 
 def downsample(curve, n=CURVE_POINTS):
@@ -106,6 +114,95 @@ def passes(m, gate):
     return m['ret'] > gate['min_ret'] and m['max_dd'] < gate['max_dd'] and m['trades'] >= gate['min_trades']
 
 
+def _curve_dd(curves):
+    """Max drawdown (%) of one or more equity curves stitched in order (the next curve is scaled onto the previous end)."""
+    pts = []
+    for curve in curves:
+        if not curve:
+            continue
+        if not pts:
+            pts = [tuple(p) for p in curve]
+            continue
+        base = curve[0][1]
+        scale = pts[-1][1] / base if base else 1.0
+        start = 1 if curve[0][0] == pts[-1][0] else 0
+        pts += [(t, e * scale) for t, e in curve[start:]]
+    if not pts:
+        return 0.0
+    peak, dd = pts[0][1], 0.0
+    for _, e in pts:
+        peak = max(peak, e)
+        dd = max(dd, (peak - e) / peak if peak > 0 else 0)
+    return round(dd * 100, 3)
+
+
+def oos_window_dd(node):
+    """Max drawdown (%) on the unseen walk-forward window (out-of-sample + final, costs included).
+
+    Uses the stored `oos_dd` when present; otherwise the worse of the two window metrics and the
+    drawdown of the two curves stitched together (path-dependent combined DD can exceed either part).
+    """
+    if node.get('oos_dd') is not None:
+        return float(node['oos_dd'])
+    dds = []
+    if node.get('test'):
+        dds.append(node['test']['max_dd'])
+    if node.get('final'):
+        dds.append(node['final']['max_dd'])
+    dds.append(_curve_dd([node.get('test_curve') or [], node.get('final_curve') or []]))
+    return max(dds) if dds else 0.0
+
+
+def update_defense_streak(prev_id, prev_streak, champ_id, qualified):
+    """Consecutive generations the same individual has been champion AND out-of-sample qualified.
+
+    Ported from the old lineage engine.update_streak / CANDIDATE_STREAK=5. The count resets to 0
+    when the champion fails the OOS gate, and restarts at 1 when a different individual takes the title.
+    """
+    if not qualified:
+        return 0
+    return (prev_streak or 0) + 1 if champ_id == prev_id else 1
+
+
+def record_defense(state):
+    """Once per generation: the living individual with the best training fitness is this generation's
+    champion (same rule as the old engine). Updates state['defense_id'] and state['defense_streak']."""
+    nodes = state['nodes']
+    pop = [nodes[i] for i in state['population'] if i in nodes]
+    if not pop:
+        return
+    champ = max(pop, key=lambda n: n['fitness'])
+    state['defense_streak'] = update_defense_streak(
+        state.get('defense_id'), state.get('defense_streak', 0), champ['id'], bool(champ.get('qualified')))
+    state['defense_id'] = champ['id']
+
+
+def defense_streak_for(state, nid):
+    return int(state.get('defense_streak') or 0) if nid and nid == state.get('defense_id') else 0
+
+
+def entry_reasons(oos_ok, streak, dd, streak_need=ENTRY_STREAK, dd_lim=ENTRY_MAX_DD):
+    reasons = []
+    if not oos_ok:
+        reasons.append('样本外（含成本的 walk-forward，含终审）未通过')
+    if streak < streak_need:
+        reasons.append(f'连续守擂 {streak}/{streak_need} 代，未满 {streak_need} 代')
+    if dd > dd_lim:
+        reasons.append(f'最大回撤 {dd}% 超过 {dd_lim:.0f}%')
+    return reasons
+
+
+def entry_gate(node, streak=None, state=None):
+    """Three-part hard gate for joining the paper portfolio / OKX demo follow. Never live."""
+    if streak is None:
+        streak = defense_streak_for(state, node.get('id') if node else None) if state is not None else 0
+    oos_ok = bool(node and node.get('qualified'))
+    dd = oos_window_dd(node) if node else 0.0
+    reasons = entry_reasons(oos_ok, streak, dd)
+    return dict(oos_ok=oos_ok, streak=int(streak or 0), streak_needed=ENTRY_STREAK,
+                max_dd=dd, max_dd_limit=ENTRY_MAX_DD, passed=not reasons, reasons=reasons)
+
+
 def evaluate(genes, series, split):
     """split = (start, cut, end) or (start, cut, mid, end): train [start, cut), out-of-sample [cut, mid), final check
     [mid, end). 'qualified' = passes the out-of-sample gate and, when there is a final window, the final gate too."""
@@ -128,6 +225,13 @@ def evaluate(genes, series, split):
         train['regimes'] = reg = regime_returns(tr['curve'], ref)
         if one_sided(reg):
             fit = round(fit * REGIME_FACTOR if fit > 0 else fit * (2 - REGIME_FACTOR), 4)
+    # Combined unseen-window DD (样本外 + 终审). Prefer the official per-window metrics (every close)
+    # and also the stitched curves; path-dependent combined DD can exceed either part.
+    out['oos_dd'] = max(
+        [out['test']['max_dd']]
+        + ([out['final']['max_dd']] if out.get('final') else [])
+        + [_curve_dd([out.get('test_curve') or [], out.get('final_curve') or []])]
+    )
     return dict(out, fitness=fit, train=train, train_curve=downsample(tr['curve']))
 
 
@@ -251,6 +355,7 @@ def generation(state, series, split, obs):
                regime=obs['regime'], vol=obs['market'], mutation_rate=obs['mutation_rate'],
                species={sp: sum(1 for n in living if n['species'] == sp) for sp in SPECIES})
     state['history'].append(row)
+    record_defense(state)
     return row
 
 

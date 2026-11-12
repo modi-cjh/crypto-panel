@@ -13,7 +13,7 @@ paper['legacy'] and the shared account starts from the slots' total equity. The 
 serves that one-time conversion.
 """
 from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS
-from evolution import TEAM_SIZE
+from evolution import TEAM_SIZE, entry_gate
 
 HOUR = 3600_000
 LEADER_RISK, LEADER_LEVERAGE = ACCOUNT_RULES['leader_risk'], ACCOUNT_RULES['leader_lever']
@@ -248,7 +248,12 @@ def update(state, series, changes, price_off=None):
     paper = state.get('paper') or {}
     if 'account' not in paper:
         paper = _convert(state, series, last_ts)
-    acc, team, leader = paper['account'], state.get('team', []), state.get('leader')
+    acc, team = paper['account'], state.get('team', [])
+    # Only members who pass the three-part entry gate may keep or take a live paper seat / OKX follow.
+    # Failing members are wound down (open positions run to their own exits). If nobody passes, the
+    # account holds cash — it never falls back to an ungated strategy. Existing open size is not resized.
+    allowed = lambda nid: bool(nid) and nid in nodes and entry_gate(nodes[nid], state=state)['passed']
+    leader = state.get('leader') if allowed(state.get('leader')) else None
     seated = lambda slot_i: next((g for g in acc['segs'] if g['slot'] == slot_i and g['wind_ts'] is None), None)
 
     def wind(g):
@@ -265,15 +270,22 @@ def update(state, series, changes, price_off=None):
                                 from_ts=last_ts, wind_ts=None, boosts=[], reason=reason))
 
     for slot_i, old, new, reason in changes:
-        seat(slot_i, new, reason)
+        if allowed(new):
+            seat(slot_i, new, reason)
+        elif seated(slot_i):
+            wind(seated(slot_i))
     for slot_i, m in enumerate(team):                    # a seated member without a running segment (first run, conversion) starts one
         cur = seated(slot_i)
+        if not allowed(m['id']):
+            if cur:
+                wind(cur)
+            continue
         if not cur or cur['champion'] != m['id']:
             seat(slot_i, m['id'], 'carry')
-    for g in acc['segs']:                                # a seat that no longer exists
-        if g['wind_ts'] is None and (g['slot'] >= len(team) or team[g['slot']]['id'] != g['champion']):
+    for g in acc['segs']:                                # a seat that no longer exists, or no longer passes the entry gate
+        if g['wind_ts'] is None and (g['slot'] >= len(team) or team[g['slot']]['id'] != g['champion'] or not allowed(g['champion'])):
             wind(g)
-    for g in acc['segs']:                                # the leader title
+    for g in acc['segs']:                                # the leader title — only an entry-gated member may hold the bigger size
         if g['wind_ts'] is None:
             is_leader = bool(g['boosts']) and g['boosts'][-1][1] is None
             if g['champion'] == leader and not is_leader:
@@ -297,7 +309,7 @@ def update(state, series, changes, price_off=None):
     held = {g['id']: sum(1 for p in res['positions'] if p['seg'] == g['id']) for g in acc['segs']}
     queue, seen = [], {p['inst'] for p in res['positions']}
     for sid, inst, d, dist, b in sorted(res['pending'], key=lambda x: not x[4]):
-        if inst in seen or inst in off_now or held[sid] >= MAX_POSITIONS or (res['halted'] and not b):
+        if inst in seen or inst in off_now or held[sid] >= MAX_POSITIONS or res['halted']:
             continue
         seen.add(inst); held[sid] += 1; queue.append((sid, inst, d, dist, b))
     pending = [dict(inst=inst, side=d, champion=who(sid)) for sid, inst, d, dist, b in queue]
@@ -309,7 +321,8 @@ def update(state, series, changes, price_off=None):
             members.append(dict(slot=g['slot'], id=g['champion'], species=g['species'], since=since, rank=rank.get(g['champion'], 99) + 1,
                                 pnl=round(pnl, 2), ret=round(pnl / acc['start_equity'] * 100, 3),
                                 positions=sum(1 for p in res['positions'] if p['seg'] == g['id']), trades=sum(1 for t in res['trades'] if t['seg'] == g['id']),
-                                boost=bool(g['boosts']) and g['boosts'][-1][1] is None))
+                                boost=bool(g['boosts']) and g['boosts'][-1][1] is None,
+                                entry_gate=entry_gate(nodes[g['champion']], state=state), trading=g['wind_ts'] is None and allowed(g['champion'])))
     # Mirror signals: one per coin (the account holds one position per coin). 'rank' orders the mirror's entries.
     signals = {}
     size = lambda boost, risk: dict(risk=LEADER_RISK, leverage=LEADER_LEVERAGE, leader=True) if boost else dict(risk=risk, leverage=ACCOUNT_RULES['lever'])
@@ -328,7 +341,8 @@ def update(state, series, changes, price_off=None):
     view = dict(equity=equity, start_equity=paper['start_equity'], ret=round((equity / paper['start_equity'] - 1) * 100, 3),
                 price_off=sorted(off_now), mode='cross', account_from=acc['from_ts'], account_start=acc['start_equity'], halted=res['halted'],
                 rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
-                           majors=list(ACCOUNT_RULES['majors']), major_factor=ACCOUNT_RULES['major_factor']),
+                           leader_risk=ACCOUNT_RULES['leader_risk'], leader_lever=ACCOUNT_RULES['leader_lever'],
+                           max_risk=ACCOUNT_RULES['max_risk'], majors=list(ACCOUNT_RULES['majors']), major_factor=ACCOUNT_RULES['major_factor']),
                 curve=([p for p in legacy.get('curve') or [] if p[0] < acc['from_ts']] + [list(p) for p in res['curve']])[-400:],
                 trades=sorted(trades + (legacy.get('trades') or []), key=lambda t: t['closed'], reverse=True)[:50],
                 positions=positions, pending=pending,

@@ -240,7 +240,7 @@ class MirrorTests(unittest.TestCase):
         self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0     # majors' extra size is tested on its own
         try:
             p = odt.configure_evolved()
-            self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT), ('evolved', .01, .05, .20, .10))
+            self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT), ('evolved', .01, .03, .20, .10))
             self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
             odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])     # the evolution's top-100 list
             self.assertEqual(odt.INSTRUMENTS, ['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])
@@ -250,9 +250,9 @@ class MirrorTests(unittest.TestCase):
             fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved')}))
             self.assertTrue(fake.posts[-1][1]['clOrdId'].startswith('evbtc'))
             self.assertEqual(m.summary()['execution_profile']['mode'], 'evolved')
-            # the order risks the strategy's own risk gene, clamped to 1–5 %
+            # the order risks the strategy's own risk gene, clamped to 1–3 %
             px = 78000.0
-            for gene, want in ((.03, .03), (.004, .01), (.09, .05)):
+            for gene, want in ((.03, .03), (.004, .01), (.09, .03)):
                 fake = FakeOKX(prices={'BTC-USDT-SWAP': px}); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved', risk=gene)}))
                 o = [b for q, b in fake.posts if q == '/api/v5/trade/order'][-1]
                 opened = [a for a in m.actions if a['action'] == 'open'][-1]
@@ -265,75 +265,70 @@ class MirrorTests(unittest.TestCase):
         try:
             odt.configure_evolved()
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
-            sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.05) for k, v in px.items()}
-            sig['DOGE-USDT-SWAP']['rank'] = 1                                                    # the leader's signal goes first
+            sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.03) for k, v in px.items()}
+            sig['DOGE-USDT-SWAP']['rank'] = 1
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
             orders = [b['instId'] for p, b in fake.posts if p == '/api/v5/trade/order']
             self.assertEqual(orders, ['DOGE-USDT-SWAP', 'BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP'])
-            # crowding: with three shorts already open the next ones risk half → 5 + 5 + 5 + 2.5 + 2.5 = the 20 % cap
-            self.assertEqual([round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'], [.05, .05, .05, .025, .025])
-            odt.SAME_SIDE_CAP = .12                                                               # a tighter cap: the third 5 % does not fit
+            # 3 % + 3 % + 3 % + 1.5 % + 1.5 % (crowding from the 4th) = 12 %, under the 20 % cap
+            self.assertEqual([round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'], [.03, .03, .03, .015, .015])
+            odt.SAME_SIDE_CAP = .07                                                               # a tighter cap: the third 3 % does not fit
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
             self.assertEqual([b['instId'] for p, b in fake.posts if p == '/api/v5/trade/order'], ['DOGE-USDT-SWAP', 'BTC-USDT-SWAP'])
             self.assertEqual(len([a for a in m.actions if a.get('reason') == 'same_side_risk']), 3)
             odt.SAME_SIDE_CAP = .20
-            for k in sig: sig[k]['risk'] = .02                                                    # smaller strategies: all five fit
+            for k in sig: sig[k]['risk'] = .02
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
             self.assertEqual(len([1 for p, b in fake.posts if p == '/api/v5/trade/order']), 5)
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
-    def test_the_leader_risks_its_own_share_with_up_to_fifty_times_leverage_outside_the_same_side_cap(self):
-        self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0     # majors' extra size is tested on its own
+    def test_the_leader_uses_the_same_three_percent_and_ten_times_cap(self):
+        self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0
         try:
             odt.configure_evolved()
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
-            sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.05) for k, v in px.items()}
-            sig['DOGE-USDT-SWAP'].update(rank=1, leader=True, risk=odt.LEADER_RISK, leverage=50, stop=px['DOGE-USDT-SWAP'] * 1.01)   # 1 % stop
+            sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.03) for k, v in px.items()}
+            sig['DOGE-USDT-SWAP'].update(rank=1, leader=True, risk=odt.LEADER_RISK, leverage=50, stop=px['DOGE-USDT-SWAP'] * 1.01)   # 1 % stop would allow high leverage
             fake = FakeOKX(equity=100000, prices=px); m, state = run(fake, paper(**sig))
             opened = {a['inst']: a for a in m.actions if a['action'] == 'open'}
             lead = opened['DOGE-USDT-SWAP']
-            self.assertAlmostEqual(lead['risk_usdt'] / m.equity, odt.LEADER_RISK, delta=.002); self.assertEqual(odt.LEADER_RISK, .05); self.assertEqual(lead['leverage'], 50); self.assertTrue(lead['leader'])
-            # the leader's 20 % does not use up the others' 20 % cap: four more 5 % shorts still open
-            self.assertEqual(len(opened), 5); self.assertEqual({a['leverage'] for k, a in opened.items() if k != 'DOGE-USDT-SWAP'}, {10})
+            self.assertAlmostEqual(lead['risk_usdt'] / m.equity, odt.LEADER_RISK, delta=.002)
+            self.assertEqual(odt.LEADER_RISK, .03); self.assertEqual(lead['leverage'], 10); self.assertTrue(lead['leader'])
+            self.assertLessEqual(max(a['leverage'] for a in opened.values()), 10)
+            # the leader counts toward the same-side cap (3 % + four more 3 % would be 15 %, all fit in 20 %)
+            self.assertEqual(len(opened), 5)
             self.assertTrue(next(v for v in state['mirrored'].values() if v['inst'] == 'DOGE-USDT-SWAP')['leader'])
-            # a wider stop lowers the leverage (the stop must come before liquidation), and a coin's own limit caps it
             sig2 = {'DOGE-USDT-SWAP': dict(sig['DOGE-USDT-SWAP'], stop=px['DOGE-USDT-SWAP'] * 1.04)}
             fake = FakeOKX(equity=100000, prices=px); m, _ = run(fake, paper(**sig2))
-            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 20)
-            SPECS['DOGE-USDT-SWAP'] = dict(SPECS['DOGE-USDT-SWAP'], lever='20')
-            fake = FakeOKX(equity=100000, prices=px); m, _ = run(fake, paper(**{'DOGE-USDT-SWAP': dict(sig['DOGE-USDT-SWAP'], stop=px['DOGE-USDT-SWAP'] * 1.02)}))   # 2 % stop would allow 40×
-            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 20)
+            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 10)
         finally:
-            SPECS['DOGE-USDT-SWAP'].pop('lever', None)
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
-    def test_daily_halt_ignores_the_leaders_result_and_leaves_the_leader_trading(self):
-        self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0     # majors' extra size is tested on its own
+    def test_daily_halt_includes_the_leader_and_stops_everyone(self):
+        self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0
         try:
             odt.configure_evolved()
             px = {'BTC-USDT-SWAP': 78000.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
-            mk = lambda k, **kw: dict(dict(strategy='evolved', side=-1, entry=px[k], stop=px[k] * 1.04, tp=px[k] * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.05), **kw)
+            mk = lambda k, **kw: dict(dict(strategy='evolved', side=-1, entry=px[k], stop=px[k] * 1.04, tp=px[k] * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.03), **kw)
             sig = {'BTC-USDT-SWAP': mk('BTC-USDT-SWAP', rank=1, leader=True), 'XRP-USDT-SWAP': mk('XRP-USDT-SWAP')}
             fake = FakeOKX(equity=10000, prices=px); m, state = run(fake, paper(**sig))
             held = lambda inst, upl: dict(instId=inst, posSide='short', pos='1', upl=str(upl))
-            # the account is down 15 %, all of it the leader's floating loss: no halt
-            fake.positions = [held('BTC-USDT-SWAP', -1500), held('XRP-USDT-SWAP', 0)]; fake.equity = 8500; fake.posts.clear()
+            # the account is down 8 % (leader 5 % + other 3 %): no halt yet
+            fake.positions = [held('BTC-USDT-SWAP', -500), held('XRP-USDT-SWAP', -300)]; fake.equity = 9200; fake.posts.clear()
             m, _ = run(fake, paper(**sig), state)
             self.assertFalse(state['halted']); self.assertEqual(fake.posts, [])
-            # the others lose 10 % as well: halt closes them, the leader's position stays
-            fake.positions = [held('BTC-USDT-SWAP', -1500), held('XRP-USDT-SWAP', -1000)]; fake.equity = 7500
+            # the whole account including the leader is down 10 %: halt closes everyone
+            fake.positions = [held('BTC-USDT-SWAP', -700), held('XRP-USDT-SWAP', -300)]; fake.equity = 9000
             m, _ = run(fake, paper(**sig), state)
             self.assertTrue(state['halted'])
-            self.assertEqual([b['instId'] for q, b in fake.posts if q == '/api/v5/trade/close-position'], ['XRP-USDT-SWAP'])
-            halt = next(a for a in m.actions if a['action'] == 'daily_halt')
-            self.assertEqual((halt['others_day'], halt['leader_day']), (-1000.0, -1500.0))
-            # while halted, a new signal of another member is ignored but the leader's opens
-            fake.positions = [held('BTC-USDT-SWAP', -1500)]; fake.posts.clear()
-            sig2 = dict(sig, **{'DOGE-USDT-SWAP': mk('DOGE-USDT-SWAP')})
-            sig2.pop('XRP-USDT-SWAP'); sig2['XRP-USDT-SWAP'] = mk('XRP-USDT-SWAP', leader=True, opened=NOW_MS - 5 * 60_000)
+            closed = [b['instId'] for q, b in fake.posts if q == '/api/v5/trade/close-position']
+            self.assertEqual(sorted(closed), ['BTC-USDT-SWAP', 'XRP-USDT-SWAP'])
+            # while halted, even a new leader signal is ignored
+            fake.positions = []; fake.posts.clear()
+            sig2 = {'DOGE-USDT-SWAP': mk('DOGE-USDT-SWAP', leader=True, rank=1, opened=NOW_MS - 5 * 60_000)}
             m, _ = run(fake, paper(**sig2), state)
-            self.assertEqual([b['instId'] for q, b in fake.posts if q == '/api/v5/trade/order'], ['XRP-USDT-SWAP'])
+            self.assertEqual([b['instId'] for q, b in fake.posts if q == '/api/v5/trade/order'], [])
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
@@ -376,7 +371,7 @@ class MirrorTests(unittest.TestCase):
             sig = {k: dict(strategy='evolved', side=1, entry=v, stop=v * .96, tp=None, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.02) for k, v in px.items()}
             fake = FakeOKX(equity=100000, prices=px); m, _ = run(fake, paper(**sig))
             risk = {a['inst']: round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'}
-            self.assertEqual(risk, {'BTC-USDT-SWAP': .04, 'PEPE-USDT-SWAP': .02})
+            self.assertEqual(risk, {'BTC-USDT-SWAP': .03, 'PEPE-USDT-SWAP': .02})
             self.assertEqual(m.summary()['execution_profile']['major_factor'], 2.0)
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
