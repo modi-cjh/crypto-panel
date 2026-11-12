@@ -138,33 +138,35 @@ test('paper positions and trades show contract details: leverage, margin, liquid
   const t0 = Date.parse(d.updated_at);
   const paper = { ...d.paper, mode: 'isolated',
     positions: [{ inst: 'PEPE-USDT-SWAP', side: -1, entry: .00001, stop: .0000105, target: null, opened: t0, lever: 10, margin: 123.45, liq: .0000109, funding: -.5, champion: 's1' }],
-    trades: [{ inst: 'BTC-USDT-SWAP', side: 1, pnl: -200, reason: 'liquidation', closed: t0, lever: 10, funding: 1.25, champion: 's1' }] };
+    trades: [{ inst: 'BTC-USDT-SWAP', side: 1, pnl: -200, reason: 'liquidation', closed: t0, lever: 10, funding: 1.25, champion: 's1', liq: 95.5 }] };
   const html = paperMarkup({ ...d, paper });
   assert.match(html, /10x 逐仓 · 保证金 123\.45 U · 强平/);
   assert.match(html, /资金费 \+0\.50 U/);
-  assert.match(html, /强平 · 10x · 资金费 -1\.25/);
+  assert.match(html, /强平 · 10x · 强平价 95\.5000 · 资金费 -1\.25/);
   assert.match(html, /保证金占用<\/span><strong class="">123\.45 U/);
-  assert.match(html, /纸面交易按 OKX 合约规则计算/);
+  assert.match(html, /纸面交易按逐仓合约规则计算/);
   assert.doesNotMatch(paperMarkup(d), /undefinedx/);                           // older dashboards without contract fields
 });
 
 test('the leader is shown with its bigger size and the rules explain it', async () => {
   const { executionProfileText } = await import('../assets/control.mjs');
   const html = paperMarkup(d);
-  assert.match(html, /<span class="evo-rank lead">第一名<\/span>[\s\S]*?<b>加大仓位<\/b>/);
-  assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）加大仓位[\\s\\S]*整个账户的 5%[\\s\\S]*杠杆上限 50×[\\s\\S]*计入同方向上限[\\s\\S]*日亏停手`));
-  assert.match(html, /其他成员每笔按风险基因 1%–5%，但单笔最多 3%/); assert.match(html, /升为第一名（加大仓位）/);
-  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .03, same_side_cap: .2, daily_halt: .1, leader_risk: .03, leader_leverage: 10, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
-  assert.match(text, /每笔止损风险 1%–3%（按策略）/); assert.match(text, /第一名每笔 3%、最高 10×（计入同向上限和日亏停手）/); assert.match(text, /日亏 10% 停手/);
+  assert.match(html, /<span class="evo-rank lead">第一名<\/span>[\s\S]*?<b>第一名（信号优先）<\/b>/);
+  assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）信号优先[\\s\\S]*风险基因 5%[\\s\\S]*杠杆基因 50×[\\s\\S]*计入同方向上限[\\s\\S]*日亏停手`));
+  assert.match(html, /所有席位（含第一名）每笔按风险基因 2%–10%、杠杆基因 1–100×，单笔风险（含主流币加倍）最多 10%/);
+  assert.match(html, /升为第一名（信号优先）/);
+  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .02, risk_max: .10, same_side_cap: .2, daily_halt: .1, leader_risk: .10, leader_leverage: 100, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
+  assert.match(text, /每笔止损风险 2%–10%（按策略）/); assert.match(text, /第一名每笔 10%、最高 100×（计入同向上限和日亏停手）/); assert.match(text, /日亏 10% 停手/);
 });
 
 
 test('shared cross-margin account: members show what they contributed, positions say 全仓, rules list the shared limits', () => {
   const html = paperMarkup(d);
   assert.equal(d.paper.mode, 'cross');
-  assert.match(html, /贡献 <b class="[a-z]*">[+-]?[\d,.]+ U<\/b>（占账户/); assert.match(html, /样本外 <b[^>]*>[^<]+<\/b> · 终审 <b/); assert.match(html, /共用一个账户（全仓）/);
+  assert.match(html, /贡献 <b class="[a-z]*">[+-]?[\d,.]+ U<\/b>（占账户/); assert.match(html, /样本外 <b[^>]*>[^<]+<\/b> · 终审 <b/); assert.match(html, /共用一个账户/);
   assert.match(html, /每笔开仓都带止损/); assert.match(html, /同方向已有 3 个以上持仓时新开仓风险减半，6 个以上减到四分之一/);
   assert.match(html, /当日亏损达 10% 时全部成员平仓/); assert.match(html, /同样按整个账户算/);
+  assert.match(html, /未通过上场门槛/); assert.match(html, /也可立即被合格挑战者替换/);
   const t0 = Date.parse(d.updated_at);
   const one = paperMarkup({ ...d, paper: { ...d.paper, halted: true, positions: [{ inst: 'BTC-USDT-SWAP', side: 1, entry: 100, stop: 95, target: null, opened: t0, lever: 16, margin: 50, funding: 0, champion: 's1', boost: true }],
     trades: [{ inst: 'ETH-USDT-SWAP', side: 1, pnl: -30, reason: 'daily_halt', closed: t0, lever: 10, funding: 0, champion: 's2' }] } });
@@ -180,7 +182,7 @@ test('the bigger size needs a member that passed both gates; without one the pag
 
 test('the rules name the five majors and their doubled risk', async () => {
   const { executionProfileText } = await import('../assets/control.mjs');
-  assert.match(paperMarkup(d), /BTC \/ ETH \/ SOL \/ XRP \/ DOGE 这 5 个主流币每笔风险 ×2，但仍不超过 3%/);
+  assert.match(paperMarkup(d), /BTC \/ ETH \/ SOL \/ XRP \/ DOGE 这 5 个主流币每笔风险 ×2，但仍不超过 10%/);
   const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .01, risk_max: .05, same_side_cap: .2, daily_halt: .1, majors: ['BTC-USDT-SWAP', 'ETH-USDT-SWAP'], major_factor: 2, instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
   assert.match(text, /主流币（BTC\/ETH）风险 ×2/);
 });
@@ -195,7 +197,7 @@ test('coins whose demo price is off are listed, and a replaced unqualified membe
 
 test('phone layout: rules are folded behind a one-line digest, the curve shows its range, the home card names the first place', () => {
   const html = paperMarkup(d);
-  assert.match(html, /<details class="evo-more evo-rules-fold"><summary>规则：8 个策略共用一个全仓账户 · 第一名每笔 5% · 其他最多 3% · 主流币 ×2 · 日亏 10% 停手/);
+  assert.match(html, /<details class="evo-more evo-rules-fold"><summary>规则：8 个策略共用一个账户 · 第一名风险 5%、杠杆 50× · 风险 2–10% · 杠杆 1–100× · 单笔最多 10% · 主流币 ×2 · 日亏 10% 停手/);
   assert.match(html, /evo-curve-range[\s\S]*最低 [\d,.]+ · 最高 [\d,.]+ · 现在 [\d,.]+/);
   assert.doesNotMatch(html, /<table class="evo-metrics evo-team">/);
   const lead = d.team.find(t => t.id === d.paper.leader.id);
