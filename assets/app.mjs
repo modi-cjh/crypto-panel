@@ -867,7 +867,8 @@ function renderSim(){
    ['可用 USDT',num(Number(simData.available))],['持仓',`${t.positions}`],['已平仓',`${t.trades} 笔`]].map(([k,v,c=''])=>`<div><span>${k}</span><strong class="${c}">${v}</strong></div>`).join('')}</div>`);
  setText($('okx-start'),`起始 ${num(okxStart(simData))} USDT`);
  setHTML($('okx-curve'),okxCurveSVG(simData));
- renderOkxPositions('okx-positions',simData.positions.length<=3);   // a few positions: show the details; many: collapsed, tap to opensetText($('okx-pos-count'),String(simData.positions.length));
+ renderOkxPositions('okx-positions',simData.positions.length<=3);   // a few positions: show the details; many: collapsed, tap to open
+ setText($('okx-pos-count'),String(simData.positions.length));
  setHTML($('okx-compare'),mirrorCompareMarkup(simData,evolveData));
  setHTML($('okx-outlier'),okxOutlierNote(okxOutlier(simData,t)));$('okx-outlier').hidden=!okxOutlier(simData,t);
  setHTML($('okx-actions'),okxActionsMarkup(simData,30,{kind:'trades'}));setHTML($('okx-log'),okxActionsMarkup(simData,30,{kind:'system'}));
