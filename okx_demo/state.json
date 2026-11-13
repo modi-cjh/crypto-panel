@@ -458,6 +458,10 @@
   [
    1794532978251,
    7105.43
+  ],
+  [
+   1794546679500,
+   7308.13
   ]
  ],
  "mirrored": {
@@ -801,7 +805,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "254",
-   "stop": 0.4926269058416525,
+   "stop": 0.48892690584165244,
    "target": 0.2825758142275384,
    "leverage": 5,
    "entry": 0.4572,
@@ -866,7 +870,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "7120",
-   "stop": 0.2553257770071324,
+   "stop": 0.2518257770071324,
    "target": 0.17363040208074262,
    "leverage": 7,
    "entry": 0.2419,
@@ -876,7 +880,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668701434597376",
-   "last_upl": 2.4379000000002238
+   "last_upl": 85.74190000000034
   },
   "LPT-USDT-SWAP|1794441600000": {
    "inst": "LPT-USDT-SWAP",
@@ -884,7 +888,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "19407",
-   "stop": 1.2982531924294842,
+   "stop": 1.2782531924294842,
    "target": 0.9988163804403928,
    "leverage": 11,
    "entry": 1.262,
@@ -894,7 +898,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668738680016896",
-   "last_upl": 46.58140000000022
+   "last_upl": 120.32800000000029
   },
   "XTZ-USDT-SWAP|1794441600000": {
    "inst": "XTZ-USDT-SWAP",
@@ -959,7 +963,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "222",
-   "stop": 9.053670248211768,
+   "stop": 8.94267024821045,
    "target": 3.8823126936479917,
    "leverage": 3,
    "entry": 7.476,
@@ -994,7 +998,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "504",
-   "stop": 0.050196888427798014,
+   "stop": 0.04902688842779801,
    "target": 0.04324468988023428,
    "leverage": 10,
    "entry": 0.04947,
@@ -1038,11 +1042,13 @@
    "entry": 8.326,
    "clOrdId": "evavax1794481200",
    "opened_at": 1794489998966,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
    "champion": "s13518",
-   "ordId": "4093224722787454976"
+   "ordId": "4093224722787454976",
+   "closed_reason": "exchange_stop_or_target",
+   "realized_pnl": 10.866415709084475
   },
   "ETC-USDT-SWAP|1794492000000": {
    "inst": "ETC-USDT-SWAP",
@@ -1104,7 +1110,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "142",
-   "stop": 713.4433231866606,
+   "stop": 690.7833231866605,
    "target": 531.4723126992126,
    "leverage": 10,
    "entry": 655.0,
@@ -1115,6 +1121,78 @@
    "mgnMode": "isolated",
    "champion": "s14155",
    "ordId": "4094666957907279872"
+  },
+  "SOL-USDT-SWAP|1794542400000": {
+   "inst": "SOL-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "18.18",
+   "stop": 82.3795651753408,
+   "target": 68.88225487301726,
+   "leverage": 10,
+   "entry": 78.36,
+   "clOrdId": "evsol1794542400",
+   "opened_at": 1794546679500,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "isolated",
+   "champion": "s13604",
+   "ordId": "4095126620171911168"
+  },
+  "XRP-USDT-SWAP|1794542400000": {
+   "inst": "XRP-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "14.37",
+   "stop": 1.0558481147046708,
+   "target": 0.8860854533849577,
+   "leverage": 10,
+   "entry": 1.005,
+   "clOrdId": "evxrp1794542400",
+   "opened_at": 1794546679500,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "isolated",
+   "champion": "s13604",
+   "ordId": "4095126644901527552"
+  },
+  "LINK-USDT-SWAP|1794542400000": {
+   "inst": "LINK-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "65.58",
+   "stop": 10.244387135042828,
+   "target": 8.43277125965792,
+   "leverage": 10,
+   "entry": 9.687,
+   "clOrdId": "evlink1794542400",
+   "opened_at": 1794546679500,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "isolated",
+   "champion": "s13604",
+   "ordId": "4095126669564035072"
+  },
+  "ETH-USDT-SWAP|1794542400000": {
+   "inst": "ETH-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "8.16",
+   "stop": 2038.138068452694,
+   "target": 1865.4055465902761,
+   "leverage": 10,
+   "entry": 1924.94,
+   "clOrdId": "eveth1794542400",
+   "opened_at": 1794546679500,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "isolated",
+   "champion": "s13518",
+   "ordId": "4095126693924552704"
   }
  },
  "paused": false,

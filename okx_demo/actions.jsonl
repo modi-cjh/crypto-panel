@@ -117,3 +117,15 @@
 {"ts": "2026-11-12T21:00:16Z", "action": "error", "inst": "HMSTR-USDT-SWAP", "dry_run": false, "step": "order", "detail": "1 All operations failed 51202 Market order amount exceeds the maximum amount.", "size": "241955"}
 {"ts": "2026-11-13T01:22:58Z", "action": "error", "inst": "HMSTR-USDT-SWAP", "dry_run": false, "step": "order", "detail": "1 All operations failed 51202 Market order amount exceeds the maximum amount.", "size": "186052"}
 {"ts": "2026-11-13T01:22:58Z", "action": "open", "inst": "BNB-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "142", "price": 655.0, "stop": "713.4", "target": "531.5", "leverage": 10, "risk_usdt": 83.49}
+{"ts": "2026-11-13T05:11:19Z", "action": "amend_stop", "inst": "GRASS-USDT-SWAP", "dry_run": false, "old": 0.4926269058416525, "new": 0.48892690584165244}
+{"ts": "2026-11-13T05:11:19Z", "action": "amend_stop", "inst": "CRV-USDT-SWAP", "dry_run": false, "old": 0.2553257770071324, "new": 0.2518257770071324}
+{"ts": "2026-11-13T05:11:19Z", "action": "amend_stop", "inst": "LPT-USDT-SWAP", "dry_run": false, "old": 1.2982531924294842, "new": 1.2782531924294842}
+{"ts": "2026-11-13T05:11:19Z", "action": "amend_stop", "inst": "INJ-USDT-SWAP", "dry_run": false, "old": 9.053670248211768, "new": 8.94267024821045}
+{"ts": "2026-11-13T05:11:19Z", "action": "amend_stop", "inst": "CRO-USDT-SWAP", "dry_run": false, "old": 0.050196888427798014, "new": 0.04902688842779801}
+{"ts": "2026-11-13T05:11:19Z", "action": "closed_on_exchange", "inst": "AVAX-USDT-SWAP", "dry_run": false, "strategy": "evolved", "pnl": 10.866415709084475, "price_pnl": 11.56, "funding": -0.133400290915526, "close_price": 8.153, "fee": -0.560184, "outcome": "target"}
+{"ts": "2026-11-13T05:11:19Z", "action": "amend_stop", "inst": "BNB-USDT-SWAP", "dry_run": false, "old": 713.4433231866606, "new": 690.7833231866605}
+{"ts": "2026-11-13T05:11:19Z", "action": "open", "inst": "SOL-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "18.18", "price": 78.36, "stop": "82.38", "target": "68.88", "leverage": 10, "risk_usdt": 73.11}
+{"ts": "2026-11-13T05:11:19Z", "action": "open", "inst": "XRP-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "14.37", "price": 1.005, "stop": "1.0558", "target": "0.8861", "leverage": 10, "risk_usdt": 73.11}
+{"ts": "2026-11-13T05:11:19Z", "action": "open", "inst": "LINK-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "65.58", "price": 9.687, "stop": "10.244", "target": "8.433", "leverage": 10, "risk_usdt": 36.55}
+{"ts": "2026-11-13T05:11:19Z", "action": "open", "inst": "ETH-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "8.16", "price": 1924.94, "stop": "2038.14", "target": "1865.41", "leverage": 10, "risk_usdt": 92.48}
+{"ts": "2026-11-13T05:11:19Z", "action": "error", "inst": "HMSTR-USDT-SWAP", "dry_run": false, "step": "order", "detail": "1 All operations failed 51202 Market order amount exceeds the maximum amount.", "size": "273501"}
