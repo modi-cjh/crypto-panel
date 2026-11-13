@@ -115,3 +115,5 @@
 {"ts": "2026-11-12T17:14:51Z", "action": "open", "inst": "BTC-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "1.99", "price": 71693.2, "stop": "75295.28", "target": null, "leverage": 10, "risk_usdt": 71.99}
 {"ts": "2026-11-12T17:14:51Z", "action": "open", "inst": "DOGE-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "13.66", "price": 0.06563, "stop": "0.0708995", "target": null, "leverage": 10, "risk_usdt": 71.99}
 {"ts": "2026-11-12T21:00:16Z", "action": "error", "inst": "HMSTR-USDT-SWAP", "dry_run": false, "step": "order", "detail": "1 All operations failed 51202 Market order amount exceeds the maximum amount.", "size": "241955"}
+{"ts": "2026-11-13T01:22:58Z", "action": "error", "inst": "HMSTR-USDT-SWAP", "dry_run": false, "step": "order", "detail": "1 All operations failed 51202 Market order amount exceeds the maximum amount.", "size": "186052"}
+{"ts": "2026-11-13T01:22:58Z", "action": "open", "inst": "BNB-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "142", "price": 655.0, "stop": "713.4", "target": "531.5", "leverage": 10, "risk_usdt": 83.49}

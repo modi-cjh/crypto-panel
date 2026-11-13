@@ -454,6 +454,10 @@
   [
    1794517216180,
    7136.93
+  ],
+  [
+   1794532978251,
+   7105.43
   ]
  ],
  "mirrored": {
@@ -872,7 +876,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668701434597376",
-   "last_upl": 11.693900000000193
+   "last_upl": 2.4379000000002238
   },
   "LPT-USDT-SWAP|1794441600000": {
    "inst": "LPT-USDT-SWAP",
@@ -890,7 +894,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668738680016896",
-   "last_upl": 62.10700000000024
+   "last_upl": 46.58140000000022
   },
   "XTZ-USDT-SWAP|1794441600000": {
    "inst": "XTZ-USDT-SWAP",
@@ -1093,6 +1097,24 @@
    "mgnMode": "isolated",
    "champion": "s13164",
    "ordId": "4093684339183173632"
+  },
+  "BNB-USDT-SWAP|1794528000000": {
+   "inst": "BNB-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "142",
+   "stop": 713.4433231866606,
+   "target": 531.4723126992126,
+   "leverage": 10,
+   "entry": 655.0,
+   "clOrdId": "evbnb1794528000",
+   "opened_at": 1794532978251,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "isolated",
+   "champion": "s14155",
+   "ordId": "4094666957907279872"
   }
  },
  "paused": false,

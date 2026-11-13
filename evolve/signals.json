@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-12T20:59:14Z",
+ "updated_at": "2026-11-13T01:21:59Z",
  "champion": "s13604",
  "team": [
   "s13215",
@@ -178,12 +178,12 @@
   "INJ-USDT-SWAP": {
    "side": -1,
    "entry": 7.518496,
-   "stop": 9.053670248211768,
-   "tp": 3.8798086936479916,
+   "stop": 9.053670248210448,
+   "tp": 3.879808693650683,
    "opened": 1794441600000,
    "strategy": "evolved",
    "champion": "s14155",
-   "rank": 6,
+   "rank": 5,
    "risk": 0.0235,
    "leverage": 10
   },
@@ -257,6 +257,18 @@
    "champion": "s13164",
    "rank": 100,
    "risk": 0.02,
+   "leverage": 10
+  },
+  "BNB-USDT-SWAP": {
+   "side": -1,
+   "entry": 656.408692,
+   "stop": 713.4433231866606,
+   "tp": 531.4723126992126,
+   "opened": 1794528000000,
+   "strategy": "evolved",
+   "champion": "s14155",
+   "rank": 5,
+   "risk": 0.0235,
    "leverage": 10
   }
  }
