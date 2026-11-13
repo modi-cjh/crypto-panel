@@ -12,7 +12,8 @@ Rules (identical in every caller):
   whole isolated margin (no extra close fee or slippage). Funding (`Series.funding`, {ts: rate}) is paid / received on
   every funding time a position is held: notional × rate (not margin × rate), longs pay positive rates. Funding is
   charged against the isolated margin, so the liquidation price is recomputed after each payment.
-- Stop and target are checked inside each later bar; if a bar touches both, the stop is assumed first (conservative);
+- Target = entry ± target_rr × stop distance, capped at TP_MAX_DIST (15 %) from the entry (target_price); no target
+  when target_rr is 0 (genome.fix zeroes anything below 0.5). Stop and target are checked inside each later bar; if a bar touches both, the stop is assumed first (conservative);
   a gap through the stop fills at the open. Positions also exit at the close after `max_hold` bars.
 - Equity is marked to market at every close; max drawdown is measured on that curve.
 - Timeframe gene `tf` (1 / 4 / 24 h): signals and the stop's ATR come from 4H / 1D bars built from the 1H bars (UTC
@@ -47,6 +48,7 @@ MARGIN_USE = .95     # an entry may use at most this share of the free margin
 MIN_STOP_DIST = .002 # stops closer than this (fraction of price) are skipped, as on OKX
 START_EQUITY = 10000.0
 MAX_HOLD_H = 720     # longest hold in hours, whatever the timeframe
+TP_MAX_DIST = .15    # take-profit at most this far from the entry (long ≤ entry × 1.15, short ≥ entry × 0.85); OKX mirror uses the same
 MAX_POSITIONS = 3    # open positions per strategy at the same time; extra signals wait until one closes
 HOUR = 3600_000
 
@@ -195,6 +197,20 @@ def signal(g, s, i):
     if j < 2:
         return 0
     return _species_signal(g, x, j)
+
+
+def target_price(entry, side, rr, dist):
+    """Take-profit price: entry ± rr × stop distance, capped at TP_MAX_DIST from the entry. None when rr ≤ 0 (no target)."""
+    if not rr or rr <= 0:
+        return None
+    return cap_target(entry, side, entry + side * rr * dist)
+
+
+def cap_target(entry, side, target):
+    """Clamp a take-profit so it is at most TP_MAX_DIST away from `entry` (shared with tools/okx_demo_trader.py)."""
+    if target is None:
+        return None
+    return min(target, entry * (1 + TP_MAX_DIST)) if side > 0 else max(target, entry * (1 - TP_MAX_DIST))
 
 
 def stop_distance(g, s, i):
@@ -463,7 +479,7 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
                 continue
             cash -= qty * px * FEE
             liq = liquidation_price(px, d, lever, mmr=mmr)
-            pos[inst] = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None,
+            pos[inst] = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=target_price(px, d, rr, dist),
                              opened=s.ts[i], bar=i, fee=qty * px * FEE, dist=dist, lever=lever, margin=margin,
                              liq=liq, funding=0.0, mmr=mmr)
         pending, dists = {}, {}
@@ -676,7 +692,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             cash -= qty * px * FEE
             rr = g['target_rr']
             liq = liquidation_price(px, d, lever, mmr=mmr)
-            pos[inst] = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None, opened=ts0[i], bar=i,
+            pos[inst] = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=target_price(px, d, rr, dist), opened=ts0[i], bar=i,
                              fee=qty * px * FEE, dist=dist, lever=lever, margin=margin, funding=0.0, seg=sid, boost=boost, risk=r,
                              hold=min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H), trail=g.get('trail', 0), liq=liq, mmr=mmr)
         pending = []

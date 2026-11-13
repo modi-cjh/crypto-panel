@@ -38,7 +38,7 @@ from volume_test import profile as volume_profile, describe as describe_volume
 from runtime_guard import entries_allowed, atomic_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
-from execution import clamp_leverage, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FALLBACK_INST_LEVERAGE, FEE  # noqa: E402
+from execution import clamp_leverage, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FALLBACK_INST_LEVERAGE, FEE, cap_target  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -406,6 +406,7 @@ class Mirror:
             return self.log('skip', inst, reason='stop_too_close_or_crossed', price=px, stop=p['stop'])
         if p.get('tp') and (p['tp'] - px) * side <= 0:
             return self.log('skip', inst, reason='target_already_reached', price=px, target=p['tp'])
+        tp = cap_target(px, side, float(p['tp'])) if p.get('tp') else None   # same ±TP_MAX_DIST cap as the paper account
         sp = self.spec(inst)
         if not sp['ctVal']:
             return self.log('skip', inst, reason='no_instrument_spec')
@@ -472,8 +473,8 @@ class Mirror:
             return self.log('error', inst, step='set_leverage', detail=first_error(r))
         tick = sp['tickSz']
         algo = dict(slTriggerPx=fmt(quantize(p['stop'], tick, ROUND_HALF_UP)), slOrdPx='-1', slTriggerPxType='last')
-        if p.get('tp'):
-            algo.update(tpTriggerPx=fmt(quantize(p['tp'], tick, ROUND_HALF_UP)), tpOrdPx='-1', tpTriggerPxType='last')
+        if tp:
+            algo.update(tpTriggerPx=fmt(quantize(tp, tick, ROUND_HALF_UP)), tpOrdPx='-1', tpTriggerPxType='last')
         cl = f"{TAG.get(p.get('strategy'), 'px')}{inst.split('-')[0].lower()}{int(p['opened']) // 1000}"[:32]
         order = dict(instId=inst, tdMode=MARGIN_MODE, side='buy' if side == 1 else 'sell', ordType='market', sz=fmt(contracts),
                      clOrdId=cl, attachAlgoOrds=[algo], **({'posSide': pos_side} if pos_side else {}))
@@ -481,7 +482,7 @@ class Mirror:
         if not ok(r):
             return self.log('error', inst, step='order', detail=first_error(r), size=fmt(contracts))
         self.s['mirrored'][key] = dict(inst=inst, side=side, posSide=pos_side or 'net', strategy=p.get('strategy'), contracts=fmt(contracts),
-                                       stop=p['stop'], target=p.get('tp'), leverage=lever, entry=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader, mgnMode=MARGIN_MODE, champion=p.get('champion'),
+                                       stop=p['stop'], target=tp, leverage=lever, entry=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader, mgnMode=MARGIN_MODE, champion=p.get('champion'),
                                        ordId=(r.get('data') or [{}])[0].get('ordId'))
         self.new_order_risk[key] = float(contracts) * sp['ctVal'] * abs(px - p['stop'])
         self.available -= margin

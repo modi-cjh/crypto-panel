@@ -17,7 +17,7 @@ Before this, the account was five separate slots of 1/5 each; that history (curv
 paper['legacy'] and the shared account starts from the slots' total equity. The slot code below `_legacy_update` only
 serves that one-time conversion.
 """
-from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE
+from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, target_price
 from evolution import TEAM_SIZE, entry_gate
 from genome import fix
 
@@ -157,7 +157,7 @@ def _idle_equity(slot):
 def _signal_from_pending(inst, d, genes, series, last_ts, member):
     sr = series[inst]
     dist, px, rr = stop_distance(genes, sr, sr.n - 1), sr.c[-1], genes['target_rr']
-    return dict(side=d, entry=px, stop=px - d * dist, tp=px + d * rr * dist if rr > 0 else None, opened=last_ts + HOUR,
+    return dict(side=d, entry=px, stop=px - d * dist, tp=target_price(px, d, rr, dist), opened=last_ts + HOUR,
                 strategy='evolved', leverage=int(fix(dict(genes)).get('leverage', DEFAULT_LEVERAGE)), champion=member, pending=True)
 
 

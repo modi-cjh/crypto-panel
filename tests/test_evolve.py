@@ -94,6 +94,33 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(t['reason'], 'liquidation')
         self.assertAlmostEqual(t['pnl'], -p['margin'] - p['qty'] * p['entry'] * X.FEE, places=3)   # isolated: lose the margin; entry fee already paid, no close fee
 
+    def test_take_profit_is_capped_at_tp_max_dist_and_small_target_rr_sets_none(self):
+        self.assertEqual(X.TP_MAX_DIST, .15)
+        self.assertAlmostEqual(X.target_price(100.0, 1, 6.0, 5.0), 115.0)       # 6R × 5 = +30 % → capped at +15 %
+        self.assertAlmostEqual(X.target_price(100.0, -1, 6.0, 8.0), 85.0)       # −48 % → capped at −15 %
+        self.assertAlmostEqual(X.target_price(100.0, 1, 2.0, 2.0), 104.0)       # within the cap: unchanged
+        self.assertAlmostEqual(X.target_price(100.0, -1, 2.0, 2.0), 96.0)
+        self.assertIsNone(X.target_price(100.0, 1, 0.0, 5.0))
+        self.assertEqual(G.fix(base_genes(target_rr=.4))['target_rr'], 0.0)     # target_rr < 0.5 → no target, not a 15 % one
+        up = series_from([100.0] * 40 + [110.0] + [111.0] * 5)
+        down = series_from([100.0] * 40 + [90.0] + [89.0] * 5)
+        for s, side in ((up, 1), (down, -1)):
+            for big in (True, False):
+                g = base_genes(target_rr=6.0 if big else 0.0, stop_atr=2.0)
+                for r in (X.simulate(g, {'BTC-USDT-SWAP': s}, 30, s.n),
+                          X.simulate_account([dict(id='m', genes=g, from_i=0, wind_i=None, boosts=[])], {'BTC-USDT-SWAP': s}, 30, s.n, equity=10000.0)):
+                    p = r['positions'][0]
+                    self.assertEqual(p['side'], side)
+                    if not big:
+                        self.assertIsNone(p['target']); continue
+                    raw = p['entry'] + side * 6.0 * (p['entry'] - p['stop']) * side
+                    self.assertGreater(abs(raw / p['entry'] - 1), X.TP_MAX_DIST)    # uncapped would be beyond 15 %
+                    self.assertAlmostEqual(p['target'], p['entry'] * (1 + side * X.TP_MAX_DIST))
+        for side in (1, -1):                                                     # paper signals for pending entries use the same cap
+            sig = P._signal_from_pending('BTC-USDT-SWAP', side, base_genes(target_rr=6.0, stop_atr=5.0), {'BTC-USDT-SWAP': up}, up.ts[-1], 'm')
+            self.assertAlmostEqual(sig['tp'], sig['entry'] * (1 + side * X.TP_MAX_DIST))
+            self.assertIsNone(P._signal_from_pending('BTC-USDT-SWAP', side, base_genes(target_rr=0.0), {'BTC-USDT-SWAP': up}, up.ts[-1], 'm')['tp'])
+
     def test_contract_mode_lots_leverage_margin_and_funding(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 30
         s = series_from(closes)

@@ -59,7 +59,7 @@ def paper(**positions):
 
 
 def long_btc(opened_ago_min=30, stop=68600.0, **kw):
-    return dict(strategy='breakout_long', side=1, entry=70000.0, stop=stop, tp=None, leverage=10, opened=NOW_MS - opened_ago_min * 60_000, **kw)
+    return dict(dict(strategy='breakout_long', side=1, entry=70000.0, stop=stop, tp=None, leverage=10, opened=NOW_MS - opened_ago_min * 60_000), **kw)
 
 
 def run(fake, paper_state, state=None, action='run', dry=False):
@@ -95,6 +95,19 @@ class MirrorTests(unittest.TestCase):
         order = fake.posts[-1][1]
         self.assertEqual(order['side'], 'sell'); self.assertNotIn('posSide', order)
         self.assertEqual(order['attachAlgoOrds'][0]['tpTriggerPx'], '1.23')
+
+    def test_far_take_profit_is_capped_at_tp_max_dist_from_the_fill_price(self):
+        fake = FakeOKX()                                            # BTC 70000: long target +40 % → capped at +15 % = 80500
+        run(fake, paper(**{'BTC-USDT-SWAP': long_btc(tp=98000.0)}))
+        self.assertEqual(fake.posts[-1][1]['attachAlgoOrds'][0]['tpTriggerPx'], '80500')
+        fake = FakeOKX(pos_mode='net_mode')                         # XRP 1.25: short target −48 % → capped at −15 % = 1.0625
+        p = dict(strategy='mean_reversion', side=-1, entry=1.25, stop=1.27, tp=0.65, leverage=10, opened=NOW_MS - 600_000)
+        _, state = run(fake, paper(**{'XRP-USDT-SWAP': p}))
+        self.assertEqual(fake.posts[-1][1]['attachAlgoOrds'][0]['tpTriggerPx'], '1.0625')
+        self.assertAlmostEqual(list(state['mirrored'].values())[0]['target'], 1.0625)
+        fake = FakeOKX()                                            # no target in the signal → still no exchange target
+        run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        self.assertNotIn('tpTriggerPx', fake.posts[-1][1]['attachAlgoOrds'][0])
 
     def test_old_or_crossed_entries_are_skipped_without_orders(self):
         fake = FakeOKX(prices={'BTC-USDT-SWAP': 71500.0})          # old entry and the price has run away (2× the stop distance)
