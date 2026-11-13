@@ -530,7 +530,7 @@
    ],
    [
     1794556800000,
-    null
+    1794571200000
    ]
   ],
   "ASTER-USDT-SWAP": [
@@ -591,6 +591,10 @@
    [
     1794427200000,
     1794438000000
+   ],
+   [
+    1794571200000,
+    null
    ]
   ],
   "JUP-USDT-SWAP": [
@@ -600,7 +604,7 @@
    ],
    [
     1794542400000,
-    null
+    1794571200000
    ]
   ],
   "A-USDT-SWAP": [
@@ -627,6 +631,10 @@
    [
     1794510000000,
     1794542400000
+   ],
+   [
+    1794571200000,
+    null
    ]
   ],
   "H-USDT-SWAP": [
@@ -676,18 +684,95 @@
     1794510000000,
     1794528000000
    ]
+  ],
+  "SUI-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
+  ],
+  "OP-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
+  ],
+  "XLM-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
+  ],
+  "GRASS-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
+  ],
+  "BOME-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
+  ],
+  "MINA-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
+  ],
+  "CFX-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
+  ],
+  "SYRUP-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
+  ],
+  "KSM-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
+  ],
+  "IOTA-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
+  ],
+  "1INCH-USDT-SWAP": [
+   [
+    1794571200000,
+    null
+   ]
   ]
  },
  "price_off_now": {
-  "ARB-USDT-SWAP": -0.0972,
-  "XPL-USDT-SWAP": 0.0405,
-  "ASTER-USDT-SWAP": -0.0942,
-  "H-USDT-SWAP": 0.6687,
-  "JUP-USDT-SWAP": 0.0157,
-  "BARD-USDT-SWAP": -0.0903,
-  "HOME-USDT-SWAP": 0.0289,
-  "SPK-USDT-SWAP": 1.3974,
-  "SKY-USDT-SWAP": -0.9948,
-  "COAI-USDT-SWAP": 0.5648
+  "SUI-USDT-SWAP": -0.0325,
+  "AAVE-USDT-SWAP": -0.0107,
+  "INJ-USDT-SWAP": -0.0303,
+  "XPL-USDT-SWAP": 0.547,
+  "OP-USDT-SWAP": -0.0187,
+  "XLM-USDT-SWAP": -0.0125,
+  "ASTER-USDT-SWAP": -0.1031,
+  "H-USDT-SWAP": 0.769,
+  "GRASS-USDT-SWAP": 0.0694,
+  "BOME-USDT-SWAP": -0.0148,
+  "BARD-USDT-SWAP": -0.1834,
+  "HOME-USDT-SWAP": 0.0237,
+  "MINA-USDT-SWAP": 0.0133,
+  "CFX-USDT-SWAP": 0.0241,
+  "SYRUP-USDT-SWAP": -0.2957,
+  "SPK-USDT-SWAP": 1.3852,
+  "SKY-USDT-SWAP": -0.9936,
+  "KSM-USDT-SWAP": 0.0172,
+  "IOTA-USDT-SWAP": 0.023,
+  "1INCH-USDT-SWAP": 0.0202,
+  "COAI-USDT-SWAP": 0.5414
  }
 }
