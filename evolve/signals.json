@@ -1,14 +1,14 @@
 {
- "updated_at": "2026-11-13T13:22:03Z",
- "champion": "s15449",
+ "updated_at": "2026-11-13T17:05:03Z",
+ "champion": "s15653",
  "team": [
-  "s15375",
-  "s13518",
+  "s17692",
+  "s15653",
   "s14653",
   "s14934",
   "s14432",
   "s14155",
-  "s15449",
+  "s17560",
   "s14402"
  ],
  "instruments": [
@@ -116,7 +116,7 @@
   "GRASS-USDT-SWAP": {
    "side": -1,
    "entry": 0.45760846,
-   "stop": 0.48682690584165245,
+   "stop": 0.48542690584165243,
    "tp": 0.2825758142275384,
    "opened": 1794384000000,
    "strategy": "evolved",
@@ -183,7 +183,7 @@
    "opened": 1794441600000,
    "strategy": "evolved",
    "champion": "s14155",
-   "rank": 5,
+   "rank": 3,
    "risk": 0.0235,
    "leverage": 10
   },
@@ -207,7 +207,7 @@
    "opened": 1794492000000,
    "strategy": "evolved",
    "champion": "s13518",
-   "rank": 4,
+   "rank": 100,
    "risk": 0.0253,
    "leverage": 10
   },
@@ -243,7 +243,7 @@
    "opened": 1794528000000,
    "strategy": "evolved",
    "champion": "s14155",
-   "rank": 5,
+   "rank": 3,
    "risk": 0.0235,
    "leverage": 10
   },
@@ -255,20 +255,8 @@
    "opened": 1794542400000,
    "strategy": "evolved",
    "champion": "s13518",
-   "rank": 4,
-   "risk": 0.0253,
-   "leverage": 10
-  },
-  "SOL-USDT-SWAP": {
-   "side": -1,
-   "entry": 78.38432,
-   "stop": 82.3595651753408,
-   "tp": 68.88225487301726,
-   "opened": 1794542400000,
-   "strategy": "evolved",
-   "champion": "s13604",
    "rank": 100,
-   "risk": 0.02,
+   "risk": 0.0253,
    "leverage": 10
   },
   "XRP-USDT-SWAP": {
@@ -276,18 +264,6 @@
    "entry": 1.0052989,
    "stop": 1.0558481147046708,
    "tp": 0.8860854533849577,
-   "opened": 1794542400000,
-   "strategy": "evolved",
-   "champion": "s13604",
-   "rank": 100,
-   "risk": 0.02,
-   "leverage": 10
-  },
-  "LINK-USDT-SWAP": {
-   "side": -1,
-   "entry": 9.7300536,
-   "stop": 10.236387135042825,
-   "tp": 8.43277125965792,
    "opened": 1794542400000,
    "strategy": "evolved",
    "champion": "s13604",

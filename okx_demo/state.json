@@ -1,6 +1,6 @@
 {
- "day": "2026-11-13",
- "day_start": 7199.3257722222925,
+ "day": "2026-11-14",
+ "day_start": 7191.494513736855,
  "halted": false,
  "history": [
   [
@@ -470,6 +470,10 @@
   [
    1794576178885,
    6973.41
+  ],
+  [
+   1794589569542,
+   7191.44
   ]
  ],
  "mirrored": {
@@ -888,7 +892,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668701434597376",
-   "last_upl": 32.34190000000029
+   "last_upl": 57.973900000000235
   },
   "LPT-USDT-SWAP|1794441600000": {
    "inst": "LPT-USDT-SWAP",
@@ -906,7 +910,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668738680016896",
-   "last_upl": 60.166300000000014
+   "last_upl": 81.51400000000025
   },
   "XTZ-USDT-SWAP|1794441600000": {
    "inst": "XTZ-USDT-SWAP",
@@ -1142,11 +1146,12 @@
    "entry": 78.36,
    "clOrdId": "evsol1794542400",
    "opened_at": 1794546679500,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s13604",
-   "ordId": "4095126620171911168"
+   "ordId": "4095126620171911168",
+   "closed_reason": "paper_closed"
   },
   "XRP-USDT-SWAP|1794542400000": {
    "inst": "XRP-USDT-SWAP",
@@ -1178,11 +1183,13 @@
    "entry": 9.687,
    "clOrdId": "evlink1794542400",
    "opened_at": 1794546679500,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s13604",
-   "ordId": "4095126669564035072"
+   "ordId": "4095126669564035072",
+   "closed_reason": "exchange_stop_or_target",
+   "realized_pnl": -38.118108371999995
   },
   "ETH-USDT-SWAP|1794542400000": {
    "inst": "ETH-USDT-SWAP",
@@ -1282,6 +1289,13 @@
    "funding": 0.0,
    "close_price": 0.0003216677642061,
    "fee": -0.30517405
+  },
+  "2026-11-13T17:06:09Z|SOL-USDT-SWAP": {
+   "pnl": -23.8710672,
+   "price_pnl": -22.725,
+   "funding": 0.2902437,
+   "close_price": 79.63,
+   "fee": -1.4363109
   }
  },
  "largest_close": {
@@ -1290,5 +1304,5 @@
   "pnl": 2878.799155673374
  },
  "leader_realized": 0.0,
- "leader_upl_start": 138.5806000000002
+ "leader_upl_start": 139.48790000000048
 }
