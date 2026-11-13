@@ -474,6 +474,10 @@
   [
    1794589569542,
    7191.44
+  ],
+  [
+   1794603750532,
+   7160.59
   ]
  ],
  "mirrored": {
@@ -892,7 +896,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668701434597376",
-   "last_upl": 57.973900000000235
+   "last_upl": 56.54990000000019
   },
   "LPT-USDT-SWAP|1794441600000": {
    "inst": "LPT-USDT-SWAP",
@@ -910,7 +914,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668738680016896",
-   "last_upl": 81.51400000000025
+   "last_upl": 98.98030000000004
   },
   "XTZ-USDT-SWAP|1794441600000": {
    "inst": "XTZ-USDT-SWAP",
