@@ -136,15 +136,22 @@ test('team table shows each member\'s direction and the rules mention the direct
 
 test('paper positions and trades show contract details: leverage, margin, liquidation, funding', () => {
   const t0 = Date.parse(d.updated_at);
-  const paper = { ...d.paper, mode: 'isolated',
+  const paper = { ...d.paper, mode: 'cross',
     positions: [{ inst: 'PEPE-USDT-SWAP', side: -1, entry: .00001, stop: .0000105, target: null, opened: t0, lever: 10, margin: 123.45, liq: .0000109, funding: -.5, champion: 's1' }],
     trades: [{ inst: 'BTC-USDT-SWAP', side: 1, pnl: -200, reason: 'liquidation', closed: t0, lever: 10, funding: 1.25, champion: 's1', liq: 95.5 }] };
   const html = paperMarkup({ ...d, paper });
-  assert.match(html, /10x 逐仓 · 保证金 123\.45 U · 强平/);
+  assert.match(html, /10x 全仓 · 保证金 123\.45 U/);
   assert.match(html, /资金费 \+0\.50 U/);
-  assert.match(html, /强平 · 10x · 强平价 95\.5000 · 资金费 -1\.25/);
+  assert.match(html, /强平 · 10x · 全仓强平 · 资金费 -1\.25/);
   assert.match(html, /保证金占用<\/span><strong class="">123\.45 U/);
-  assert.match(html, /纸面交易按逐仓合约规则计算/);
+  // cross mode: the long shared-account rules explain account-level liquidation (equity vs maintenance margin)
+  assert.match(html, /共用一个全仓账户/);
+  assert.match(html, /全仓强平：当账户权益（现金加全部持仓浮盈，已扣手续费和资金费）≤ 合计维持保证金/);
+  assert.match(html, /不做分层部分强平，因此单笔亏损可能连累整个账户/);
+  assert.match(html, /全仓下单（mgnMode\/tdMode = cross）/);
+  assert.doesNotMatch(html, /逐仓/);
+  // a dashboard without the shared-account mode falls back to the short contract sentence, also cross
+  assert.match(paperMarkup({ ...d, paper: { ...paper, mode: undefined } }), /纸面交易按全仓合约规则计算[\s\S]*当账户权益低于合计维持保证金时全部平仓/);
   assert.doesNotMatch(paperMarkup(d), /undefinedx/);                           // older dashboards without contract fields
 });
 
@@ -154,13 +161,13 @@ test('the leader is shown with its bigger size and the rules explain it', async 
   assert.match(html, /<span class="evo-rank lead">第一名<\/span>[\s\S]*?<b>第一名（信号优先）<\/b>/);
   assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）信号优先[\\s\\S]*风险基因 5%[\\s\\S]*杠杆基因 20×[\\s\\S]*计入同方向上限[\\s\\S]*日亏停手`));
   assert.match(html, /所有席位（含第一名）每笔按风险基因 2%–10%、杠杆基因 1–20×，单笔风险（含主流币加倍）最多 10%/);
-  assert.match(html, /BTC\/ETH\/SOL\/BNB\/XRP\/DOGE 维持保证金率 0\.5%，其他币 2\.5%/);
+  assert.match(html, /BTC\/ETH\/SOL\/BNB\/XRP\/DOGE 为名义价值的 0\.5%，其他币 2\.5%/);
 
-  assert.match(html, /OKX 模拟盘跟单使用同一套风险\/杠杆基因（2%–10%、1–20×），逐仓下单/);
+  assert.match(html, /OKX 模拟盘跟单使用同一套风险\/杠杆基因（2%–10%、1–20×），全仓下单/);
 
   assert.match(html, /升为第一名（信号优先）/);
-  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .02, risk_max: .10, same_side_cap: .2, daily_halt: .1, leader_risk: .10, leader_leverage: 20, max_leverage: 20, margin_mode: 'isolated', instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
-  assert.match(text, /每笔止损风险 2%–10%（按策略）/); assert.match(text, /杠杆最高 20×/); assert.match(text, /逐仓/);
+  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .02, risk_max: .10, same_side_cap: .2, daily_halt: .1, leader_risk: .10, leader_leverage: 20, max_leverage: 20, margin_mode: 'cross', instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
+  assert.match(text, /每笔止损风险 2%–10%（按策略）/); assert.match(text, /杠杆最高 20×/); assert.match(text, /全仓/);
   assert.match(text, /第一名信号优先（计入同向上限和日亏停手）/); assert.match(text, /日亏 10% 停手/);
   assert.doesNotMatch(text, /第一名每笔 10%/);
 });
@@ -174,7 +181,7 @@ test('leverage cap is 20×: fixture bounds say 1–20× and the fallback without
 });
 
 
-test('shared account: members show what they contributed, positions say 逐仓, rules list the shared limits', () => {
+test('shared account: members show what they contributed, positions say 全仓, rules list the shared limits', () => {
   const html = paperMarkup(d);
   assert.equal(d.paper.mode, 'cross');
   assert.match(html, /贡献 <b class="[a-z]*">[+-]?[\d,.]+ U<\/b>（占账户/); assert.match(html, /样本外 <b[^>]*>[^<]+<\/b> · 终审 <b/); assert.match(html, /共用一个账户/);
@@ -184,7 +191,7 @@ test('shared account: members show what they contributed, positions say 逐仓, 
   const t0 = Date.parse(d.updated_at);
   const one = paperMarkup({ ...d, paper: { ...d.paper, halted: true, positions: [{ inst: 'BTC-USDT-SWAP', side: 1, entry: 100, stop: 95, target: null, opened: t0, lever: 16, margin: 50, funding: 0, champion: 's1', boost: true }],
     trades: [{ inst: 'ETH-USDT-SWAP', side: 1, pnl: -30, reason: 'daily_halt', closed: t0, lever: 10, funding: 0, champion: 's2' }] } });
-  assert.match(one, /16x 逐仓 · 保证金 50\.00 U · <b>第一名（信号优先）<\/b>/); assert.doesNotMatch(one, /强平 —/);
+  assert.match(one, /16x 全仓 · 保证金 50\.00 U · <b>第一名（信号优先）<\/b>/); assert.doesNotMatch(one, /强平 —/);
   assert.match(one, /日亏停手平仓/); assert.match(one, /今日已停手/);
 });
 
