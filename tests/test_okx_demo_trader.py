@@ -293,6 +293,53 @@ class MirrorTests(unittest.TestCase):
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
+    def test_same_side_count_caps_new_entries_but_not_the_other_side_or_closes(self):
+        self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0
+        self.addCleanup(setattr, odt, 'MAX_SAME_SIDE', odt.MAX_SAME_SIDE)
+        self.assertEqual(odt.MAX_SAME_SIDE, 6)                                                  # same default as the paper account
+        try:
+            prof = odt.configure_evolved()
+            self.assertEqual(prof['max_same_side'], 6)
+            px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
+            sig = lambda side, v, rank: dict(strategy='evolved', side=side, entry=v, stop=v * (1 + .04 * -side), tp=v * (1 + .1 * side), leverage=10,
+                                             opened=NOW_MS - 10 * 60_000, rank=rank, risk=.02)
+            shorts = {k: sig(-1, v, r) for r, (k, v) in enumerate(px.items())}
+            orders = lambda fake: [(b['instId'], b['side']) for p, b in fake.posts if p == '/api/v5/trade/order']
+            # cap 2: the first two shorts (by rank) open, the other three are skipped with same_side_count
+            odt.MAX_SAME_SIDE = 2
+            fake = FakeOKX(prices=px); m, state = run(fake, paper(**shorts))
+            self.assertEqual(orders(fake), [('BTC-USDT-SWAP', 'sell'), ('ETH-USDT-SWAP', 'sell')])
+            skips = [a for a in m.actions if a.get('reason') == 'same_side_count']
+            self.assertEqual([a['inst'] for a in skips], ['SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'])
+            self.assertEqual((skips[0]['open_same_side'], skips[0]['max_same_side']), (2, 2))
+            # skipped entries are not marked: they are retried on a later run once the side has room
+            self.assertEqual(sorted(k.split('|')[0] for k in state['mirrored']), ['BTC-USDT-SWAP', 'ETH-USDT-SWAP'])
+            # the other side is not affected: with the short side full a long still opens
+            mixed = dict(shorts)
+            mixed['DOGE-USDT-SWAP'] = sig(1, px['DOGE-USDT-SWAP'], 0)
+            fake = FakeOKX(prices=px); m, _ = run(fake, paper(**mixed))
+            self.assertIn(('DOGE-USDT-SWAP', 'buy'), orders(fake))
+            self.assertEqual(sum(1 for _, side in orders(fake) if side == 'sell'), 2)
+            # boundary: cap = number of signals → all five open; cap = 4 → four
+            for cap, want in ((5, 5), (4, 4)):
+                odt.MAX_SAME_SIDE = cap
+                fake = FakeOKX(prices=px); run(fake, paper(**shorts))
+                self.assertEqual(len(orders(fake)), want, cap)
+            # closes are not affected: with the short side full, a short the paper account closed is still closed on OKX,
+            # and that frees the slot for the waiting short in the same run
+            odt.MAX_SAME_SIDE = 2
+            two = {k: shorts[k] for k in ('BTC-USDT-SWAP', 'ETH-USDT-SWAP')}
+            fake = FakeOKX(prices=px); _, state = run(fake, paper(**two))
+            fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='short', pos='1'), dict(instId='ETH-USDT-SWAP', posSide='short', pos='1')]
+            fake.posts.clear()
+            later = {'BTC-USDT-SWAP': shorts['BTC-USDT-SWAP'], 'SOL-USDT-SWAP': shorts['SOL-USDT-SWAP']}   # ETH closed on paper, SOL is new
+            m, state = run(fake, paper(**later), state)
+            self.assertEqual(fake.posts[0][0], '/api/v5/trade/close-position'); self.assertEqual(fake.posts[0][1]['instId'], 'ETH-USDT-SWAP')
+            self.assertEqual(orders(fake), [('SOL-USDT-SWAP', 'sell')])
+            self.assertFalse([a for a in m.actions if a.get('reason') == 'same_side_count'])
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
     def test_the_leader_uses_its_own_risk_and_leverage_genes(self):
         self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0
         try:

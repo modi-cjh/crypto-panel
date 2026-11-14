@@ -492,7 +492,8 @@ class EvolutionTests(unittest.TestCase):
         sr = self._breakout_market()
         g = base_genes(risk=.02)
         seg = lambda i, **kw: dict(dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]), **kw)
-        r = X.simulate_account([seg(1), seg(2), seg(3)], sr, 30, 71, equity=10000.0)
+        nocap = dict(X.ACCOUNT_RULES, max_same_side=None)                                # crowding steps on their own (the count cap is tested below)
+        r = X.simulate_account([seg(1), seg(2), seg(3)], sr, 30, 71, equity=10000.0, rules=nocap)
         pos = {p['inst']: p for p in r['positions']}
         self.assertEqual(len(pos), 8)                                                    # one position per coin, 3 per strategy at most
         self.assertEqual([sum(1 for p in pos.values() if p['seg'] == f'm{i}') for i in (1, 2, 3)], [3, 3, 2])
@@ -520,6 +521,55 @@ class EvolutionTests(unittest.TestCase):
         w = X.simulate_account([seg(1, wind_i=45)], sr, 30, 71, equity=10000.0)
         self.assertEqual(len(w['positions']), 3)
         self.assertEqual(X.simulate_account([seg(1, wind_i=40)], sr, 30, 71, equity=10000.0)['positions'], [])   # wound before the signal bar
+
+    def test_same_side_full_boundaries(self):
+        self.assertEqual(X.MAX_SAME_SIDE_POSITIONS, 6); self.assertEqual(X.ACCOUNT_RULES['max_same_side'], 6)
+        self.assertEqual([X.same_side_full(n) for n in (0, 5, 6, 7)], [False, False, True, True])   # 5 open: one more fits; 6: full
+        self.assertEqual([X.same_side_full(n, 1) for n in (0, 1)], [False, True])
+        self.assertFalse(X.same_side_full(50, None)); self.assertFalse(X.same_side_full(50, 0))       # None / 0 = off
+
+    def _two_sided_market(self, ups=8, downs=2):
+        up = [100.0] * 40 + [110.0] + [111.0] * 30                                     # breaks out upward on bar 40 → long
+        down = [100.0] * 40 + [90.0] + [89.0] * 30                                     # breaks down on bar 40 → short
+        sr = {f'U{k}-USDT-SWAP': series_from(list(up), f'U{k}-USDT-SWAP') for k in range(ups)}
+        sr.update({f'D{k}-USDT-SWAP': series_from(list(down), f'D{k}-USDT-SWAP') for k in range(downs)})
+        return sr
+
+    def test_same_side_count_blocks_new_entries_on_a_full_side_only(self):
+        sr = self._two_sided_market()
+        g = base_genes(risk=.02)
+        segs = [dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]) for i in range(4)]   # 12 free slots: only the cap binds
+        side = lambda r, d: sum(1 for p in r['positions'] if p['side'] == d)
+        r = X.simulate_account(segs, sr, 30, 71, equity=10000.0)
+        self.assertEqual((side(r, 1), side(r, -1)), (6, 2))          # 8 long signals: 6 taken; the 2 shorts are not affected
+        # boundaries: cap 7 → 7 longs, cap 8 (= the signals) → all 8, off → all 8; a cap of 2 also fills the short side exactly
+        for cap, want in ((7, (7, 2)), (8, (8, 2)), (None, (8, 2)), (2, (2, 2))):
+            rc = X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=dict(X.ACCOUNT_RULES, max_same_side=cap))
+            self.assertEqual((side(rc, 1), side(rc, -1)), want, cap)
+        # the leader counts too: with the leader seated the long side still stops at 6
+        lead = X.simulate_account([dict(segs[0], boosts=[(0, None)])] + segs[1:], sr, 30, 71, equity=10000.0)
+        self.assertEqual(side(lead, 1), 6)
+        # side_cap_from: fills happen on bar 41 (signal on bar 40's close); the cap applies to fills after that bar
+        self.assertEqual(side(X.simulate_account(segs, sr, 30, 71, equity=10000.0, side_cap_from=40), 1), 6)
+        self.assertEqual(side(X.simulate_account(segs, sr, 30, 71, equity=10000.0, side_cap_from=41), 1), 8)
+
+    def test_same_side_count_never_blocks_exits(self):
+        sr = self._two_sided_market(ups=8, downs=0)
+        g = base_genes(risk=.02, max_hold=5)
+        segs = [dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]) for i in range(3)]
+        r = X.simulate_account(segs, sr, 30, 71, equity=10000.0)
+        self.assertEqual(r['positions'], [])                         # the full long side still runs every position to its exit
+        self.assertEqual([t['reason'] for t in r['trades']], ['time'] * 6)
+
+    def test_paper_account_records_when_the_same_side_count_started(self):
+        acc = dict(from_ts=T0, start_equity=10000.0, segs=[], next=0)
+        sr = self._two_sided_market()
+        state = dict(nodes={}, team=[], paper=dict(account=acc, start_equity=10000.0))
+        P.update(state, sr, [])
+        self.assertEqual(acc['side_cap_from'], sr['U0-USDT-SWAP'].ts[-1])
+        acc['side_cap_from'] = T0                                    # an earlier start is kept, not moved forward
+        P.update(state, sr, [])
+        self.assertEqual(acc['side_cap_from'], T0)
 
     def test_majors_risk_twice_as_much_in_the_shared_account(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 30
