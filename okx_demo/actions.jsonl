@@ -156,3 +156,11 @@
 {"ts": "2026-11-14T16:53:03Z", "action": "amend_stop", "inst": "BNB-USDT-SWAP", "dry_run": false, "old": 673.4233231865718, "new": 654.3933231865718}
 {"ts": "2026-11-14T16:53:03Z", "action": "amend_stop", "inst": "XRP-USDT-SWAP", "dry_run": false, "old": 1.034148114704671, "new": 1.021748114704671}
 {"ts": "2026-11-14T16:53:03Z", "action": "amend_stop", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "old": 0.6770089334602194, "new": 0.6568089334602194}
+{"ts": "2026-11-14T20:51:30Z", "action": "closed_on_exchange", "inst": "GRASS-USDT-SWAP", "dry_run": false, "strategy": "evolved", "pnl": 368.17551773226234, "price_pnl": 442.468, "funding": -73.35369826773766, "close_price": 0.2825, "fee": -0.938784, "outcome": "target"}
+{"ts": "2026-11-14T20:51:30Z", "action": "closed_on_exchange", "inst": "ICP-USDT-SWAP", "dry_run": false, "strategy": "evolved", "pnl": 148.78168034691274, "price_pnl": 161.463443, "funding": -11.45531475558728, "close_price": 2.221, "fee": -1.2264478975, "outcome": "target"}
+{"ts": "2026-11-14T20:51:30Z", "action": "amend_stop", "inst": "CRV-USDT-SWAP", "dry_run": false, "old": 0.24002577700713235, "new": 0.23312577700713236}
+{"ts": "2026-11-14T20:51:30Z", "action": "amend_stop", "inst": "LPT-USDT-SWAP", "dry_run": false, "old": 1.2032531924294843, "new": 1.1862531924294841}
+{"ts": "2026-11-14T20:51:30Z", "action": "amend_stop", "inst": "INJ-USDT-SWAP", "dry_run": false, "old": 8.94267024821045, "new": 8.819670248207718}
+{"ts": "2026-11-14T20:51:30Z", "action": "amend_stop", "inst": "BNB-USDT-SWAP", "dry_run": false, "old": 654.3933231865718, "new": 644.0433231865718}
+{"ts": "2026-11-14T20:51:30Z", "action": "amend_stop", "inst": "XRP-USDT-SWAP", "dry_run": false, "old": 1.021748114704671, "new": 1.0003481147046709}
+{"ts": "2026-11-14T20:51:30Z", "action": "amend_stop", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "old": 0.6568089334602194, "new": 0.6317089334602194}

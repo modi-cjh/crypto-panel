@@ -1,6 +1,6 @@
 {
- "day": "2026-11-14",
- "day_start": 7191.494513736855,
+ "day": "2026-11-15",
+ "day_start": 8317.089868908066,
  "halted": false,
  "history": [
   [
@@ -498,6 +498,10 @@
   [
    1794675183904,
    7954.11
+  ],
+  [
+   1794689490088,
+   8321.5
   ]
  ],
  "mirrored": {
@@ -847,10 +851,12 @@
    "entry": 0.4572,
    "clOrdId": "evgrass1794384000",
    "opened_at": 1794388027504,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
-   "ordId": "4089803076357574656"
+   "ordId": "4089803076357574656",
+   "closed_reason": "exchange_stop_or_target",
+   "realized_pnl": 368.17551773226234
   },
   "ICP-USDT-SWAP|1794384000000": {
    "inst": "ICP-USDT-SWAP",
@@ -864,10 +870,12 @@
    "entry": 2.536,
    "clOrdId": "evicp1794384000",
    "opened_at": 1794388027504,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
-   "ordId": "4089803106053246976"
+   "ordId": "4089803106053246976",
+   "closed_reason": "exchange_stop_or_target",
+   "realized_pnl": 148.78168034691274
   },
   "PEPE-USDT-SWAP|1794398400000": {
    "inst": "PEPE-USDT-SWAP",
@@ -908,7 +916,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "7120",
-   "stop": 0.24002577700713235,
+   "stop": 0.23312577700713236,
    "target": 0.17363040208074262,
    "leverage": 7,
    "entry": 0.2419,
@@ -918,7 +926,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668701434597376",
-   "last_upl": 221.02190000000027
+   "last_upl": 165.48590000000024
   },
   "LPT-USDT-SWAP|1794441600000": {
    "inst": "LPT-USDT-SWAP",
@@ -926,7 +934,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "19407",
-   "stop": 1.2032531924294843,
+   "stop": 1.1862531924294841,
    "target": 0.9988163804403928,
    "leverage": 11,
    "entry": 1.262,
@@ -936,7 +944,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668738680016896",
-   "last_upl": 300.81310000000025
+   "last_upl": 353.21200000000005
   },
   "XTZ-USDT-SWAP|1794441600000": {
    "inst": "XTZ-USDT-SWAP",
@@ -1001,7 +1009,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "222",
-   "stop": 8.94267024821045,
+   "stop": 8.819670248207718,
    "target": 3.8823126936479917,
    "leverage": 3,
    "entry": 7.476,
@@ -1152,7 +1160,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "142",
-   "stop": 654.3933231865718,
+   "stop": 644.0433231865718,
    "target": 531.4723126992126,
    "leverage": 10,
    "entry": 655.0,
@@ -1189,7 +1197,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "14.37",
-   "stop": 1.021748114704671,
+   "stop": 1.0003481147046709,
    "target": 0.8860854533849577,
    "leverage": 10,
    "entry": 1.005,
@@ -1265,7 +1273,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "303",
-   "stop": 0.6568089334602194,
+   "stop": 0.6317089334602194,
    "target": 0.28456367574115243,
    "leverage": 3,
    "entry": 0.5592,
@@ -1372,5 +1380,5 @@
   "pnl": 2878.799155673374
  },
  "leader_realized": 0.0,
- "leader_upl_start": 139.48790000000048
+ "leader_upl_start": 518.6979000000003
 }
