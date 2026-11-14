@@ -147,3 +147,4 @@
 {"ts": "2026-11-14T05:03:19Z", "action": "amend_stop", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "old": 0.6983089334602194, "new": 0.6910089334602193}
 {"ts": "2026-11-14T09:00:05Z", "action": "amend_stop", "inst": "LPT-USDT-SWAP", "dry_run": false, "old": 1.249253192429484, "new": 1.2442531924294842}
 {"ts": "2026-11-14T09:00:05Z", "action": "amend_stop", "inst": "XRP-USDT-SWAP", "dry_run": false, "old": 1.0389481147046709, "new": 1.034148114704671}
+{"ts": "2026-11-14T13:04:14Z", "action": "amend_stop", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "old": 0.6910089334602193, "new": 0.6770089334602194}
