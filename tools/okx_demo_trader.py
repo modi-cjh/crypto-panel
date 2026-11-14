@@ -7,15 +7,15 @@ the paper results. Every request carries `x-simulated-trading: 1`; it cannot rea
 
 Each run, against <data>/combined/state.json:
   - a paper position opened in the last OPEN_WINDOW that is not mirrored yet is opened at market,
-    sized by the strategy's risk at the paper stop (evolved mode: isolated margin, the strategy's own 2–10 % risk gene;
-    less when many positions are already open on that side; the legacy modes: isolated, 1 %), with the stop (and the
+    sized by the strategy's risk at the paper stop (evolved mode: cross margin, the strategy's own 2–10 % risk gene;
+    less when many positions are already open on that side; the legacy modes: cross, 1 %), with the stop (and the
     mean-reversion target) attached as exchange-side algo orders;
   - when the paper stop trails, the exchange stop is amended;
   - when the paper position is gone, the mirrored position is closed;
   - if the exchange stop already closed a mirrored position, it is marked done and never reopened.
 Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; this process is demo-only and
-refuses to start or send any request without `x-simulated-trading: 1`. Evolved mode uses isolated margin, the strategy's own risk (2–10 %) and leverage
-(1–20×, reduced so the stop sits before liquidation, then clamped to that coin's OKX max; fallback 20× if the public spec is missing). A UTC+7 day
+refuses to start or send any request without `x-simulated-trading: 1`. Evolved mode uses cross margin (全仓), the strategy's own risk (2–10 %) and leverage
+(1–20×, clamped to that coin's OKX max; fallback 20× if the public spec is missing). A new order is skipped if its stop would leave account equity at or below total maintenance margin. A UTC+7 day
 loss of 10% closes everything and blocks new entries until the next day; actions `pause`, `resume`,
 `flatten` (close all and pause) and `dry-run` (log intended orders, send nothing) are available.
 Secrets come from OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE, reach curl through stdin and are never logged.
@@ -38,7 +38,7 @@ from volume_test import profile as volume_profile, describe as describe_volume
 from runtime_guard import entries_allowed, atomic_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
-from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FALLBACK_INST_LEVERAGE, FEE  # noqa: E402
+from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, cross_open_allowed, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FALLBACK_INST_LEVERAGE, FEE  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -52,7 +52,7 @@ EVOLVED_MAX_LEVERAGE = GENE_MAX_LEVERAGE   # 20×, same cap as the evolve levera
 # clamped so the result never exceeds 10 %. The leader counts toward the same-direction cap and is subject to the
 # daily-loss stop, same as everyone else. LEADER_RISK / LEADER_LEVERAGE are the caps, not a fixed bigger size.
 LEADER_RISK, LEADER_LEVERAGE = MAX_TRADE_RISK, EVOLVED_MAX_LEVERAGE
-MARGIN_MODE = 'isolated'          # evolved and legacy modes both use isolated margin (逐仓) so each position has its own liquidation
+MARGIN_MODE = 'cross'             # evolved and legacy modes both use cross margin (全仓); liquidation is at the account level
 # Demo-only lock: flipped only in tests to prove the process refuses to start without the simulated-trading header.
 DEMO_ONLY = True
 SIMULATED_HEADER = 'x-simulated-trading'
@@ -77,9 +77,10 @@ def configure_evolved(universe=None):
     """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply. `universe` is the
     coin list the evolution trades (signals.json 'instruments', the top-100 perpetuals); without it, the five majors."""
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT, MARGIN_MODE
-    MARGIN_MODE = 'isolated'
+    MARGIN_MODE = 'cross'
     # Each order risks its strategy's own risk gene (2–10 %, capped at 10 % after crowding and the major-coin factor)
-    # and its leverage gene (1–20×, reduced so the stop sits before liquidation, then clamped to that coin's OKX max).
+    # and its leverage gene (1–20×, clamped to that coin's OKX max). An order is skipped if its stop would leave
+    # account equity at or below total maintenance margin (0.5 % majors / 2.5 % others).
     # At most 20 % in one direction (the leader included); a 10 % daily loss on the whole account closes every
     # position until tomorrow. The leader uses the same gene ranges; the title only decides signal priority.
     INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], .20, EVOLVED_DAILY_HALT
@@ -94,7 +95,7 @@ def configure_evolved(universe=None):
 
 def configure_volume_test(now=None, universe=None):
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT, MARGIN_MODE
-    DAILY_HALT, MARGIN_MODE = .10, 'isolated'
+    DAILY_HALT, MARGIN_MODE = .10, 'cross'
     p = volume_profile(now)
     INSTRUMENTS, RISK = p['instruments'], p['risk']
     if p['mode'] == 'aggressive' and isinstance(universe, list) and len(universe) == p['scan_limit'] and len(set(universe)) == len(universe) and all(isinstance(i,str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP',i) for i in universe):
@@ -385,6 +386,12 @@ class Mirror:
         left = (px - stop) * p['side'] / abs(entry - stop)
         return LATE_BAND[0] <= left <= LATE_BAND[1]
 
+    def mgn_mode(self, m):
+        """Margin mode of a mirrored position: what the exchange reports, else what it was opened with. Records from
+        before the field was stored were opened isolated (the mode before cross); new entries are cross (MARGIN_MODE)."""
+        held = self.held(m['inst'], m.get('side'))
+        return (held or {}).get('mgnMode') or m.get('mgnMode') or 'isolated'
+
     def held(self, inst, side):
         ps = 'long' if side == 1 else 'short'
         return self.positions.get((inst, ps)) or self.positions.get((inst, 'net'))
@@ -448,12 +455,9 @@ class Mirror:
             except (TypeError, ValueError):
                 want = DEFAULT_LEVERAGE
             want = max(1, min(want, EVOLVED_MAX_LEVERAGE))
-            # stop before liquidation first (this coin's MMR), then the per-instrument OKX cap
-            mmr = maintenance_rate(inst)
-            lever = clamp_leverage(want, dist, cap=EVOLVED_MAX_LEVERAGE, mmr=mmr)
+            # per-instrument OKX cap (leverage only sets initial margin on cross)
+            lever = clamp_leverage(want, cap=EVOLVED_MAX_LEVERAGE)
             lever = max(1, min(lever, self.inst_max_lever(inst)))
-            if dist >= (1 / lever - mmr - FEE):
-                return self.log('skip', inst, reason='stop_before_liquidation', leverage=lever, stop_frac=round(dist, 6))
         else:
             cap = MAX_LEVERAGE
             try:
@@ -465,6 +469,54 @@ class Mirror:
         margin = float(contracts) * sp['ctVal'] * px / lever
         if margin > self.available * .95:
             return self.log('skip', inst, reason='insufficient_margin', margin=round(margin, 4), available=round(self.available, 4))
+        # Cross-margin stop rule (全仓): the new stop, and every mirrored stop hit at once, must leave account equity
+        # strictly above the remaining maintenance margin. Mirrored positions (including the ones opened earlier in this
+        # run) are stopped in the worst case; manual positions on the account are never touched, they stay at the mark
+        # and keep their maintenance margin. Leverage is not lowered to pass — the entry is skipped.
+        book, unmanaged, prices, upnl = {}, {}, {}, 0.0
+        mirrored_keys = set()
+        for existing_key, m in self.s['mirrored'].items():
+            if m.get('status') != 'open':
+                continue
+            held = self.held(m['inst'], m.get('side'))
+            if held:
+                qty_e = abs(float(held['pos'])) * self.spec(m['inst'])['ctVal']
+                entry_e = float(held.get('avgPx') or m.get('entry') or 0)
+                mark_e = float(held.get('markPx') or 0)
+                mirrored_keys.add((held.get('instId'), held.get('posSide', 'net')))
+            elif existing_key in self.new_order_risk:          # opened earlier in this run, not in the loaded positions
+                qty_e = float(m.get('contracts') or 0) * self.spec(m['inst'])['ctVal']
+                entry_e, mark_e = float(m.get('entry') or 0), 0.0
+            else:
+                continue
+            if entry_e <= 0 or not m.get('stop'):
+                return self.log('skip', inst, reason='existing_risk_unknown')
+            px_e = mark_e or self.price(m['inst']) or entry_e      # OKX liquidates on the mark price
+            book[m['inst']] = dict(side=m['side'], entry=entry_e, qty=qty_e, stop=float(m['stop']), fee=0.0, funding=0.0,
+                                   mmr=maintenance_rate(m['inst']))
+            prices[m['inst']] = px_e
+            upnl += qty_e * (px_e - entry_e) * m['side']
+        for k, hp in (getattr(self, 'all_positions', None) or {}).items():
+            if k in mirrored_keys:
+                continue
+            try:
+                n, entry_e = float(hp.get('pos') or 0), float(hp.get('avgPx') or 0)
+                mark = float(hp.get('markPx') or hp.get('last') or 0) or entry_e
+                ct = self.spec(k[0])['ctVal']
+            except (TypeError, ValueError, KeyError):
+                return self.log('skip', inst, reason='existing_risk_unknown')
+            if not n or entry_e <= 0 or not ct:
+                continue
+            side_e = (1 if n > 0 else -1) if k[1] == 'net' else (1 if k[1] == 'long' else -1)
+            key_e = f'{k[0]}#{k[1]}#manual'
+            unmanaged[key_e] = dict(side=side_e, entry=entry_e, qty=abs(n) * ct, mmr=maintenance_rate(k[0]))
+            prices[key_e] = mark
+            upnl += abs(n) * ct * (mark - entry_e) * side_e
+        qty_new = float(contracts) * sp['ctVal']
+        new_p = dict(side=side, entry=px, qty=qty_new, stop=p['stop'], fee=qty_new * px * FEE, funding=0.0, mmr=maintenance_rate(inst))
+        allowed, why = cross_open_allowed(self.equity - upnl, book, inst, new_p, prices, fixed=unmanaged)
+        if not allowed:
+            return self.log('skip', inst, reason=why or 'stop_before_liquidation', leverage=lever, stop_frac=round(dist, 6))
         pos_side = ('long' if side == 1 else 'short') if self.hedged else None
         lev_body = dict(instId=inst, lever=str(lever), mgnMode=MARGIN_MODE, **({'posSide': pos_side} if pos_side and MARGIN_MODE == 'isolated' else {}))
         r = self.post('/api/v5/account/set-leverage', lev_body)
@@ -514,7 +566,7 @@ class Mirror:
         return dict({k: v for k, v in res.items() if k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee')}, outcome=kind)
 
     def close(self, key, m, reason):
-        body = dict(instId=m['inst'], mgnMode=m.get('mgnMode', 'isolated'), autoCxl=True, **({'posSide': m['posSide']} if m['posSide'] != 'net' else {}))
+        body = dict(instId=m['inst'], mgnMode=self.mgn_mode(m), autoCxl=True, **({'posSide': m['posSide']} if m['posSide'] != 'net' else {}))
         r = self.post('/api/v5/trade/close-position', body)
         if not ok(r):
             return self.log('error', m['inst'], step='close', detail=first_error(r))
@@ -543,7 +595,7 @@ class Mirror:
             self.close(key, m, 'stop_missing_price_beyond_stop')
             return False
         tick = self.spec(m['inst'])['tickSz']
-        body = dict(instId=m['inst'], tdMode=m.get('mgnMode', 'isolated'), side='sell' if m['side'] == 1 else 'buy', ordType='conditional', closeFraction='1',
+        body = dict(instId=m['inst'], tdMode=self.mgn_mode(m), side='sell' if m['side'] == 1 else 'buy', ordType='conditional', closeFraction='1',
                     slTriggerPx=fmt(quantize(stop, tick, ROUND_HALF_UP)), slOrdPx='-1', slTriggerPxType='last',
                     **({'posSide': m['posSide']} if m['posSide'] != 'net' else {'reduceOnly': True}))
         r = self.post('/api/v5/trade/order-algo', body)
@@ -709,7 +761,7 @@ def main():
         sig = json.loads(evolved_path.read_text())
         paper = {'positions': sig.get('positions', {}), 'source': 'evolve'}
         applied = configure_evolved(sig.get('instruments'))
-        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，缺省 {FALLBACK_INST_LEVERAGE}×）· 逐仓 · 同向 ≤ {SAME_SIDE_CAP:.0%} · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
+        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，缺省 {FALLBACK_INST_LEVERAGE}×）· 全仓 · 同向 ≤ {SAME_SIDE_CAP:.0%} · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
     else:
         if not paper_path.exists():
             print('没有策略信号，跳过跟单。'); return

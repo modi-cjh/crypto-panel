@@ -1,6 +1,7 @@
 import json
 import sys
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
@@ -70,13 +71,13 @@ def run(fake, paper_state, state=None, action='run', dry=False):
 
 
 class MirrorTests(unittest.TestCase):
-    def test_fresh_paper_entry_opens_isolated_with_exchange_stop_sized_to_one_percent(self):
+    def test_fresh_paper_entry_opens_cross_with_exchange_stop_sized_to_one_percent(self):
         fake = FakeOKX()
         m, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
         paths = [p for p, _ in fake.posts]
         self.assertEqual(paths, ['/api/v5/account/set-leverage', '/api/v5/trade/order'])
         order = fake.posts[1][1]
-        self.assertEqual((order['tdMode'], order['side'], order['posSide'], order['ordType']), ('isolated', 'buy', 'long', 'market'))
+        self.assertEqual((order['tdMode'], order['side'], order['posSide'], order['ordType']), ('cross', 'buy', 'long', 'market'))
         self.assertEqual(order['attachAlgoOrds'][0]['slTriggerPx'], '68600')
         # 1% of 5000 = 50 USDT risk at a 2% stop -> 2500 USDT notional = 0.0357 BTC = 3.57 contracts of 0.01 BTC
         self.assertEqual(order['sz'], '3.57')
@@ -250,7 +251,7 @@ class MirrorTests(unittest.TestCase):
         self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0     # majors' extra size is tested on its own
         try:
             p = odt.configure_evolved()
-            self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT, p['margin_mode']), ('evolved', .02, .10, .20, .10, 'isolated'))
+            self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT, p['margin_mode']), ('evolved', .02, .10, .20, .10, 'cross'))
             self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
             odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])     # the evolution's top-100 list
             self.assertEqual(odt.INSTRUMENTS, ['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])
@@ -342,22 +343,22 @@ class MirrorTests(unittest.TestCase):
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
-    def test_evolved_mode_trades_isolated_margin_and_every_position_keeps_a_stop_on_the_exchange(self):
+    def test_evolved_mode_trades_cross_margin_and_every_position_keeps_a_stop_on_the_exchange(self):
         try:
             odt.configure_evolved()
-            self.assertEqual(odt.MARGIN_MODE, 'isolated')
+            self.assertEqual(odt.MARGIN_MODE, 'cross')
             sig = {'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved', risk=.02)}
             fake = FakeOKX(); m, state = run(fake, paper(**sig))
             lev = next(b for q, b in fake.posts if q == '/api/v5/account/set-leverage'); order = next(b for q, b in fake.posts if q == '/api/v5/trade/order')
-            self.assertEqual((lev['mgnMode'], lev.get('posSide'), order['tdMode']), ('isolated', 'long', 'isolated'))
+            self.assertEqual((lev['mgnMode'], lev.get('posSide'), order['tdMode']), ('cross', None, 'cross'))
             self.assertEqual(order['attachAlgoOrds'][0]['slTriggerPx'], '68600')                    # the entry carries its stop
-            mir = next(iter(state['mirrored'].values())); self.assertEqual(mir['mgnMode'], 'isolated')
+            mir = next(iter(state['mirrored'].values())); self.assertEqual(mir['mgnMode'], 'cross')
             # next run: the position is there but no stop is resting on the exchange → it is placed again
             later = odt.Mirror(fake, state, paper(**sig), NOW + odt.timedelta(hours=4), False)
             fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3')]; fake.posts.clear()
             later.run('run')
             algo = next(b for q, b in fake.posts if q == '/api/v5/trade/order-algo')
-            self.assertEqual((algo['slTriggerPx'], algo['tdMode'], algo['side'], algo['posSide'], algo['closeFraction']), ('68600', 'isolated', 'sell', 'long', '1'))
+            self.assertEqual((algo['slTriggerPx'], algo['tdMode'], algo['side'], algo['posSide'], algo['closeFraction']), ('68600', 'cross', 'sell', 'long', '1'))
             self.assertIn('restore_stop', [a['action'] for a in later.actions])
             # with a stop resting, nothing is sent
             fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='9', slTriggerPx='68600')]; fake.posts.clear()
@@ -367,10 +368,10 @@ class MirrorTests(unittest.TestCase):
             fake.algos = []; fake.prices = {'BTC-USDT-SWAP': 68000.0}; fake.posts.clear()
             gone = odt.Mirror(fake, state, paper(**sig), NOW + odt.timedelta(hours=12), False); gone.run('run')
             close = next(b for q, b in fake.posts if q == '/api/v5/trade/close-position')
-            self.assertEqual(close['mgnMode'], 'isolated'); self.assertIn('stop_missing_price_beyond_stop', [a.get('reason') for a in gone.actions])
+            self.assertEqual(close['mgnMode'], 'cross'); self.assertIn('stop_missing_price_beyond_stop', [a.get('reason') for a in gone.actions])
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
-        self.assertEqual(odt.MARGIN_MODE, 'isolated')                                           # the retired strategy engine stays isolated
+        self.assertEqual(odt.MARGIN_MODE, 'cross')                                             # volume-test / legacy profiles also use cross margin
 
     def test_the_five_majors_risk_twice_as_much_as_other_coins(self):
         SPECS.setdefault('PEPE-USDT-SWAP', dict(ctVal='10000000', lotSz='1', minSz='1', tickSz='0.00000001'))
@@ -422,30 +423,40 @@ class MirrorTests(unittest.TestCase):
         state['history'] = [[i, 1.0] for i in range(odt.HISTORY_POINTS + 5)]; m3.record_equity()
         self.assertEqual(len(state['history']), odt.HISTORY_POINTS)
 
-    def test_evolved_leverage_follows_the_gene_then_stop_then_instrument_cap(self):
+    def test_evolved_leverage_follows_the_gene_then_the_instrument_cap_on_cross(self):
         try:
             odt.configure_evolved()
-            px, stop = 78000.0, 78000.0 * 0.98   # 2 % stop: max L before liq is < 1/(0.02+0.005+0.0005) ≈ 39
-            # an old signal with a 100× gene is clamped to the 20× gene cap even though the stop and OKX would allow more
+            px, stop = 78000.0, 78000.0 * 0.98   # 2 % stop: cross does not lower leverage for the stop (that was the isolated rule)
+            # an old signal with a 100× gene is clamped to the 20× gene cap even though OKX would allow 100×
             sig = {'BTC-USDT-SWAP': dict(long_btc(stop=stop), strategy='evolved', risk=.02, leverage=100, entry=px)}
             caps = {'BTC-USDT-SWAP': dict(SPECS['BTC-USDT-SWAP'], lever='100')}
             fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps)
             m, _ = run(fake, paper(**sig))
             opened = [a for a in m.actions if a['action'] == 'open'][-1]
-            self.assertEqual(opened['leverage'], 20)
-            # 5 % stop: max L before liq is < 1/(0.05+0.005+0.0005) ≈ 18, so a 20× gene is reduced by the stop rule
+            self.assertEqual(opened['leverage'], 20)                     # gene cap 20×; cross: leverage only sets initial margin
+            lev = next(b for q, b in fake.posts if q == '/api/v5/account/set-leverage')
+            order = next(b for q, b in fake.posts if q == '/api/v5/trade/order')
+            self.assertEqual((lev['lever'], lev['mgnMode'], order['tdMode']), ('20', 'cross', 'cross'))
+            self.assertNotIn('posSide', lev)                               # cross leverage is per instrument, not per side
+            # 5 % stop: isolated margin would have cut a 20× gene (< ~18×); on cross the gene stands
             wide = px * 0.95
             sig_w = {'BTC-USDT-SWAP': dict(long_btc(stop=wide), strategy='evolved', risk=.02, leverage=20, entry=px)}
             fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps)
             m, _ = run(fake, paper(**sig_w))
-            opened = [a for a in m.actions if a['action'] == 'open'][-1]
-            self.assertLess(opened['leverage'], 20)
-            self.assertEqual(opened['leverage'], odt.clamp_leverage(20, .05, cap=100))
-            # instrument cap 15× is applied after the stop rule
+            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 20)
+            # the instrument cap still applies: 15× on BTC
             caps['BTC-USDT-SWAP'] = dict(SPECS['BTC-USDT-SWAP'], lever='15')
             fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps)
             m, _ = run(fake, paper(**sig))
             self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 15)
+            # an alt / BNB with a lower OKX max: gene 100× → that coin's cap when it is below the 20× gene cap
+            SPECS.setdefault('BNB-USDT-SWAP', dict(ctVal='0.01', lotSz='1', minSz='1', tickSz='0.01'))
+            bnb = {'BNB-USDT-SWAP': dict(long_btc(stop=600 * .98), strategy='evolved', risk=.02, leverage=100, entry=600.0)}
+            caps2 = {'BNB-USDT-SWAP': dict(SPECS['BNB-USDT-SWAP'], lever='10')}
+            odt.configure_evolved(['BTC-USDT-SWAP', 'BNB-USDT-SWAP'])
+            fake = FakeOKX(equity=100000, prices={'BNB-USDT-SWAP': 600.0}, instruments=caps2)
+            m, _ = run(fake, paper(**bnb))
+            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 10)
             # tight 0.3 % stop and an instrument that allows 75×: a 50× gene is still capped at 20×
             tight = px * 0.997
             caps['BTC-USDT-SWAP'] = dict(SPECS['BTC-USDT-SWAP'], lever='75')
@@ -503,20 +514,103 @@ class MirrorTests(unittest.TestCase):
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
-    def test_evolved_entry_is_skipped_when_even_one_x_cannot_place_the_stop_before_liq(self):
+    def test_evolved_entry_is_skipped_when_its_stop_would_leave_equity_at_or_below_maintenance_margin(self):
+        SPECS.setdefault('WIF-USDT-SWAP', dict(ctVal='1', lotSz='1', minSz='1', tickSz='0.0001'))
         try:
             odt.configure_evolved()
             px = 78000.0
-            stop = px * 0.001   # ~99.9 % stop, wider than 1× room under 0.5 % MMR
-            sig = {'BTC-USDT-SWAP': dict(long_btc(stop=stop), strategy='evolved', risk=.02, leverage=10, entry=px)}
-            caps = {'BTC-USDT-SWAP': dict(SPECS['BTC-USDT-SWAP'], lever='100')}
+            caps = {'BTC-USDT-SWAP': dict(SPECS['BTC-USDT-SWAP'], lever='100'), 'WIF-USDT-SWAP': dict(SPECS['WIF-USDT-SWAP'], lever='50')}
+            # 10 % risk (5 % gene × 2 for a major) on a 1 % stop: ~10× equity notional (margin 0.5 × equity at the 20× cap),
+            # 0.05 × equity maintenance margin.
+            sig = {'BTC-USDT-SWAP': dict(long_btc(stop=px * .99), strategy='evolved', risk=.05, leverage=20, entry=px)}
+            # Alone it is fine: the stop costs ~11 % of equity and leaves far more than any maintenance margin.
             fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps)
             m, _ = run(fake, paper(**sig))
+            self.assertTrue([a for a in m.actions if a['action'] == 'open'])
+            # A manual position on the same cross account (never touched) already needs 0.91 × equity as maintenance
+            # margin (36.4 × equity notional of an alt at 2.5 %). Entering is still above MM (~0.995 > ~0.96), but the stop
+            # would leave ~0.89 × equity, at or below the manual position's 0.91 → skipped, nothing sent, leverage kept.
+            manual = dict(instId='WIF-USDT-SWAP', posSide='long', pos='3640000', avgPx='1', markPx='1', mgnMode='cross')
+            fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps, positions=[manual])
+            m, _ = run(fake, paper(**sig))
             self.assertFalse([a for a in m.actions if a['action'] == 'open'])
-            skips = [a for a in m.actions if a.get('reason') == 'stop_before_liquidation']
-            self.assertTrue(skips)
+            self.assertFalse([q for q, _ in fake.posts if q in ('/api/v5/trade/order', '/api/v5/account/set-leverage', '/api/v5/trade/close-position')])
+            skip = next(a for a in m.actions if a.get('reason') == 'stop_before_liquidation')
+            self.assertEqual(skip['leverage'], 20)                      # cross: leverage is not lowered to make it fit
+            # Even bigger: entering alone would already put equity at or below total maintenance margin.
+            manual['pos'] = '4000000'
+            fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps, positions=[manual])
+            m, _ = run(fake, paper(**sig))
+            self.assertFalse([a for a in m.actions if a['action'] == 'open'])
+            self.assertTrue([a for a in m.actions if a.get('reason') == 'equity_below_mm'])
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
+    def test_evolved_entry_is_skipped_when_the_account_would_be_liquidated_before_its_stop_price(self):
+        # PR #88 review: a lone 10 % risk alt entry on a 0.26 % stop is fine to enter and its stop alone leaves cash > 0,
+        # but on the way to the stop (position still open, its 2.5 % MM still counted) equity falls below MM → skipped.
+        # Under the 20× gene cap (PR #90) this entry never fits the free margin in the first place, so the gate is
+        # exercised with the mirror's cap raised to 100× for this test only; the real cap is checked at the end.
+        SPECS.setdefault('WIF-USDT-SWAP', dict(ctVal='1', lotSz='1', minSz='1', tickSz='0.0001'))
+        try:
+            odt.configure_evolved(universe=['WIF-USDT-SWAP'])        # the evolution's coin list includes this alt
+            caps = {'WIF-USDT-SWAP': dict(SPECS['WIF-USDT-SWAP'], lever='50')}
+            sig = {'WIF-USDT-SWAP': dict(long_btc(stop=1.0 - .0026), strategy='evolved', risk=.1, leverage=100, entry=1.0)}
+            raised = mock.patch.object(odt, 'EVOLVED_MAX_LEVERAGE', 100); raised.start(); self.addCleanup(raised.stop)
+            fake = FakeOKX(equity=100000, prices={'WIF-USDT-SWAP': 1.0}, instruments=caps)
+            m, _ = run(fake, paper(**sig))
+            self.assertFalse([a for a in m.actions if a['action'] == 'open'])
+            self.assertFalse([q for q, _ in fake.posts if q in ('/api/v5/trade/order', '/api/v5/account/set-leverage')])
+            self.assertTrue([a for a in m.actions if a.get('reason') == 'stop_before_liquidation'])
+            # a 2 % risk version of the same entry passes and opens cross
+            sig['WIF-USDT-SWAP']['risk'] = .02
+            fake = FakeOKX(equity=100000, prices={'WIF-USDT-SWAP': 1.0}, instruments=caps)
+            m, _ = run(fake, paper(**sig))
+            self.assertTrue([a for a in m.actions if a['action'] == 'open'])
+            # with the real 20× cap the 10 % risk version is not sent at all
+            raised.stop()
+            self.assertEqual(odt.EVOLVED_MAX_LEVERAGE, 20)
+            sig['WIF-USDT-SWAP']['risk'] = .1
+            fake = FakeOKX(equity=100000, prices={'WIF-USDT-SWAP': 1.0}, instruments=caps)
+            m, _ = run(fake, paper(**sig))
+            self.assertFalse([a for a in m.actions if a['action'] == 'open'])
+            self.assertFalse([q for q, _ in fake.posts if q in ('/api/v5/trade/order', '/api/v5/account/set-leverage')])
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
+    def test_a_second_entry_in_the_same_run_counts_the_first_ones_stop(self):
+        try:
+            odt.configure_evolved()
+            caps = {k: dict(v, lever='100') for k, v in SPECS.items() if k in ('BTC-USDT-SWAP', 'ETH-USDT-SWAP')}
+            px_b, px_e = 78000.0, 3000.0
+            # 2 % stops so both 10 % risk entries fit the free margin at the 20× gene cap (~5 × equity notional each)
+            sig = {'BTC-USDT-SWAP': dict(long_btc(stop=px_b * .98), strategy='evolved', risk=.05, leverage=20, entry=px_b),
+                   'ETH-USDT-SWAP': dict(long_btc(stop=px_e * 1.02), strategy='evolved', risk=.05, leverage=20, entry=px_e, side=-1)}
+            seen = []
+            orig = odt.cross_open_allowed
+            def spy(cash, pos, inst, new_p, prices, fixed=None):
+                seen.append((inst, sorted(pos)))
+                return orig(cash, pos, inst, new_p, prices, fixed=fixed)
+            self.addCleanup(setattr, odt, 'cross_open_allowed', orig); odt.cross_open_allowed = spy
+            fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px_b, 'ETH-USDT-SWAP': px_e}, instruments=caps)
+            m, _ = run(fake, paper(**sig))
+            self.assertEqual(len([a for a in m.actions if a['action'] == 'open']), 2)
+            self.assertEqual(seen[0][1], []); self.assertEqual(seen[1][1], [seen[0][0]])     # the first entry is in the second check
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
+    def test_closing_uses_the_positions_own_margin_mode(self):
+        # new mirrors are cross; an older isolated mirror (or one saved before the field existed) is closed as isolated
+        for held_mode, saved, want in ((None, None, 'isolated'), (None, 'isolated', 'isolated'), ('cross', None, 'cross'), ('isolated', 'cross', 'isolated')):
+            state = dict(odt.new_state(), paused=False)
+            rec = dict(inst='BTC-USDT-SWAP', side=1, posSide='long', status='open', stop=68600.0, contracts='1', entry=70000.0, strategy='evolved', opened_at=NOW_MS)
+            if saved: rec['mgnMode'] = saved
+            state['mirrored'] = {'k': rec}
+            pos = dict(instId='BTC-USDT-SWAP', posSide='long', pos='1', avgPx='70000', **({'mgnMode': held_mode} if held_mode else {}))
+            fake = FakeOKX(positions=[pos])
+            run(fake, paper(), state=state, action='flatten')
+            close = next(b for q, b in fake.posts if q == '/api/v5/trade/close-position')
+            self.assertEqual(close['mgnMode'], want, (held_mode, saved))
 
     def test_refuses_to_run_or_send_without_the_simulated_trading_flag(self):
         self.addCleanup(setattr, odt, 'DEMO_ONLY', True)

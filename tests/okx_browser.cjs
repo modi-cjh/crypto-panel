@@ -99,7 +99,9 @@ let feed = {
   assert.match(await page.locator('#okx-total-ret').innerText(), /已平仓 1 笔/);
   assert.match(await page.locator('#okx-compare').innerText(), /纸面|等待纸面账户/);            // 跟单对照 now on 交易室
   assert.equal(await page.locator('#home-page [data-stop-demo]').count(), 1);                  // so is 停止交易
-  assert.match(await page.locator('#home-page .panel-caption').first().innerText(), /规则：/);
+  const ruleCaption = await page.locator('#home-page .panel-caption').first().innerText();
+  assert.match(ruleCaption, /规则：/);
+  assert.match(ruleCaption, /全仓/); assert.doesNotMatch(ruleCaption, /逐仓/);          // OKX demo / evolved paper is cross margin
   for (const width of [320, 360, 390]) {
     await page.setViewportSize({ width, height: 844 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `overflow at ${width}`);
