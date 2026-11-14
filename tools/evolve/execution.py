@@ -5,9 +5,9 @@ Rules (identical in every caller):
 - One position per instrument and at most MAX_POSITIONS at once; size = equity × risk ÷ stop distance.
 - Contract mode (the same lot rules as the OKX mirror, tools/okx_demo_trader.py): the size is rounded down to whole lots of
   the coin's contract (`Series.spec` = ctVal, lotSz, minSz) and skipped below the minimum; leverage is the genome's
-  leverage gene (1–100×, default 10× for old genomes), reduced if needed so the stop sits strictly before the isolated
+  leverage gene (1–20×, default 10× for old genomes), reduced if needed so the stop sits strictly before the isolated
   liquidation price and then clamped to that coin's OKX max leverage (static snapshot of public `lever`, 20× if unknown;
-  majors may go up to 100×); isolated margin = notional ÷ leverage; an entry is skipped when its margin exceeds 95 % of the free
+  every coin is also capped at LEVERAGE = 20×); isolated margin = notional ÷ leverage; an entry is skipped when its margin exceeds 95 % of the free
   margin (equity − margin in use); stops closer than 0.2 % are skipped. A gap through the liquidation price loses the
   whole isolated margin (no extra close fee or slippage). Funding (`Series.funding`, {ts: rate}) is paid / received on
   every funding time a position is held: notional × rate (not margin × rate), longs pay positive rates. Funding is
@@ -25,21 +25,21 @@ from pathlib import Path
 
 FEE = .0005          # taker fee per side
 SLIP = .0002         # slippage per fill
-LEVERAGE = 100       # most leverage a gene may request (paper account; the OKX demo mirror still has its own cap)
+LEVERAGE = 20        # most leverage a gene may request (paper account; the OKX demo mirror still has its own cap)
 DEFAULT_LEVERAGE = 10  # genomes saved before the leverage gene
 MIN_LEVERAGE = 1
 # Isolated maintenance margin rate (MMR), used in the liquidation price.
 # 0.5 % is in the range of OKX / Binance lowest-tier rates for the most liquid USDT perps.
 # Thinner coins use 2.5 %, a conservative stand-in for higher official tiers (we do not model OKX's full
 # notional-tier schedule). The close taker fee is included in the liquidation price so remaining margin
-# still covers MMR after that fee. At 100×, 2.5 % MMR leaves negative maintenance room (1/L < MMR + fee);
+# still covers MMR after that fee. Above ~39×, 2.5 % MMR leaves negative maintenance room (1/L < MMR + fee; not reachable under the 20× gene cap);
 # clamp_leverage must reduce L (or the entry is skipped) so the stop and the liq price stay on the correct side.
 MMR_MAJOR = .005
 MMR_OTHER = .025
 MMR = MMR_MAJOR      # default for helpers called without an instrument
 # One shared major-coin list for paper and the OKX demo follower: risk is doubled (then capped at 10 %),
-# and isolated MMR is 0.5 % (every other coin uses 2.5 %). BTC/ETH/SOL/XRP typically allow 100× on OKX;
-# BNB and DOGE allow 50× — the per-instrument cap still applies. A major missing from the leverage
+# and isolated MMR is 0.5 % (every other coin uses 2.5 %). BTC/ETH/SOL/XRP typically allow 100× on OKX
+# and BNB/DOGE 50×, but every gene is capped at LEVERAGE (20×) first, then the per-instrument cap applies. A major missing from the leverage
 # snapshot (paper) or the public instruments response (demo) falls back to 20×, same as unknown alts.
 MAJORS = ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP')
 FALLBACK_INST_LEVERAGE = 20   # unknown coins in the paper engine and the OKX demo follower
@@ -321,7 +321,7 @@ INST_MAX_LEVERAGE = _load_inst_caps()
 def inst_max_leverage(inst, cap=LEVERAGE):
     """Highest leverage this coin may use on the paper account, consistent with the OKX demo follower.
 
-    Uses the static OKX `lever` snapshot when the instrument is listed, then caps at `cap` (100×).
+    Uses the static OKX `lever` snapshot when the instrument is listed, then caps at `cap` (LEVERAGE, 20×).
     Any coin missing from the snapshot — majors included — falls back to 20×, the same default as the demo follower.
     """
     cap = max(MIN_LEVERAGE, int(cap))
@@ -543,7 +543,7 @@ def fitness(m):
 # major_factor: a trade on one of MAJORS risks this many times the usual amount (the most liquid coins, and the ones
 # whose OKX demo prices follow the real market). The same MAJORS list sets the 0.5 % MMR tier.
 # Per-trade risk never exceeds 10 % of equity, for every seat including the leader (the gene itself is 2–10 %).
-# Leverage is chosen by the gene (1–100×) and then reduced so the stop sits before the isolated liquidation price.
+# Leverage is chosen by the gene (1–20×) and then reduced so the stop sits before the isolated liquidation price.
 # major_factor still doubles a major-coin entry, then the 10 % cap is applied so a doubled 8 % gene becomes 10 %, not 16 %.
 # leader_risk / leader_lever are the same caps: the leader uses its own risk and leverage genes, not a fixed bigger size.
 MAX_TRADE_RISK = .10
@@ -583,8 +583,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     - size = account equity × risk ÷ stop distance (risk = the strategy's risk gene for every seat, including the
       leader), then clamped to rules['max_risk'] (10 %) after crowding and the major-coin factor;
     - one position per coin for the whole account, at most MAX_POSITIONS per strategy;
-    - margin = notional ÷ leverage (leverage = the gene, 1–100×, reduced so the stop sits before isolated liquidation;
-      cap = rules['lever'] / 'leader_lever', both 100×), and a new entry needs it to fit into 95 % of the free margin
+    - margin = notional ÷ leverage (leverage = the gene, 1–20×, reduced so the stop sits before isolated liquidation;
+      cap = rules['lever'] / 'leader_lever', both 20×), and a new entry needs it to fit into 95 % of the free margin
       (equity − margin in use);
     - a trade on one of rules['majors'] risks rules['major_factor'] times as much, still never above the 10 % cap;
     - `blocked` = {inst: [(i0, i1 or None)]}: bar ranges in which a coin takes no new entry (its OKX demo price was

@@ -25,7 +25,7 @@ GENES = {
     'max_hold': ('int', 4, 240),         # bars of the genome's timeframe (capped at MAX_HOLD_H hours)
     'trail': ('choice', [0, 1], None),   # 1: the stop trails the best price at the stop distance after every bar
     'risk': ('float', .02, .10),         # equity at risk per trade, chosen by the strategy itself (2–10 %)
-    'leverage': ('int', 1, 100),         # isolated leverage the strategy wants; actual leverage may be lowered so the stop sits before liquidation
+    'leverage': ('int', 1, 20),          # isolated leverage the strategy wants; actual leverage may be lowered so the stop sits before liquidation
     'vol_min': ('float', .3, 1.2),       # trade only when ATR% ÷ its baseline is inside [vol_min, vol_max]
     'vol_max': ('float', 1.0, 4.0),
 }
@@ -40,7 +40,7 @@ DEFAULTS = {'tf': 1, 'trail': 0, 'vol_mult': 3.0, 'rs_th': .1, 'leverage': 10}
 def fix(g):
     """Clamp to bounds, keep slow > fast, vol_max > vol_min, and treat tiny targets as 'no target'.
     Genomes saved before a gene existed get its neutral default (1H, no trailing, 10× leverage), so they
-    behave as before except out-of-range risk/leverage is clamped into the current 2–10 % / 1–100× bands."""
+    behave as before except out-of-range risk/leverage is clamped into the current 2–10 % / 1–20× bands."""
     for k, v in DEFAULTS.items():
         g.setdefault(k, v)
     for k, (kind, lo, hi) in GENES.items():

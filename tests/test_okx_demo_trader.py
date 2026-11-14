@@ -300,14 +300,15 @@ class MirrorTests(unittest.TestCase):
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
             caps = {k: dict(SPECS[k], lever='100') for k in px}
             sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.03) for k, v in px.items()}
-            # XRP is a 0.5 % MMR major: a 1 % stop can keep 50×.
+            # XRP is a 0.5 % MMR major: a 1 % stop could keep ~60×, but the leader's 50× (pre-cap) gene is clamped to 20×.
             sig['XRP-USDT-SWAP'].update(rank=1, leader=True, risk=.08, leverage=50, stop=px['XRP-USDT-SWAP'] * 1.01)
             fake = FakeOKX(equity=100000, prices=px, instruments=caps); m, state = run(fake, paper(**sig))
             opened = {a['inst']: a for a in m.actions if a['action'] == 'open'}
             lead = opened['XRP-USDT-SWAP']
             self.assertAlmostEqual(lead['risk_usdt'] / m.equity, .08, delta=.002)
-            self.assertEqual(odt.LEADER_RISK, .10); self.assertEqual(lead['leverage'], 50); self.assertTrue(lead['leader'])
-            self.assertLessEqual(max(a['leverage'] for a in opened.values()), 100)
+            self.assertEqual(odt.LEADER_RISK, .10); self.assertEqual(lead['leverage'], 20); self.assertTrue(lead['leader'])
+            self.assertEqual((odt.LEADER_LEVERAGE, odt.EVOLVED_MAX_LEVERAGE), (20, 20))
+            self.assertLessEqual(max(a['leverage'] for a in opened.values()), 20)
             # the leader counts toward the same-side cap (8 % + four more 3 % = 20 %, all fit)
             self.assertEqual(len(opened), 5)
             self.assertTrue(next(v for v in state['mirrored'].values() if v['inst'] == 'XRP-USDT-SWAP')['leader'])
@@ -425,25 +426,33 @@ class MirrorTests(unittest.TestCase):
         try:
             odt.configure_evolved()
             px, stop = 78000.0, 78000.0 * 0.98   # 2 % stop: max L before liq is < 1/(0.02+0.005+0.0005) ≈ 39
+            # an old signal with a 100× gene is clamped to the 20× gene cap even though the stop and OKX would allow more
             sig = {'BTC-USDT-SWAP': dict(long_btc(stop=stop), strategy='evolved', risk=.02, leverage=100, entry=px)}
             caps = {'BTC-USDT-SWAP': dict(SPECS['BTC-USDT-SWAP'], lever='100')}
             fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps)
             m, _ = run(fake, paper(**sig))
             opened = [a for a in m.actions if a['action'] == 'open'][-1]
-            self.assertLess(opened['leverage'], 100)
-            self.assertEqual(opened['leverage'], odt.clamp_leverage(100, (px - stop) / px, cap=100))
+            self.assertEqual(opened['leverage'], 20)
+            # 5 % stop: max L before liq is < 1/(0.05+0.005+0.0005) ≈ 18, so a 20× gene is reduced by the stop rule
+            wide = px * 0.95
+            sig_w = {'BTC-USDT-SWAP': dict(long_btc(stop=wide), strategy='evolved', risk=.02, leverage=20, entry=px)}
+            fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps)
+            m, _ = run(fake, paper(**sig_w))
+            opened = [a for a in m.actions if a['action'] == 'open'][-1]
+            self.assertLess(opened['leverage'], 20)
+            self.assertEqual(opened['leverage'], odt.clamp_leverage(20, .05, cap=100))
             # instrument cap 15× is applied after the stop rule
             caps['BTC-USDT-SWAP'] = dict(SPECS['BTC-USDT-SWAP'], lever='15')
             fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps)
             m, _ = run(fake, paper(**sig))
             self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 15)
-            # tight 0.3 % stop can keep a 50× gene when the instrument allows 75×
+            # tight 0.3 % stop and an instrument that allows 75×: a 50× gene is still capped at 20×
             tight = px * 0.997
             caps['BTC-USDT-SWAP'] = dict(SPECS['BTC-USDT-SWAP'], lever='75')
             sig2 = {'BTC-USDT-SWAP': dict(long_btc(stop=tight), strategy='evolved', risk=.02, leverage=50, entry=px)}
             fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=caps)
             m, _ = run(fake, paper(**sig2))
-            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 50)
+            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 20)
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 

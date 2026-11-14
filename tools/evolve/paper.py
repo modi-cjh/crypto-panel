@@ -2,9 +2,9 @@
 
 The team's strategies all trade the same account: every position is sized on the whole account's equity (the strategy's
 risk gene, 2–10 %, then major-coin doubling and crowding, capped at 10 %). Every seat, including the leader, uses its
-own risk and leverage genes (leverage 1–100×, reduced so the stop sits before the isolated liquidation price). Margin is
+own risk and leverage genes (leverage 1–20×, reduced so the stop sits before the isolated liquidation price). Margin is
 shared, one position per coin; a liquidated position loses only its isolated margin. The same-side cap (20 %) and the
-daily halt (10 %) still apply to everyone, including the leader. The OKX demo mirror (tools/okx_demo_trader.py) follows the same 2–10 % / 1–100× genes on isolated margin,
+daily halt (10 %) still apply to everyone, including the leader. The OKX demo mirror (tools/okx_demo_trader.py) follows the same 2–10 % / 1–20× genes on isolated margin,
 clamped to each coin's OKX max leverage (20× if the public spec is missing). Live trading is decided separately.
 Each run replays the account from its start bar with the full seat history, so the result is exactly what the engine
 produces on live bars:

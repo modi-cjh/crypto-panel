@@ -152,17 +152,25 @@ test('the leader is shown with its bigger size and the rules explain it', async 
   const { executionProfileText } = await import('../assets/control.mjs');
   const html = paperMarkup(d);
   assert.match(html, /<span class="evo-rank lead">第一名<\/span>[\s\S]*?<b>第一名（信号优先）<\/b>/);
-  assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）信号优先[\\s\\S]*风险基因 5%[\\s\\S]*杠杆基因 50×[\\s\\S]*计入同方向上限[\\s\\S]*日亏停手`));
-  assert.match(html, /所有席位（含第一名）每笔按风险基因 2%–10%、杠杆基因 1–100×，单笔风险（含主流币加倍）最多 10%/);
+  assert.match(html, new RegExp(`第一名（${d.paper.leader.id}）信号优先[\\s\\S]*风险基因 5%[\\s\\S]*杠杆基因 20×[\\s\\S]*计入同方向上限[\\s\\S]*日亏停手`));
+  assert.match(html, /所有席位（含第一名）每笔按风险基因 2%–10%、杠杆基因 1–20×，单笔风险（含主流币加倍）最多 10%/);
   assert.match(html, /BTC\/ETH\/SOL\/BNB\/XRP\/DOGE 维持保证金率 0\.5%，其他币 2\.5%/);
 
-  assert.match(html, /OKX 模拟盘跟单使用同一套风险\/杠杆基因（2%–10%、1–100×），逐仓下单/);
+  assert.match(html, /OKX 模拟盘跟单使用同一套风险\/杠杆基因（2%–10%、1–20×），逐仓下单/);
 
   assert.match(html, /升为第一名（信号优先）/);
-  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .02, risk_max: .10, same_side_cap: .2, daily_halt: .1, leader_risk: .10, leader_leverage: 100, max_leverage: 100, margin_mode: 'isolated', instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
-  assert.match(text, /每笔止损风险 2%–10%（按策略）/); assert.match(text, /杠杆最高 100×/); assert.match(text, /逐仓/);
+  const text = executionProfileText({ execution_profile: { mode: 'evolved', risk: .02, risk_max: .10, same_side_cap: .2, daily_halt: .1, leader_risk: .10, leader_leverage: 20, max_leverage: 20, margin_mode: 'isolated', instruments: ['BTC-USDT-SWAP'], scan_limit: 1 } });
+  assert.match(text, /每笔止损风险 2%–10%（按策略）/); assert.match(text, /杠杆最高 20×/); assert.match(text, /逐仓/);
   assert.match(text, /第一名信号优先（计入同向上限和日亏停手）/); assert.match(text, /日亏 10% 停手/);
   assert.doesNotMatch(text, /第一名每笔 10%/);
+});
+
+test('leverage cap is 20×: fixture bounds say 1–20× and the fallback without gene_bounds / rules.lever is also 20×', () => {
+  assert.deepEqual(d.gene_bounds.leverage, [1, 20]);
+  const bare = structuredClone(d); delete bare.gene_bounds; delete bare.paper.rules.lever;
+  const html = paperMarkup(bare);
+  assert.match(html, /杠杆基因 1–20×/); assert.match(html, /杠杆取基因（1–20×）/);
+  assert.doesNotMatch(html, /100×/);
 });
 
 
@@ -203,7 +211,7 @@ test('coins whose demo price is off are listed, and a replaced unqualified membe
 
 test('phone layout: rules are folded behind a one-line digest, the curve shows its range, the home card names the first place', () => {
   const html = paperMarkup(d);
-  assert.match(html, /<details class="evo-more evo-rules-fold"><summary>规则：8 个策略共用一个账户 · 第一名风险 5%、杠杆 50× · 风险 2–10% · 杠杆 1–100× · 单笔最多 10% · 主流币 ×2 · 日亏 10% 停手/);
+  assert.match(html, /<details class="evo-more evo-rules-fold"><summary>规则：8 个策略共用一个账户 · 第一名风险 5%、杠杆 20× · 风险 2–10% · 杠杆 1–20× · 单笔最多 10% · 主流币 ×2 · 日亏 10% 停手/);
   assert.match(html, /evo-curve-range[\s\S]*最低 [\d,.]+ · 最高 [\d,.]+ · 现在 [\d,.]+/);
   assert.doesNotMatch(html, /<table class="evo-metrics evo-team">/);
   const lead = d.team.find(t => t.id === d.paper.leader.id);

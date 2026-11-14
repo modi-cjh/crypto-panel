@@ -253,7 +253,7 @@ class RobustFitnessAndMigrantTests(unittest.TestCase):
             for k, (kind, lo, hi) in G.GENES.items():
                 if kind != 'choice': self.assertTrue(lo <= g[k] <= hi, (k, g[k]))
                 else: self.assertIn(g[k], lo)
-            self.assertEqual(g['leverage'], m['genes'].get('leverage', 10) if 1 <= m['genes'].get('leverage', 10) <= 100 else g['leverage'])
+            self.assertEqual(g['leverage'], m['genes'].get('leverage', 10) if 1 <= m['genes'].get('leverage', 10) <= 20 else g['leverage'])
 
 
 class GenomeTests(unittest.TestCase):
@@ -507,13 +507,13 @@ class EvolutionTests(unittest.TestCase):
         total = sum(p['qty'] * (p['entry'] - p['stop']) for p in r5['positions']) / 10000.0
         self.assertLessEqual(total, .205); self.assertGreater(total, .10)
         self.assertTrue(all(p['qty'] * (p['entry'] - p['stop']) / 10000.0 <= X.MAX_TRADE_RISK + .002 for p in r5['positions']))
-        # the leader uses its own risk/leverage genes (here 2 %), counts toward the same-side cap, and cannot exceed 100×
+        # the leader uses its own risk/leverage genes (here 2 %), counts toward the same-side cap, and cannot exceed 20×
         lead = X.simulate_account([seg(1, boosts=[(0, None)]), seg(2, genes=g5)], sr, 30, 71, equity=10000.0)
         lp = [p for p in lead['positions'] if p['boost']]
         self.assertTrue(lp)
         self.assertAlmostEqual(lp[0]['qty'] * (lp[0]['entry'] - lp[0]['stop']) / 10000.0, g['risk'], delta=.002)
         self.assertLessEqual(lp[0]['lever'], X.LEVERAGE)
-        self.assertEqual((X.ACCOUNT_RULES['leader_risk'], X.ACCOUNT_RULES['leader_lever'], X.ACCOUNT_RULES['max_risk']), (.10, 100, .10))
+        self.assertEqual((X.ACCOUNT_RULES['leader_risk'], X.ACCOUNT_RULES['leader_lever'], X.ACCOUNT_RULES['max_risk']), (.10, 20, .10))
         total_lead = sum(p['qty'] * (p['entry'] - p['stop']) for p in lead['positions']) / 10000.0
         self.assertLessEqual(total_lead, .205)
         # wind-down: a segment that lost its seat at bar 45 keeps its positions but takes no new signal
@@ -842,26 +842,57 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         self.assertAlmostEqual(entry - long_px, short_px - entry)
 
     def test_stop_before_liquidation_reduces_leverage_not_the_stop(self):
-        # a 2 % stop cannot sit in front of a 100× liquidation (~0.45 %), so leverage is reduced
+        # a 2 % stop cannot sit in front of a 100× liquidation (~0.45 %), so leverage is reduced (explicit 100× cap)
         stop_frac = .02
-        L = X.clamp_leverage(100, stop_frac)
+        L = X.clamp_leverage(100, stop_frac, cap=100)
         self.assertLess(L, 100)
-        self.assertEqual(L, X.max_leverage_for_stop(stop_frac))
+        self.assertEqual(L, X.max_leverage_for_stop(stop_frac, cap=100))
         liq = X.liquidation_price(100.0, 1, L)
         self.assertLess(liq, 100.0 - 100.0 * stop_frac)   # long stop (98) is above liq
-        # a tight 0.3 % stop can keep 100× (liq distance ≈ 0.45 %)
-        self.assertEqual(X.clamp_leverage(100, .003), 100)
+        # a 5 % stop allows < 1/(0.05+0.005+0.0005) ≈ 18×, so a 20× gene is reduced by the stop rule
+        self.assertLess(X.clamp_leverage(20, .05), 20)
+        self.assertEqual(X.clamp_leverage(20, .05), X.max_leverage_for_stop(.05))
+        # the default cap is the 20× gene cap: a 100× request is clamped to 20× even with a tight stop
+        self.assertEqual(X.LEVERAGE, 20)
+        self.assertEqual(X.clamp_leverage(100, .003), 20)
+        self.assertEqual(X.clamp_leverage(100, .02), 20)
+        # with an explicit 100× cap, a tight 0.3 % stop can keep 100× (liq distance ≈ 0.45 %)
+        self.assertEqual(X.clamp_leverage(100, .003, cap=100), 100)
         self.assertLess(X.liquidation_price(100.0, 1, 100), 100.0 * (1 - .003))  # liq is further than the 0.3 % stop
         # short, same distance
         self.assertLess(100.0 + 100.0 * stop_frac, X.liquidation_price(100.0, -1, L))
 
+    def test_leverage_gene_never_exceeds_20_after_init_mutation_and_crossover(self):
+        rng = random.Random(7)
+        seen = set()
+        for sp in G.SPECIES:
+            for _ in range(200):
+                g = G.random_genome(rng, sp)
+                self.assertTrue(1 <= g['leverage'] <= 20, g['leverage']); seen.add(g['leverage'])
+        self.assertIn(20, seen); self.assertIn(1, seen)   # the whole 1–20 band is reachable
+        # a population member saved under the old 1–100× band: heavy mutation always lands back in 1–20
+        old = dict(base_genes(), leverage=100)
+        for _ in range(500):
+            m = G.mutate(old, rng, rate=1.0, scale=1.0)
+            self.assertTrue(1 <= m['leverage'] <= 20, m['leverage'])
+        # even when the leverage gene itself does not mutate (rate 0), mutate clamps it
+        self.assertEqual(G.mutate(old, rng, rate=0.0)['leverage'], 20)
+        # crossover of two old high-leverage parents also yields ≤ 20×
+        for _ in range(50):
+            c = G.crossover(dict(base_genes(), leverage=80), dict(base_genes(), leverage=55), rng)
+            self.assertEqual(c['leverage'], 20)
+
     def test_risk_and_leverage_genes_are_clamped_and_old_genomes_migrate(self):
         self.assertEqual(G.GENES['risk'][1:], (.02, .10))
-        self.assertEqual(G.GENES['leverage'][1:], (1, 100))
+        self.assertEqual(G.GENES['leverage'][1:], (1, 20))
         low = G.fix(dict(base_genes(), risk=.01, leverage=0))
         self.assertEqual((low['risk'], low['leverage']), (.02, 1))
         high = G.fix(dict(base_genes(), risk=.25, leverage=250))
-        self.assertEqual((high['risk'], high['leverage']), (.10, 100))
+        self.assertEqual((high['risk'], high['leverage']), (.10, 20))
+        # genomes saved under the old 1–100× band are pulled back to ≤ 20× by fix (and so by mutate / crossover)
+        self.assertEqual(G.fix(dict(base_genes(), leverage=21))['leverage'], 20)
+        self.assertEqual(G.fix(dict(base_genes(), leverage=100))['leverage'], 20)
+        self.assertEqual(G.fix(dict(base_genes(), leverage=20))['leverage'], 20)
         missing = {k: v for k, v in base_genes(risk=.04).items() if k != 'leverage'}
         self.assertEqual(G.fix(missing)['leverage'], 10)
         self.assertEqual(G.fix(missing)['risk'], .04)
@@ -879,7 +910,7 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         p = X.simulate(g, {'BTC-USDT-SWAP': s_open}, 30, s_open.n)['positions']
         self.assertTrue(p)
         p = p[0]
-        self.assertLessEqual(p['lever'], 100)
+        self.assertLessEqual(p['lever'], 20)
         self.assertGreater(p['stop'], p['liq'])
         crash = series_from(closes, opens=[closes[0]] + closes[:-1])
         # force the last open through the liq price
@@ -929,8 +960,10 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         self.assertEqual(X.maintenance_rate('DOGE-USDT-SWAP'), .005)
         self.assertEqual(X.maintenance_rate('PEPE-USDT-SWAP'), .025)
         self.assertEqual(X.maintenance_rate('C0-USDT-SWAP'), .025)
-        self.assertEqual(X.inst_max_leverage('BTC-USDT-SWAP'), 100)
-        self.assertEqual(X.inst_max_leverage('BNB-USDT-SWAP'), 50)          # OKX snapshot, not forced to 100
+        # the default cap is the 20× gene cap; the snapshot still matters below it and with an explicit cap
+        self.assertEqual(X.inst_max_leverage('BTC-USDT-SWAP'), 20)
+        self.assertEqual(X.inst_max_leverage('BTC-USDT-SWAP', cap=100), 100)
+        self.assertEqual(X.inst_max_leverage('BNB-USDT-SWAP', cap=100), 50)  # OKX snapshot, not forced to 100
         self.assertEqual(X.inst_max_leverage('C0-USDT-SWAP'), 20)           # unknown alt → 20×
         self.assertEqual(X.FALLBACK_INST_LEVERAGE, 20)
         # a major missing from the snapshot also falls back to 20× (same as the OKX demo), not 100×
@@ -944,7 +977,7 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         mmr = X.MMR_OTHER
         L = X.clamp_leverage(100, .003, cap=100, mmr=mmr)
         self.assertLess(L, 100)
-        self.assertLessEqual(L, X.max_leverage_for_stop(.003, mmr=mmr))
+        self.assertLessEqual(L, X.max_leverage_for_stop(.003, mmr=mmr, cap=100))
         self.assertLess(L * (mmr + X.FEE), 1)                             # room is no longer negative
         liq = X.liquidation_price(100.0, 1, L, mmr=mmr)
         self.assertLess(liq, 100.0 * (1 - .003))
@@ -961,11 +994,11 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         p = r['positions'][0]
         self.assertEqual(p['lever'], 20)
         self.assertAlmostEqual(p['liq'], X.liquidation_price(p['entry'], 1, 20, mmr=.025), places=6)
-        # BTC may keep high leverage when the stop fits under 0.5 % MMR
+        # BTC allows 100× on OKX and the stop fits under 0.5 % MMR, but the gene cap still limits it to 20×
         s_btc = series_from(closes, 'BTC-USDT-SWAP')
         r2 = X.simulate(g, {'BTC-USDT-SWAP': s_btc}, 30, s_btc.n)
         self.assertTrue(r2['positions'])
-        self.assertGreater(r2['positions'][0]['lever'], 20)
+        self.assertEqual(r2['positions'][0]['lever'], 20)
 
     def test_funding_recomputes_isolated_liquidation_price(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 16
@@ -1051,13 +1084,13 @@ class EntryGatePaperIntegrationTests(unittest.TestCase):
             self.assertFalse(any(sig.get('champion') == new_id for sig in signals.values()))
             self.assertTrue(view2['members'])
             self.assertEqual(view2['rules']['max_risk'], .10)
-            self.assertEqual(view2['rules']['lever'], 100)
+            self.assertEqual(view2['rules']['lever'], 20)
             if view2['leader']:
                 self.assertLessEqual(view2['leader']['risk'], .10)
-                self.assertLessEqual(view2['leader']['leverage'], 100)
+                self.assertLessEqual(view2['leader']['leverage'], 20)
             for sig in signals.values():
                 self.assertLessEqual(sig['risk'], .10)
-                self.assertLessEqual(sig['leverage'], 100)
+                self.assertLessEqual(sig['leverage'], 20)
         finally:
             E.TEAM_SIZE, E.TEAM_DIRECTION_CAP = ev_size, ev_cap
 
@@ -1165,7 +1198,7 @@ class RunTests(unittest.TestCase):
                 seated = {m['id'] for m in dash['team']} | ({dash['champion']['id']} if dash.get('champion') else set())
                 self.assertEqual(dash['schema'], 1); self.assertEqual(dash['details'], 'nodes.json')   # schema 1: pages from before nodes.json still read it
                 self.assertEqual(dash['gene_bounds']['risk'], [0.02, 0.10])
-                self.assertEqual(dash['gene_bounds']['leverage'], [1, 100])
+                self.assertEqual(dash['gene_bounds']['leverage'], [1, 20])
                 for n in dash['nodes']: self.assertIn('genes', n); self.assertEqual('summary' in n, n['id'] in seated); self.assertIn('train', n)
                 det = json.loads((out / 'nodes.json').read_text())
                 self.assertEqual(det['generation'], 2); self.assertEqual(set(det['nodes']), {n['id'] for n in dash['nodes']})
