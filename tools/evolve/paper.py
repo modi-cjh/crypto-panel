@@ -4,7 +4,9 @@ The team's strategies all trade the same account: every position is sized on the
 risk gene, 2–10 %, then major-coin doubling and crowding, capped at 10 %). Every seat, including the leader, uses its
 own risk and leverage genes (leverage 1–20×, reduced so the stop sits before the isolated liquidation price). Margin is
 shared, one position per coin; a liquidated position loses only its isolated margin. The same-side cap (20 %) and the
-daily halt (10 %) still apply to everyone, including the leader. The OKX demo mirror (tools/okx_demo_trader.py) follows the same 2–10 % / 1–20× genes on isolated margin,
+daily halt (10 %) still apply to everyone, including the leader, and so does the same-side count (at most
+ACCOUNT_RULES['max_same_side'] = 6 open positions on one side; only for entries after account['side_cap_from'], the
+first run that had it, so positions already open are not replayed away). The OKX demo mirror (tools/okx_demo_trader.py) follows the same 2–10 % / 1–20× genes on isolated margin,
 clamped to each coin's OKX max leverage (20× if the public spec is missing). Live trading is decided separately.
 Each run replays the account from its start bar with the full seat history, so the result is exactly what the engine
 produces on live bars:
@@ -17,7 +19,7 @@ Before this, the account was five separate slots of 1/5 each; that history (curv
 paper['legacy'] and the shared account starts from the slots' total equity. The slot code below `_legacy_update` only
 serves that one-time conversion.
 """
-from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE
+from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, same_side_full
 from evolution import TEAM_SIZE, entry_gate
 from genome import fix
 
@@ -324,7 +326,9 @@ def update(state, series, changes, price_off=None):
                  boosts=[(idx(a), idx(b) if b is not None else None) for a, b in g['boosts']]) for g in acc['segs']]
     blocked = {inst: [(idx(a), idx(b) if b is not None else None) for a, b in rs] for inst, rs in (price_off or {}).items()}
     off_now = {inst for inst, rs in (price_off or {}).items() if rs and rs[-1][1] is None}
-    res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked)
+    acc.setdefault('side_cap_from', last_ts)          # the same-side count starts with the first run that has it
+    res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked,
+                           side_cap_from=idx(acc['side_cap_from']))
     by = {g['id']: g for g in acc['segs']}
     rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     who = lambda sid: by[sid]['champion']
@@ -335,10 +339,11 @@ def update(state, series, changes, price_off=None):
     # than a strategy's free position slots (otherwise the mirror would open entries the account itself never fills).
     held = {g['id']: sum(1 for p in res['positions'] if p['seg'] == g['id']) for g in acc['segs']}
     queue, seen = [], {p['inst'] for p in res['positions']}
+    sides = {d: sum(1 for p in res['positions'] if p['side'] == d) for d in (1, -1)}
     for sid, inst, d, dist, b in sorted(res['pending'], key=lambda x: not x[4]):
-        if inst in seen or inst in off_now or held[sid] >= MAX_POSITIONS or res['halted']:
+        if inst in seen or inst in off_now or held[sid] >= MAX_POSITIONS or res['halted'] or same_side_full(sides[d], ACCOUNT_RULES['max_same_side']):
             continue
-        seen.add(inst); held[sid] += 1; queue.append((sid, inst, d, dist, b))
+        seen.add(inst); held[sid] += 1; sides[d] += 1; queue.append((sid, inst, d, dist, b))
     pending = [dict(inst=inst, side=d, champion=who(sid)) for sid, inst, d, dist, b in queue]
     members = []
     for g in acc['segs']:
@@ -367,7 +372,7 @@ def update(state, series, changes, price_off=None):
     equity = round(res['equity'], 2)
     view = dict(equity=equity, start_equity=paper['start_equity'], ret=round((equity / paper['start_equity'] - 1) * 100, 3),
                 price_off=sorted(off_now), mode='cross', account_from=acc['from_ts'], account_start=acc['start_equity'], halted=res['halted'],
-                rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
+                rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], max_same_side=ACCOUNT_RULES['max_same_side'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
                            leader_risk=ACCOUNT_RULES['leader_risk'], leader_lever=ACCOUNT_RULES['leader_lever'],
                            max_risk=ACCOUNT_RULES['max_risk'], min_risk=ACCOUNT_RULES.get('min_risk', .02),
                            min_lever=ACCOUNT_RULES.get('min_lever', 1),

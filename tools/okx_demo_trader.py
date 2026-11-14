@@ -38,7 +38,7 @@ from volume_test import profile as volume_profile, describe as describe_volume
 from runtime_guard import entries_allowed, atomic_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
-from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FALLBACK_INST_LEVERAGE, FEE  # noqa: E402
+from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FALLBACK_INST_LEVERAGE, FEE, MAX_SAME_SIDE_POSITIONS, same_side_full  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -61,6 +61,7 @@ MAJOR_FACTOR = 2.0   # majors (execution.MAJORS) risk twice as much (execution.A
 PRICE_TOLERANCE = .01             # no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
 CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
 SAME_SIDE_CAP = .05
+MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 6 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
 OPEN_WINDOW = 5 * 3600_000        # paper entries at most this old are mirrored as they are (runs are 4 h apart, plus delay)
@@ -88,7 +89,8 @@ def configure_evolved(universe=None):
         INSTRUMENTS = list(universe)
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT,
                           leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE, max_risk=MAX_TRADE_RISK, max_leverage=EVOLVED_MAX_LEVERAGE,
-                          fallback_leverage=FALLBACK_INST_LEVERAGE, margin_mode=MARGIN_MODE, majors=list(MAJORS), major_factor=MAJOR_FACTOR)
+                          fallback_leverage=FALLBACK_INST_LEVERAGE, margin_mode=MARGIN_MODE, majors=list(MAJORS), major_factor=MAJOR_FACTOR,
+                          max_same_side=MAX_SAME_SIDE)
     return ACTIVE_PROFILE
 
 
@@ -254,7 +256,7 @@ def decision_snapshot(data):
     try:
         with (root/'combined/events.jsonl').open() as f: lines = deque(f,maxlen=2000)
     except OSError: lines = []
-    reasons = {'same_side_risk','max_positions','daily_halt','already_at_mean','insufficient_margin','stop','target','timeout'}
+    reasons = {'same_side_risk','same_side_count','max_positions','daily_halt','already_at_mean','insufficient_margin','stop','target','timeout'}
     for line in lines:
         try:
             raw = json.loads(line)
@@ -418,6 +420,8 @@ class Mirror:
             r = RISK_RANGE[0]
         if evolved:                                # many positions on one side are one bet: the next one risks less
             crowd = sum(1 for m in self.s['mirrored'].values() if m.get('status') == 'open' and m.get('side') == side)
+            if same_side_full(crowd, MAX_SAME_SIDE):   # ... and with MAX_SAME_SIDE already open on this side, none is added
+                return self.log('skip', inst, reason='same_side_count', open_same_side=crowd, max_same_side=MAX_SAME_SIDE)
             r *= next((f for n, f in CROWD_STEPS if crowd >= n), 1.0)
             if inst in MAJORS:
                 r *= MAJOR_FACTOR
@@ -709,7 +713,7 @@ def main():
         sig = json.loads(evolved_path.read_text())
         paper = {'positions': sig.get('positions', {}), 'source': 'evolve'}
         applied = configure_evolved(sig.get('instruments'))
-        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，缺省 {FALLBACK_INST_LEVERAGE}×）· 逐仓 · 同向 ≤ {SAME_SIDE_CAP:.0%} · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
+        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，缺省 {FALLBACK_INST_LEVERAGE}×）· 逐仓 · 同向 ≤ {SAME_SIDE_CAP:.0%}、≤ {MAX_SAME_SIDE} 仓 · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
     else:
         if not paper_path.exists():
             print('没有策略信号，跳过跟单。'); return

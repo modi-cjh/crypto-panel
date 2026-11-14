@@ -548,10 +548,28 @@ def fitness(m):
 # leader_risk / leader_lever are the same caps: the leader uses its own risk and leverage genes, not a fixed bigger size.
 MAX_TRADE_RISK = .10
 MIN_TRADE_RISK = .02
+# Same-direction position cap (lightweight): at most this many open positions on one side (long or short), the leader
+# included; a new entry on a full side is skipped, the other side and every exit are untouched.
+# Why a count, not notional or margin: the account sizes by risk, so notional is risk ÷ stop distance and swings 10×
+# with the stop width, and margin also depends on leverage, so neither tracks how many separate bets are on one
+# side. The risk-based same_side_cap (20 %) did not bind either, because crowding shrinks every extra entry.
+# A position count is the same number in the paper account and on the OKX demo mirror (no ctVal, avgPx or leverage
+# differences), and it is what crowd_factor already counts.
+# Why 6: CROWD_STEPS already treats 6 open on a side as heavily crowded (quarter size); stopping there keeps at
+# most about half of the book on one side (13 open, 12 short was the situation that asked for this) while three
+# 3-position seats still fit on one side. With the default 6 the quarter step of CROWD_STEPS is no longer reached;
+# it applies again if the cap is raised.
+MAX_SAME_SIDE_POSITIONS = 6
 ACCOUNT_RULES = dict(leader_risk=MAX_TRADE_RISK, leader_lever=LEVERAGE, lever=LEVERAGE, same_side_cap=.20, daily_halt=.10,
                      day_shift=7 * HOUR, majors=MAJORS, major_factor=2.0, max_risk=MAX_TRADE_RISK, min_risk=MIN_TRADE_RISK,
-                     min_lever=MIN_LEVERAGE)
+                     min_lever=MIN_LEVERAGE, max_same_side=MAX_SAME_SIDE_POSITIONS)
 CROWD_STEPS = ((6, .25), (3, .5))     # same-side positions already open → risk factor for the next entry on that side
+
+
+def same_side_full(same_side_open, cap=MAX_SAME_SIDE_POSITIONS):
+    """True when `same_side_open` positions already open on one side leave no room for another on that side.
+    cap None or <= 0 switches the check off. The paper account and the OKX demo mirror both call this."""
+    return bool(cap) and cap > 0 and same_side_open >= cap
 
 
 def crowd_factor(same_side_open):
@@ -570,7 +588,7 @@ def position_risk(base, inst, same_side_open=0, rules=None):
     return min(r, rules.get('max_risk', MAX_TRADE_RISK))
 
 
-def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None):
+def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None, side_cap_from=None):
     """ONE shared-equity account traded by several strategies at once, with isolated (逐仓) liquidation: the paper account of the champion team.
 
     segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
@@ -592,6 +610,10 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     - crowding: with 3+ positions already open on a side the next entry on that side risks half, with 6+ a quarter;
     - same-side cap: the open risk of every position on one side, including the leader, plus the new one stays within
       rules['same_side_cap'] × equity;
+    - same-side count: with rules['max_same_side'] positions already open on a side (the leader included), a new
+      entry on that side is skipped (same_side_full); the other side and exits are not affected. side_cap_from = a
+      bar index: the count only applies to fills after that bar, so switching it on does not rewrite the replay of
+      positions that were already open (None = every bar);
     - daily halt (days start at UTC+7 midnight): when the whole account, including the leader, has lost
       rules['daily_halt'] × the day's starting equity, every position is closed and no strategy opens until the next day;
     - each position is liquidated in isolation: when price hits that position's liquidation price the isolated margin
@@ -648,6 +670,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             if dist <= 0 or inst in pos or sum(1 for p in pos.values() if p['seg'] == sid) >= MAX_POSITIONS or halted:
                 continue
             if blocked and any(a <= i and (b is None or i < b) for a, b in blocked.get(inst, ())):
+                continue
+            if (side_cap_from is None or i > side_cap_from) and same_side_full(sum(1 for p in pos.values() if p['side'] == d), rules.get('max_same_side')):
                 continue
             px = s.o[i] * (1 + SLIP * d)
             if dist / px < MIN_STOP_DIST:

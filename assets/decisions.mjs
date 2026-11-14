@@ -3,7 +3,7 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const at=t=>Number.isFinite(Date.parse(t))?new Date(t).toLocaleString('zh-CN',{timeZone:'Asia/Bangkok',hour12:false}):'时间待确认';
 const coin=s=>String(s||'全部').replace('-USDT-SWAP','');
 const strategies={mean_reversion:'均值回归',breakout_long:'小时趋势突破',breakout_daily:'日线趋势突破'};
-const reasons={same_side_risk:'同向风险已达上限',max_positions:'达到持仓数量上限',daily_halt:'触发日亏停手',already_at_mean:'价格已回到均值',insufficient_margin:'保证金不足'};
+const reasons={same_side_risk:'同向风险已达上限',same_side_count:'同向持仓数已达上限',max_positions:'达到持仓数量上限',daily_halt:'触发日亏停手',already_at_mean:'价格已回到均值',insufficient_margin:'保证金不足'};
 const kinds={breakout:'价格突破',volume:'成交量',volume_spike:'放量',funding:'资金费率',funding_extreme:'资金费率',oi:'持仓量',oi_change:'持仓量',price:'价格',price_change:'价格波动',market:'市场异动'};
 
 export function decisionsMarkup({summary,history,status='loading'}={}){
