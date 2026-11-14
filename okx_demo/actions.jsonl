@@ -145,3 +145,5 @@
 {"ts": "2026-11-14T05:03:19Z", "action": "amend_stop", "inst": "XRP-USDT-SWAP", "dry_run": false, "old": 1.0558481147046708, "new": 1.0389481147046709}
 {"ts": "2026-11-14T05:03:19Z", "action": "closed_on_exchange", "inst": "ETH-USDT-SWAP", "dry_run": false, "strategy": "evolved", "pnl": 43.32453600069563, "price_pnl": 48.10881, "funding": -3.2376859943043717, "close_price": 1865.85, "fee": -1.546588005, "outcome": "target"}
 {"ts": "2026-11-14T05:03:19Z", "action": "amend_stop", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "old": 0.6983089334602194, "new": 0.6910089334602193}
+{"ts": "2026-11-14T09:00:05Z", "action": "amend_stop", "inst": "LPT-USDT-SWAP", "dry_run": false, "old": 1.249253192429484, "new": 1.2442531924294842}
+{"ts": "2026-11-14T09:00:05Z", "action": "amend_stop", "inst": "XRP-USDT-SWAP", "dry_run": false, "old": 1.0389481147046709, "new": 1.034148114704671}
