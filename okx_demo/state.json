@@ -494,6 +494,10 @@
   [
    1794661454515,
    7590.83
+  ],
+  [
+   1794675183904,
+   7954.11
   ]
  ],
  "mirrored": {
@@ -837,7 +841,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "254",
-   "stop": 0.47172690584165244,
+   "stop": 0.46372690584165244,
    "target": 0.2825758142275384,
    "leverage": 5,
    "entry": 0.4572,
@@ -877,10 +881,12 @@
    "entry": 5.01e-06,
    "clOrdId": "evpepe1794398400",
    "opened_at": 1794403450928,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
-   "ordId": "4090320595220680704"
+   "ordId": "4090320595220680704",
+   "closed_reason": "exchange_stop_or_target",
+   "realized_pnl": 91.38597792195017
   },
   "BARD-USDT-SWAP|1794384000000": {
    "inst": "BARD-USDT-SWAP",
@@ -902,7 +908,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "7120",
-   "stop": 0.24882577700713235,
+   "stop": 0.24002577700713235,
    "target": 0.17363040208074262,
    "leverage": 7,
    "entry": 0.2419,
@@ -912,7 +918,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668701434597376",
-   "last_upl": 231.70190000000028
+   "last_upl": 221.02190000000027
   },
   "LPT-USDT-SWAP|1794441600000": {
    "inst": "LPT-USDT-SWAP",
@@ -920,7 +926,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "19407",
-   "stop": 1.2442531924294842,
+   "stop": 1.2032531924294843,
    "target": 0.9988163804403928,
    "leverage": 11,
    "entry": 1.262,
@@ -930,7 +936,7 @@
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668738680016896",
-   "last_upl": 223.18510000000018
+   "last_upl": 300.81310000000025
   },
   "XTZ-USDT-SWAP|1794441600000": {
    "inst": "XTZ-USDT-SWAP",
@@ -1036,11 +1042,13 @@
    "entry": 0.04947,
    "clOrdId": "evcro1794445200",
    "opened_at": 1794446766640,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
    "champion": "s13827",
-   "ordId": "4091774152411172864"
+   "ordId": "4091774152411172864",
+   "closed_reason": "exchange_stop_or_target",
+   "realized_pnl": 31.4555207657594
   },
   "BNB-USDT-SWAP|1794484800000": {
    "inst": "BNB-USDT-SWAP",
@@ -1144,7 +1152,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "142",
-   "stop": 673.4233231865718,
+   "stop": 654.3933231865718,
    "target": 531.4723126992126,
    "leverage": 10,
    "entry": 655.0,
@@ -1181,7 +1189,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "14.37",
-   "stop": 1.034148114704671,
+   "stop": 1.021748114704671,
    "target": 0.8860854533849577,
    "leverage": 10,
    "entry": 1.005,
@@ -1257,7 +1265,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "303",
-   "stop": 0.6770089334602194,
+   "stop": 0.6568089334602194,
    "target": 0.28456367574115243,
    "leverage": 3,
    "entry": 0.5592,
