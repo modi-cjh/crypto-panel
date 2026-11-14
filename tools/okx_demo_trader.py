@@ -15,7 +15,7 @@ Each run, against <data>/combined/state.json:
   - if the exchange stop already closed a mirrored position, it is marked done and never reopened.
 Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; this process is demo-only and
 refuses to start or send any request without `x-simulated-trading: 1`. Evolved mode uses isolated margin, the strategy's own risk (2–10 %) and leverage
-(1–100×, reduced so the stop sits before liquidation, then clamped to that coin's OKX max; fallback 20× if the public spec is missing). A UTC+7 day
+(1–20×, reduced so the stop sits before liquidation, then clamped to that coin's OKX max; fallback 20× if the public spec is missing). A UTC+7 day
 loss of 10% closes everything and blocks new entries until the next day; actions `pause`, `resume`,
 `flatten` (close all and pause) and `dry-run` (log intended orders, send nothing) are available.
 Secrets come from OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE, reach curl through stdin and are never logged.
@@ -38,7 +38,7 @@ from volume_test import profile as volume_profile, describe as describe_volume
 from runtime_guard import entries_allowed, atomic_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
-from execution import clamp_leverage, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FALLBACK_INST_LEVERAGE, FEE  # noqa: E402
+from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FALLBACK_INST_LEVERAGE, FEE  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -46,9 +46,9 @@ RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # legacy volume-test profiles: 1
 EVOLVED_DAILY_HALT = .10                         # following the evolution champions: 10 %, counted on the whole account including the leader
 RISK_RANGE = (.02, .10)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
 MAX_TRADE_RISK = .10
-EVOLVED_MAX_LEVERAGE = 100
+EVOLVED_MAX_LEVERAGE = GENE_MAX_LEVERAGE   # 20×, same cap as the evolve leverage gene
 # FALLBACK_INST_LEVERAGE and MAJORS come from execution (20× if the public spec has no usable `lever`)
-# Every seat including the leader uses its own risk and leverage genes (2–10 %, 1–100×). Majors may be doubled then
+# Every seat including the leader uses its own risk and leverage genes (2–10 %, 1–20×). Majors may be doubled then
 # clamped so the result never exceeds 10 %. The leader counts toward the same-direction cap and is subject to the
 # daily-loss stop, same as everyone else. LEADER_RISK / LEADER_LEVERAGE are the caps, not a fixed bigger size.
 LEADER_RISK, LEADER_LEVERAGE = MAX_TRADE_RISK, EVOLVED_MAX_LEVERAGE
@@ -79,7 +79,7 @@ def configure_evolved(universe=None):
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT, MARGIN_MODE
     MARGIN_MODE = 'isolated'
     # Each order risks its strategy's own risk gene (2–10 %, capped at 10 % after crowding and the major-coin factor)
-    # and its leverage gene (1–100×, reduced so the stop sits before liquidation, then clamped to that coin's OKX max).
+    # and its leverage gene (1–20×, reduced so the stop sits before liquidation, then clamped to that coin's OKX max).
     # At most 20 % in one direction (the leader included); a 10 % daily loss on the whole account closes every
     # position until tomorrow. The leader uses the same gene ranges; the title only decides signal priority.
     INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], .20, EVOLVED_DAILY_HALT
