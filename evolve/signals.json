@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-13T21:01:36Z",
+ "updated_at": "2026-11-14T01:14:39Z",
  "champion": "s15653",
  "team": [
   "s17397",
@@ -116,7 +116,7 @@
   "GRASS-USDT-SWAP": {
    "side": -1,
    "entry": 0.45760846,
-   "stop": 0.48542690584165243,
+   "stop": 0.48412690584165247,
    "tp": 0.2825758142275384,
    "opened": 1794384000000,
    "strategy": "evolved",
@@ -152,7 +152,7 @@
   "CRV-USDT-SWAP": {
    "side": -1,
    "entry": 0.24115176,
-   "stop": 0.2518257770071324,
+   "stop": 0.2503257770071324,
    "tp": 0.17358216208074262,
    "opened": 1794441600000,
    "strategy": "evolved",
@@ -178,8 +178,8 @@
   "INJ-USDT-SWAP": {
    "side": -1,
    "entry": 7.518496,
-   "stop": 8.928670248210448,
-   "tp": 3.879808693650683,
+   "stop": 8.928670248207718,
+   "tp": 3.879808693656256,
    "opened": 1794441600000,
    "strategy": "evolved",
    "champion": "s14155",
@@ -238,8 +238,8 @@
   "BNB-USDT-SWAP": {
    "side": -1,
    "entry": 656.408692,
-   "stop": 683.3533231866604,
-   "tp": 531.4723126992126,
+   "stop": 683.3533231865719,
+   "tp": 531.4723126993935,
    "opened": 1794528000000,
    "strategy": "evolved",
    "champion": "s14155",
@@ -269,6 +269,30 @@
    "champion": "s13604",
    "rank": 100,
    "risk": 0.02,
+   "leverage": 10
+  },
+  "ETHFI-USDT-SWAP": {
+   "side": -1,
+   "entry": 0.5703859,
+   "stop": 0.6983089334602194,
+   "tp": 0.28456367574115243,
+   "opened": 1794614400000,
+   "strategy": "evolved",
+   "champion": "s14155",
+   "rank": 3,
+   "risk": 0.0235,
+   "leverage": 10
+  },
+  "IMX-USDT-SWAP": {
+   "side": -1,
+   "entry": 0.106768642,
+   "stop": 0.1300397503927115,
+   "tp": 0.0551067813681804,
+   "opened": 1794614400000,
+   "strategy": "evolved",
+   "champion": "s15653",
+   "rank": 2,
+   "risk": 0.0482,
    "leverage": 10
   }
  }
