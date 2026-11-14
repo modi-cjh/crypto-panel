@@ -1,6 +1,7 @@
 import json
 import sys
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
@@ -542,6 +543,38 @@ class MirrorTests(unittest.TestCase):
             m, _ = run(fake, paper(**sig))
             self.assertFalse([a for a in m.actions if a['action'] == 'open'])
             self.assertTrue([a for a in m.actions if a.get('reason') == 'equity_below_mm'])
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
+    def test_evolved_entry_is_skipped_when_the_account_would_be_liquidated_before_its_stop_price(self):
+        # PR #88 review: a lone 10 % risk alt entry on a 0.26 % stop is fine to enter and its stop alone leaves cash > 0,
+        # but on the way to the stop (position still open, its 2.5 % MM still counted) equity falls below MM → skipped.
+        # Under the 20× gene cap (PR #90) this entry never fits the free margin in the first place, so the gate is
+        # exercised with the mirror's cap raised to 100× for this test only; the real cap is checked at the end.
+        SPECS.setdefault('WIF-USDT-SWAP', dict(ctVal='1', lotSz='1', minSz='1', tickSz='0.0001'))
+        try:
+            odt.configure_evolved(universe=['WIF-USDT-SWAP'])        # the evolution's coin list includes this alt
+            caps = {'WIF-USDT-SWAP': dict(SPECS['WIF-USDT-SWAP'], lever='50')}
+            sig = {'WIF-USDT-SWAP': dict(long_btc(stop=1.0 - .0026), strategy='evolved', risk=.1, leverage=100, entry=1.0)}
+            raised = mock.patch.object(odt, 'EVOLVED_MAX_LEVERAGE', 100); raised.start(); self.addCleanup(raised.stop)
+            fake = FakeOKX(equity=100000, prices={'WIF-USDT-SWAP': 1.0}, instruments=caps)
+            m, _ = run(fake, paper(**sig))
+            self.assertFalse([a for a in m.actions if a['action'] == 'open'])
+            self.assertFalse([q for q, _ in fake.posts if q in ('/api/v5/trade/order', '/api/v5/account/set-leverage')])
+            self.assertTrue([a for a in m.actions if a.get('reason') == 'stop_before_liquidation'])
+            # a 2 % risk version of the same entry passes and opens cross
+            sig['WIF-USDT-SWAP']['risk'] = .02
+            fake = FakeOKX(equity=100000, prices={'WIF-USDT-SWAP': 1.0}, instruments=caps)
+            m, _ = run(fake, paper(**sig))
+            self.assertTrue([a for a in m.actions if a['action'] == 'open'])
+            # with the real 20× cap the 10 % risk version is not sent at all
+            raised.stop()
+            self.assertEqual(odt.EVOLVED_MAX_LEVERAGE, 20)
+            sig['WIF-USDT-SWAP']['risk'] = .1
+            fake = FakeOKX(equity=100000, prices={'WIF-USDT-SWAP': 1.0}, instruments=caps)
+            m, _ = run(fake, paper(**sig))
+            self.assertFalse([a for a in m.actions if a['action'] == 'open'])
+            self.assertFalse([q for q, _ in fake.posts if q in ('/api/v5/trade/order', '/api/v5/account/set-leverage')])
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 

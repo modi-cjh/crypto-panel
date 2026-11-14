@@ -367,6 +367,10 @@ def update(state, series, changes, price_off=None):
     equity = round(res['equity'], 2)
     view = dict(equity=equity, start_equity=paper['start_equity'], ret=round((equity / paper['start_equity'] - 1) * 100, 3),
                 price_off=sorted(off_now), mode='cross', account_from=acc['from_ts'], account_start=acc['start_equity'], halted=res['halted'],
+                # cross liquidations of the shared account, and insurance-fund compensation when a gap passed bankruptcy:
+                # account_start + Σ members' pnl (incl. wound-down seats) + insurance = equity
+                liquidations=res.get('liquidations', 0), insurance=round(res.get('insurance', 0.0), 2),
+                adjustments=[dict(a, amount=round(a['amount'], 2)) for a in res.get('adjustments') or []][-20:],
                 rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
                            leader_risk=ACCOUNT_RULES['leader_risk'], leader_lever=ACCOUNT_RULES['leader_lever'],
                            max_risk=ACCOUNT_RULES['max_risk'], min_risk=ACCOUNT_RULES.get('min_risk', .02),

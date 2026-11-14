@@ -4,6 +4,7 @@ import random
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'evolve'))
@@ -623,13 +624,14 @@ class EvolutionTests(unittest.TestCase):
         acc = st['paper']['account']
         self.assertNotIn('slots', st['paper']); self.assertEqual(acc['start_equity'], 10500.0)        # the slots' total carries over
         self.assertEqual(view['equity'], 10500.0); self.assertEqual(view['mode'], 'cross')
+        self.assertEqual((view['liquidations'], view['insurance'], view['adjustments']), (0, 0.0, []))     # published for the dashboard
         self.assertEqual(view['curve'][-2:], [[T0 + H, 10500.0], [cut(300)['BTC-USDT-SWAP'].ts[-1], 10500.0]])   # old curve kept, new one continues
         live = [g for g in acc['segs'] if g['wind_ts'] is None]
         self.assertEqual([g['champion'] for g in live], [ids[0]])
         self.assertEqual([m['id'] for m in view['members']], [ids[0]])
         self.assertTrue(live[0]['boosts'])                                                           # the one live member is the leader
         view, signals = P.update(st, cut(150), [])                                                       # 150 bars later
-        self.assertAlmostEqual(view['equity'], 10500.0 + sum(m['pnl'] for m in view['members']), places=1)
+        self.assertAlmostEqual(view['equity'], 10500.0 + sum(m['pnl'] for m in view['members']) + view['insurance'], places=1)
         self.assertEqual(len({p['inst'] for p in view['positions']}), len(view['positions']))           # one position per coin
         for inst, sig in signals.items():
             self.assertLessEqual(sig['leverage'], X.LEVERAGE)
@@ -1081,6 +1083,166 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         third = dict(side=1, entry=100.0, qty=30.0, stop=60.0, fee=1.5, funding=0.0, mmr=0.005)
         ok4, why4 = X.cross_open_allowed(10000.0, book, 'C', third, {'A': 100.0, 'B': 100.0})
         self.assertEqual((ok4, why4), (False, 'stop_before_liquidation'))
+
+
+class CrossReviewFixTests(unittest.TestCase):
+    """PR #88 review: stop-gate MM before the stop fills, same-bar event order, bankruptcy accounting.
+
+    These are engine-mechanics tests. Under the 20× gene cap (PR #90) a lone 10 % risk position on a 0.26 % stop does not
+    fit the free margin, and no single 10 % risk position can be liquidated before its stop at all, so the ordering /
+    bankruptcy paths would never be reached. The leverage cap is therefore raised to 100× inside this class only; the
+    production cap stays execution.LEVERAGE = 20 (see test_the_20x_cap_keeps_these_entries_out).
+    """
+    ZEC = 'ZEC-USDT-SWAP'
+
+    def setUp(self):
+        self.raised = [mock.patch.object(X, 'LEVERAGE', 100), mock.patch.dict(X.ACCOUNT_RULES, lever=100, leader_lever=100)]
+        for p in self.raised:
+            p.start()
+        self.addCleanup(lambda: [p.stop() for p in self.raised])
+
+    def test_the_20x_cap_keeps_these_entries_out(self):
+        for p in self.raised:
+            p.stop()
+        self.raised.clear()
+        self.assertEqual((X.LEVERAGE, X.ACCOUNT_RULES['lever'], X.ACCOUNT_RULES['leader_lever']), (20, 20, 20))
+        # at 20× the ZEC scenario needs ~1.9 × equity of margin, so even with the stop gate bypassed nothing opens
+        acc, one = self.run_both(self.ZEC, self.bars(self.ZEC, 99.7), self.genes())
+        self.assertEqual((acc['trades'], acc['positions'], acc['liquidations']), ([], [], 0))
+        self.assertEqual((one['trades'], one['positions']), ([], []))
+
+    def bars(self, inst, low, opens=100.0, high=100.1, close=100.0, n=3):
+        ts = [T0 + i * H for i in range(n)]
+        return X.Series(inst, ts, [100.0] * (n - 1) + [opens], [100.1] * (n - 1) + [high],
+                        [99.99] * (n - 1) + [low], [100.0] * (n - 1) + [close])
+
+    def genes(self, **kw):
+        return dict(dict(risk=.1, leverage=100, target_rr=0, max_hold=240, tf=1, trail=0), **kw)
+
+    def run_both(self, inst, s, g, gate=False):
+        """(simulate_account result, simulate result) with one long signal on bar 0 (stop 0.26 below the fill)."""
+        ev = {0: [(inst, 1, .26)]}
+        patches = [mock.patch.object(X, 'entries', return_value=ev)]
+        if not gate:
+            patches.append(mock.patch.object(X, 'cross_open_allowed', return_value=(True, None)))
+        for p in patches: p.start()
+        try:
+            acc = X.simulate_account([dict(id='m', genes=g, from_i=0)], {inst: s}, 0, s.n)
+            one = X.simulate(g, {inst: s}, 0, s.n, events=ev)
+        finally:
+            for p in patches: p.stop()
+        return acc, one
+
+    def zec_position(self):
+        p = dict(side=1, entry=100.02, qty=10000.0 * .1 / .26, stop=100.02 - .26, mmr=X.maintenance_rate(self.ZEC), funding=0.0)
+        p['fee'] = p['qty'] * p['entry'] * X.FEE
+        return p
+
+    # ---- 1) the stop gate keeps every position's MM until the stop has filled
+    def test_gate_rejects_an_entry_liquidated_before_its_stop_price(self):
+        p = self.zec_position()
+        self.assertEqual(X.cross_open_allowed(10000.0, {}, self.ZEC, p, {}), (False, 'stop_before_liquidation'))
+        cash = 10000.0 - p['fee']
+        self.assertTrue(X.book_liquidated(cash, {self.ZEC: p}, {self.ZEC: p['stop']}))     # the reviewer's case: dead at the stop
+        # the account engine therefore never opens it
+        acc, one = self.run_both(self.ZEC, self.bars(self.ZEC, 99.7), self.genes(), gate=True)
+        self.assertEqual((acc['trades'], acc['positions'], acc['liquidations']), ([], [], 0))
+        self.assertEqual((one['trades'], one['positions']), ([], []))
+
+    def test_gate_counts_every_open_stop_before_any_fills(self):
+        mk = lambda entry, stop, qty: dict(side=1, entry=entry, qty=qty, stop=stop, fee=0.0, funding=0.0, mmr=.005)
+        book = {'A': mk(100.0, 98.5, 2000.0), 'B': mk(100.0, 98.5, 2000.0)}
+        new = dict(mk(100.0, 98.0, 1000.0), fee=50.0)
+        # C's stop alone is fine and the cash left after every stop is positive (the old rules let it in), but on the way —
+        # A, B and C all at their stops, none filled yet — equity 1,950 is below the 2,460 MM of the whole book
+        self.assertEqual(X.cross_open_allowed(10000.0, book, 'C', new, {'A': 100.0, 'B': 100.0}), (False, 'stop_before_liquidation'))
+        self.assertEqual(X.cross_open_allowed(10000.0, book, 'C', dict(new, qty=50.0, fee=2.5), {'A': 100.0, 'B': 100.0}), (True, None))
+
+    def test_an_allowed_entry_survives_every_stop_order(self):
+        rng = random.Random(7)
+        checked = 0
+        for _ in range(400):
+            n = rng.randint(0, 2)
+            book = {}
+            for k in range(n):
+                e = rng.uniform(50, 150); side = rng.choice((1, -1))
+                book[f'K{k}'] = dict(side=side, entry=e, qty=rng.uniform(10, 600), stop=e * (1 - side * rng.uniform(.003, .05)),
+                                     fee=0.0, funding=0.0, mmr=rng.choice((.005, .025)))
+            prices = {k: p['entry'] * (1 + rng.uniform(-.002, .002)) for k, p in book.items()}
+            e = rng.uniform(50, 150); side = rng.choice((1, -1)); qty = rng.uniform(10, 600)
+            new = dict(side=side, entry=e, qty=qty, stop=e * (1 - side * rng.uniform(.003, .05)), fee=qty * e * X.FEE, funding=0.0,
+                       mmr=rng.choice((.005, .025)))
+            cash = 10000.0 - sum(p['qty'] * (prices[k] - p['entry']) * p['side'] for k, p in book.items())
+            if not X.cross_open_allowed(cash, book, 'N', new, prices)[0]:
+                continue
+            checked += 1
+            # walk every position to its stop, filling the stops one by one in a random order; never liquidated
+            pos = dict(book, N=new); cash -= new['fee']
+            px = {k: p['stop'] for k, p in pos.items()}
+            order = list(pos); rng.shuffle(order)
+            self.assertFalse(X.book_liquidated(cash, pos, px))
+            for k in order:
+                _, gain, _ = X.close_proceeds(pos.pop(k), px.pop(k), slip=True)
+                cash += gain
+                self.assertFalse(X.book_liquidated(cash, pos, px))
+            self.assertGreater(cash, 0)
+        self.assertGreater(checked, 20)
+
+    # ---- 2) same-bar order: an intrabar liquidation comes before stop / target / time exits
+    def test_intrabar_liquidation_before_the_stop_is_counted_in_both_engines(self):
+        acc, one = self.run_both(self.ZEC, self.bars(self.ZEC, 99.7), self.genes())
+        for r in (acc, one):
+            self.assertEqual([t['reason'] for t in r['trades']], ['liquidation'])
+            self.assertEqual(r['liquidations'], 1)
+            self.assertEqual(r['trades'][0]['exit'], 100.02 - .26)        # at the stop price, where the breach is first seen
+
+    def test_time_exit_at_the_close_does_not_hide_an_intrabar_liquidation(self):
+        acc, one = self.run_both(self.ZEC, self.bars(self.ZEC, 99.9), self.genes(max_hold=1))
+        for r in (acc, one):
+            self.assertEqual([t['reason'] for t in r['trades']], ['liquidation'])
+            self.assertEqual(r['liquidations'], 1)
+            self.assertEqual(r['trades'][0]['exit'], 99.9)
+
+    def test_target_in_the_same_bar_does_not_hide_an_intrabar_liquidation(self):
+        acc, one = self.run_both(self.ZEC, self.bars(self.ZEC, 99.9, high=100.3), self.genes(target_rr=1))
+        for r in (acc, one):
+            self.assertEqual([t['reason'] for t in r['trades']], ['liquidation'])
+            self.assertEqual(r['liquidations'], 1)
+
+    def test_a_stop_that_comes_first_is_not_turned_into_a_liquidation(self):
+        # BTC (0.5 % MMR): fine at its stop, but the bar's low far beyond it would breach MM — the stop fills first
+        k = 'BTC-USDT-SWAP'
+        acc, one = self.run_both(k, self.bars(k, 95.0, close=96.0), self.genes(), gate=True)
+        for r in (acc, one):
+            self.assertEqual([t['reason'] for t in r['trades']], ['stop'])
+            self.assertEqual(r['liquidations'], 0)
+        # without the liquidation the same bar is an ordinary time exit / target
+        acc, one = self.run_both(k, self.bars(k, 99.9), self.genes(max_hold=1), gate=True)
+        self.assertEqual([t['reason'] for t in acc['trades']], ['time'])
+        self.assertEqual([t['reason'] for t in one['trades']], ['time'])
+
+    def test_a_gap_through_the_stop_still_fills_at_the_open(self):
+        k = 'BTC-USDT-SWAP'
+        acc, one = self.run_both(k, self.bars(k, 99.5, opens=99.6, high=99.7, close=99.6), self.genes(), gate=True)
+        for r in (acc, one):
+            self.assertEqual([t['reason'] for t in r['trades']], ['stop'])
+            self.assertAlmostEqual(r['trades'][0]['exit'], 99.6 * (1 - X.SLIP))
+
+    # ---- 3) bankruptcy: cash floored at 0 with an explicit insurance adjustment that reconciles
+    def test_gap_past_bankruptcy_records_insurance_and_reconciles(self):
+        s = self.bars(self.ZEC, 1.0, opens=1.0, high=1.0, close=1.0)
+        acc, one = self.run_both(self.ZEC, s, self.genes())
+        for r in (acc, one):
+            self.assertEqual((r['cash'], r['liquidations'], r['positions']), (0.0, 1, []))
+            self.assertGreater(r['insurance'], 0)
+            self.assertAlmostEqual(10000.0 + sum(t['pnl'] for t in r['trades']) + r['insurance'], r['cash'], places=6)
+        self.assertAlmostEqual(10000.0 + sum(acc['pnl'].values()) + acc['insurance'], acc['equity'], places=6)
+        self.assertEqual([(a['kind'], a['ts']) for a in acc['adjustments']], [('insurance', s.ts[-1])])
+        self.assertAlmostEqual(acc['adjustments'][0]['amount'], acc['insurance'], places=9)
+        # an ordinary liquidation (cash stays positive) needs no adjustment
+        acc, one = self.run_both(self.ZEC, self.bars(self.ZEC, 99.7), self.genes())
+        self.assertEqual((acc['insurance'], acc['adjustments'], one['insurance']), (0.0, [], 0.0))
+        self.assertAlmostEqual(10000.0 + sum(t['pnl'] for t in acc['trades']), acc['cash'], places=6)
 
 
 class EntryGatePaperIntegrationTests(unittest.TestCase):

@@ -12,13 +12,16 @@ Rules (identical in every caller):
   (cash + unrealized PnL of every open position, after fees and funding) is at or below total maintenance margin
   (sum of mark notional × MMR, 0.5 % on MAJORS and 2.5 % on others), every position is closed at that bar's price
   with taker fees (reason `liquidation`). There is no partial or tiered liquidation — one breach wipes the book
-  (cash is floored at 0 if a gap goes past bankruptcy).
-  A new entry is skipped when its own stop (fees and slippage included), or the worst case of every open stop at once,
-  would leave equity at or below the remaining maintenance margin. Funding (`Series.funding`, {ts: rate}) is paid /
+  (a gap past bankruptcy floors cash at 0; the difference is recorded as an insurance-fund adjustment, `insurance`,
+  so start + Σ trade pnl + insurance = cash when flat).
+  A new entry is skipped unless the account would reach every stop alive: with the new and every open stop reached
+  (positions still open, full MM counted) equity less all stop fill costs must stay above total maintenance margin. Funding (`Series.funding`, {ts: rate}) is paid /
   received on every funding time a position is held: notional × rate (not margin × rate), longs pay positive rates, and
   is deducted from shared cash, so it can itself trigger a cross liquidation.
 - Stop and target are checked inside each later bar; if a bar touches both, the stop is assumed first (conservative);
-  a gap through the stop fills at the open. Positions also exit at the close after `max_hold` bars.
+  a gap through the stop fills at the open. Positions also exit at the close after `max_hold` bars. Same-bar order:
+  open liquidation check → gap fills → adverse leg (each coin at its stop or adverse extreme, all together) liquidation
+  check → stops → extremes check → targets → close liquidation check → time exits (see `gap_exit`).
 - Equity is marked to market at every close; max drawdown is measured on that curve.
 - Timeframe gene `tf` (1 / 4 / 24 h): signals and the stop's ATR come from 4H / 1D bars built from the 1H bars (UTC
   aligned, complete bars only) and are decided when such a bar closes; fills, stops and targets still run on 1H bars.
@@ -437,7 +440,9 @@ def liquidate_book(cash, pos, prices, ts, trades, extra=None):
 
     No partial or tiered liquidation is modelled — one breach closes the whole book. A gap far through the bankruptcy
     price cannot leave the account below zero (the exchange's insurance fund takes the rest), so cash is floored at 0.
-    `extra(inst, p)` may add fields (for example `seg` / `boost` on the shared account). Returns the new cash balance.
+    `extra(inst, p)` may add fields (for example `seg` / `boost` on the shared account). Returns (cash, insurance):
+    the new cash balance and the insurance-fund compensation that brought a negative balance back to 0. The trades keep
+    the full loss, so start + Σ trade pnl + Σ insurance = cash once the book is flat.
     """
     for inst in list(pos):
         p = pos.pop(inst)
@@ -449,16 +454,26 @@ def liquidate_book(cash, pos, prices, ts, trades, extra=None):
         if extra:
             rec.update(extra(inst, p))
         trades.append(rec)
-    return max(cash, 0.0)
+    insurance = max(-cash, 0.0)
+    return cash + insurance, insurance
 
 
-def _all_stops_leftover(cash, pos):
-    """Cash left if every open position is stopped (with exit slippage and fees)."""
-    left = cash
-    for p in pos.values():
-        _, gain, _ = close_proceeds(p, p['stop'], slip=True)
-        left += gain
-    return left
+def _stop_corner(cash, pos, fixed, inst, new_p, prices):
+    """Worst point of the path to the stops, *before* any stop fills: every stopped position at its stop price, fixed
+    ones at the mark, all still open. Returns (equity, total MM, cost of filling every stop)."""
+    book = dict(pos)
+    book.update(fixed)
+    book[inst] = new_p
+    px = dict(prices)
+    px[inst] = new_p['entry']
+    stopped = dict(pos, **{inst: new_p})
+    for k, p in stopped.items():
+        px[k] = p['stop']
+    cost = 0.0
+    for k, p in stopped.items():
+        fill, gain, _ = close_proceeds(p, p['stop'], slip=True)
+        cost += p['qty'] * (p['stop'] - fill) * p['side'] + p['qty'] * fill * FEE    # exit slippage + exit fee
+    return book_equity(cash, book, px), book_mm(book, px), cost
 
 
 def cross_open_allowed(cash, pos, inst, new_p, prices, fixed=None):
@@ -472,11 +487,15 @@ def cross_open_allowed(cash, pos, inst, new_p, prices, fixed=None):
 
     Rules (strict inequalities):
     1. After the entry, mark equity must stay above total MM including the new position.
-    2. If the new position is then stopped (slip + fee) and the others stay at the mark, remaining
-       equity must stay above the remaining MM; a lone position must also leave cash > 0.
-    3. If every stopped position, including the new one, is stopped at once (fixed ones at the mark), equity must stay
-       above the remaining MM (cash > 0 when nothing is left).
-    Leverage is not reduced to satisfy these rules — the entry is skipped.
+    2. The account must reach every stop alive: with the new position and every open managed position at its stop
+       price — still open, so the whole book's maintenance margin counts — and fixed ones at the mark, equity minus the
+       slippage and fees of filling all those stops must stay above that total MM. Equity − MM only shrinks as a price
+       moves toward its stop, so this corner bounds every path in which stops are reached one by one or together
+       (including the new position's stop alone); subtracting every fill cost while still counting every position's MM
+       also bounds each intermediate state while the stops are being executed. Positions left after all stops are the
+       fixed ones, so their MM — or cash > 0 for an empty book — is covered too.
+    Gaps through a stop are not covered (no rule can guarantee those). Leverage is not reduced to satisfy these rules —
+    the entry is skipped.
     """
     fixed = dict(fixed or {})
     cash_after = cash - new_p['fee']
@@ -487,20 +506,8 @@ def cross_open_allowed(cash, pos, inst, new_p, prices, fixed=None):
     px_book[inst] = new_p['entry']
     if book_liquidated(cash_after, book, px_book):
         return False, 'equity_below_mm'
-    _, gain, _ = close_proceeds(new_p, new_p['stop'], slip=True)
-    cash_stopped = cash_after + gain
-    others = dict(pos)
-    others.update(fixed)
-    if others:
-        if book_liquidated(cash_stopped, others, {k: prices[k] for k in others}):
-            return False, 'stop_before_liquidation'
-    elif cash_stopped <= 0:
-        return False, 'stop_before_liquidation'
-    left = _all_stops_leftover(cash_after, dict(pos, **{inst: new_p}))
-    if fixed:
-        if book_liquidated(left, fixed, {k: prices[k] for k in fixed}):
-            return False, 'stop_before_liquidation'
-    elif left <= 0:
+    eq, mm, cost = _stop_corner(cash_after, pos, fixed, inst, new_p, prices)
+    if eq - cost <= mm or eq - cost <= 0:
         return False, 'stop_before_liquidation'
     return True, None
 
@@ -516,6 +523,42 @@ def adverse_prices(pos, series, i):
     for inst, p in pos.items():
         s = series[inst]
         out[inst] = s.l[i] if p['side'] == 1 else s.h[i]
+    return out
+
+
+# Same-bar event order (both engines). OHLC does not say how several coins moved inside one bar, so one conservative
+# assumption is used everywhere: every coin first moves against its position, all together, then towards it.
+#   a) at the open: account liquidation check, then gaps through a stop / target fill at the open;
+#   b) adverse leg, before any stop fills: each position at its stop if the bar reaches it, else at its adverse extreme
+#      (`adverse_path_prices`) — an account liquidation here closes the whole book and no later exit of this bar runs;
+#   c) stops fill at the stop (stop before target, as before), then the positions left are checked at their extremes;
+#   d) favourable leg: targets fill;
+#   e) at the close: account liquidation check, then time / switch exits at the close.
+# A position that reaches its stop is valued at the stop, not the extreme beyond it, so a stop that comes first is not
+# turned into a liquidation; but a time exit at the close, or a target, can no longer hide an intrabar liquidation.
+def gap_exit(p, o):
+    """(price, reason) when the bar opens through the stop or the target, else None."""
+    if (o - p['stop']) * p['side'] <= 0:
+        return o, 'stop'
+    if p['target'] and (o - p['target']) * p['side'] >= 0:
+        return o, 'target'
+    return None
+
+
+def stop_hit(p, h, l):
+    return l <= p['stop'] if p['side'] == 1 else h >= p['stop']
+
+
+def target_hit(p, h, l):
+    return bool(p['target']) and (h >= p['target'] if p['side'] == 1 else l <= p['target'])
+
+
+def adverse_path_prices(pos, series, i):
+    """Worst same-bar prices before any stop fills: the adverse extreme, but no further than the stop."""
+    out = {}
+    for inst, p in pos.items():
+        s = series[inst]
+        out[inst] = max(s.l[i], p['stop']) if p['side'] == 1 else min(s.h[i], p['stop'])
     return out
 
 
@@ -544,16 +587,28 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     if lever_cap is None:
         desired_lever = g.get('leverage', DEFAULT_LEVERAGE)
     cap, extra = min(int(desired_lever), LEVERAGE), 0.0
+    liquidations, insurance = 0, 0.0
     hold = min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H)
     for i in range(start, end):
         if extra_equity is not None:
             extra = extra_equity.get(ts0[i], extra)
         def _liq_now(prices):
-            nonlocal cash
+            nonlocal cash, liquidations, insurance
             if pos and book_liquidated(cash + extra, pos, prices):
-                cash = liquidate_book(cash, pos, prices, ts0[i], trades)
+                cash, paid = liquidate_book(cash, pos, prices, ts0[i], trades)
+                liquidations += 1
+                insurance += paid
                 return True
             return False
+
+        def _exit(inst, px, why):
+            nonlocal cash
+            p, s = pos.pop(inst), series[inst]
+            fill, gain, net = close_proceeds(p, px, slip=True)
+            cash += gain
+            trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=fill, opened=p['opened'], closed=s.ts[i],
+                               pnl=net, funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why,
+                               liq=p.get('liq')))
         # 0) funding at this hour, on positions held into it (shared cash; may itself trigger cross liquidation)
         for inst, p in pos.items():
             f = series[inst].funding
@@ -604,40 +659,30 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
         pending, dists = {}, {}
         opens = marks_at(series, list(pos), i, 'o')
         _liq_now(opens)
-        # 2) exits inside this bar (stops, targets, time — no per-position isolated liquidation)
-        for inst in list(pos):
-            p, s = pos[inst], series[inst]
-            o, h, l, c = s.o[i], s.h[i], s.l[i], s.c[i]
-            exit_px, why = None, None
-            if p['side'] == 1:
-                if o <= p['stop']: exit_px, why = o, 'stop'
-                elif l <= p['stop']: exit_px, why = p['stop'], 'stop'
-                elif p['target'] and o >= p['target']: exit_px, why = o, 'target'
-                elif p['target'] and h >= p['target']: exit_px, why = p['target'], 'target'
-            else:
-                if o >= p['stop']: exit_px, why = o, 'stop'
-                elif h >= p['stop']: exit_px, why = p['stop'], 'stop'
-                elif p['target'] and o <= p['target']: exit_px, why = o, 'target'
-                elif p['target'] and l <= p['target']: exit_px, why = p['target'], 'target'
-            if exit_px is None and i - p['bar'] >= hold:
-                exit_px, why = c, 'time'
-            if exit_px is None and close_at_end and i == end - 1:
-                exit_px, why = c, 'switch'
-            if exit_px is not None:
-                exit_px, gain, net = close_proceeds(p, exit_px, slip=True)
-                cash += gain
-                trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=exit_px, opened=p['opened'], closed=s.ts[i],
-                                   pnl=net, funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why,
-                                   liq=p.get('liq')))
-                del pos[inst]
-            elif trail:                                     # after the bar: follow the best price, never loosen
-                p['stop'] = max(p['stop'], h - p['dist']) if p['side'] == 1 else min(p['stop'], l + p['dist'])
-        # 2b) conservative same-bar check: all remaining positions at their adverse extreme
-        if pos:
-            _liq_now(adverse_prices(pos, series, i))
-        # 3) mark to market (and a close-price cross-liquidation check), drawdown, new signals
+        # 2) exits inside this bar, in the same-bar event order above (no per-position isolated liquidation)
+        for inst in list(pos):                                       # a) gaps through a stop / target fill at the open
+            hit = gap_exit(pos[inst], series[inst].o[i])
+            if hit:
+                _exit(inst, *hit)
+        if pos and not _liq_now(adverse_path_prices(pos, series, i)):   # b) adverse leg, before any stop fills
+            for inst in list(pos):                                   # c) stops, then the rest at their extremes
+                if stop_hit(pos[inst], series[inst].h[i], series[inst].l[i]):
+                    _exit(inst, pos[inst]['stop'], 'stop')
+            if pos and not _liq_now(adverse_prices(pos, series, i)):
+                for inst in list(pos):                               # d) targets
+                    if target_hit(pos[inst], series[inst].h[i], series[inst].l[i]):
+                        _exit(inst, pos[inst]['target'], 'target')
+        # 3) at the close: cross-liquidation check first, then time / switch exits, trailing stops, mark to market
         closes = marks_at(series, list(pos), i, 'c')
         _liq_now(closes)
+        for inst in list(pos):
+            p, s = pos[inst], series[inst]
+            if i - p['bar'] >= hold:
+                _exit(inst, s.c[i], 'time')
+            elif close_at_end and i == end - 1:
+                _exit(inst, s.c[i], 'switch')
+            elif trail:                                     # after the bar: follow the best price, never loosen
+                p['stop'] = max(p['stop'], s.h[i] - p['dist']) if p['side'] == 1 else min(p['stop'], s.l[i] + p['dist'])
         eq = cash + sum(p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items())
         peak = max(peak, eq); max_dd = max(max_dd, (peak - eq) / peak if peak > 0 else 0)
         if curve_every and (i - start) % curve_every == 0:
@@ -658,7 +703,8 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     open_positions = [dict(inst=k, side=p['side'], entry=p['entry'], qty=p['qty'], stop=p['stop'], target=p['target'], opened=p['opened'],
                            lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4))
                       for k, p in pos.items()]
-    return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, metrics=metrics, pending=pending)
+    return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, metrics=metrics, pending=pending,
+                liquidations=liquidations, insurance=insurance)
 
 
 def fitness(m):
@@ -727,11 +773,15 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     - liquidation is at the account level (cross / 全仓): when mark equity (cash + unrealized PnL, after fees and
       funding) is at or below total maintenance margin (sum of mark notional × MMR), every open position is closed
       at that bar's price with taker fees (reason `liquidation`). There is no partial or tiered liquidation and no
-      separate reason `equity` — one breach closes the whole book. Checked after funding, after fills, at each bar's
-      adverse extremes (lows for longs, highs for shorts, assumed simultaneous) and at the close;
+      separate reason `equity` — one breach closes the whole book. Checked after funding, after fills, on the adverse leg
+      before any stop fills (each coin at its stop or adverse extreme, assumed simultaneous), after the stops at the
+      extremes, and at the close before time exits (same-bar order: see `gap_exit`); a gap past bankruptcy floors cash
+      at 0 and records the difference as an insurance adjustment;
     - funding is deducted from shared cash (notional × rate × side) and can itself trigger a cross liquidation;
     Returns dict(equity, curve, trades, positions, pending, pnl={seg id: realised + floating}, halted, metrics,
-    liquidations = number of cross liquidations of the whole account).
+    liquidations = number of cross liquidations of the whole account, insurance = total insurance-fund compensation,
+    adjustments = [dict(ts, kind='insurance', amount)]). Trades and pnl keep the full loss, so
+    equity == start + Σ pnl + insurance.
     """
     insts = list(series)
     ts0 = series[insts[0]].ts
@@ -739,7 +789,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     by_id = {s['id']: s for s in segs}
     boosted = lambda s, i: any(a <= i and (b is None or i < b) for a, b in s.get('boosts') or ())
     cash, pos, trades, curve, pending = equity, {}, [], [], []
-    liquidations = 0
+    liquidations, insurance, adjustments = 0, 0.0, []
     pnl = {s['id']: 0.0 for s in segs}
     peak, max_dd = equity, 0.0
     day, day_start, others_real, snap, halted = None, equity, 0.0, {}, False
@@ -758,12 +808,16 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
 
     def liq_now(prices, i):
         """Full-account cross liquidation at `prices` (fees, no extra slip)."""
-        nonlocal cash, liquidations
+        nonlocal cash, liquidations, insurance
         if pos and book_liquidated(cash, pos, prices):
             liquidations += 1
             for inst in list(pos):
                 close(inst, prices[inst], 'liquidation', i, slip=False)
-            cash = max(cash, 0.0)                    # never below zero: the insurance fund takes a gap past bankruptcy
+            if cash < 0:                             # never below zero: the insurance fund takes a gap past bankruptcy
+                paid = -cash                         # recorded as an account adjustment; trades and members keep the full loss
+                insurance += paid
+                adjustments.append(dict(ts=ts0[i], kind='insurance', amount=paid))
+                cash = 0.0
             return True
         return False
 
@@ -823,32 +877,27 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             pos[inst] = new_p
         pending = []
         liq_now(marks_at(series, list(pos), i, 'o'), i)
-        # 2) exits inside this bar (stops, targets, time — no per-position isolated liquidation)
+        # 2) exits inside this bar, in the same-bar event order (see gap_exit); no per-position isolated liquidation
+        for inst in list(pos):                                       # a) gaps through a stop / target fill at the open
+            hit = gap_exit(pos[inst], series[inst].o[i])
+            if hit:
+                close(inst, hit[0], hit[1], i)
+        if pos and not liq_now(adverse_path_prices(pos, series, i), i):   # b) adverse leg, before any stop fills
+            for inst in list(pos):                                   # c) stops, then the rest at their extremes
+                if stop_hit(pos[inst], series[inst].h[i], series[inst].l[i]):
+                    close(inst, pos[inst]['stop'], 'stop', i)
+            if pos and not liq_now(adverse_prices(pos, series, i), i):
+                for inst in list(pos):                               # d) targets
+                    if target_hit(pos[inst], series[inst].h[i], series[inst].l[i]):
+                        close(inst, pos[inst]['target'], 'target', i)
+        # 3) at the close: cross-liquidation check first, then time exits and trailing stops; daily halt, curve
+        liq_now(marks_at(series, list(pos), i, 'c'), i)
         for inst in list(pos):
             p, s = pos[inst], series[inst]
-            o, h, l, c = s.o[i], s.h[i], s.l[i], s.c[i]
-            exit_px, why = None, None
-            if p['side'] == 1:
-                if o <= p['stop']: exit_px, why = o, 'stop'
-                elif l <= p['stop']: exit_px, why = p['stop'], 'stop'
-                elif p['target'] and o >= p['target']: exit_px, why = o, 'target'
-                elif p['target'] and h >= p['target']: exit_px, why = p['target'], 'target'
-            else:
-                if o >= p['stop']: exit_px, why = o, 'stop'
-                elif h >= p['stop']: exit_px, why = p['stop'], 'stop'
-                elif p['target'] and o <= p['target']: exit_px, why = o, 'target'
-                elif p['target'] and l <= p['target']: exit_px, why = p['target'], 'target'
-            if exit_px is None and i - p['bar'] >= p['hold']:
-                exit_px, why = c, 'time'
-            if exit_px is not None:
-                close(inst, exit_px, why, i)
+            if i - p['bar'] >= p['hold']:
+                close(inst, s.c[i], 'time', i)
             elif p['trail']:
-                p['stop'] = max(p['stop'], h - p['dist']) if p['side'] == 1 else min(p['stop'], l + p['dist'])
-        # 2b) conservative same-bar check: remaining positions at their adverse extremes together
-        if pos:
-            liq_now(adverse_prices(pos, series, i), i)
-        # 3) mark at the close, cross-liquidation, daily halt, curve
-        liq_now(marks_at(series, list(pos), i, 'c'), i)
+                p['stop'] = max(p['stop'], s.h[i] - p['dist']) if p['side'] == 1 else min(p['stop'], s.l[i] + p['dist'])
         unreal = {k: p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items()}
         eq = cash + sum(unreal.values())
         d_now = (ts0[i] + rules['day_shift']) // (24 * HOUR)
@@ -886,4 +935,5 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     open_positions = [dict(inst=k, side=p['side'], entry=p['entry'], qty=p['qty'], stop=p['stop'], target=p['target'], opened=p['opened'],
                            lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4), seg=p['seg'], boost=p['boost'], risk=p['risk'])
                       for k, p in pos.items()]
-    return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, pending=pending, pnl=pnl, halted=halted, metrics=metrics, liquidations=liquidations)
+    return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, pending=pending, pnl=pnl, halted=halted, metrics=metrics, liquidations=liquidations,
+                insurance=insurance, adjustments=adjustments)
