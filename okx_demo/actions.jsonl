@@ -137,3 +137,11 @@
 {"ts": "2026-11-14T01:15:31Z", "action": "amend_stop", "inst": "CRV-USDT-SWAP", "dry_run": false, "old": 0.2518257770071324, "new": 0.2503257770071324}
 {"ts": "2026-11-14T01:15:31Z", "action": "open", "inst": "IMX-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "3439", "price": 0.1049, "stop": "0.13", "target": "0.0551", "leverage": 3, "risk_usdt": 86.48}
 {"ts": "2026-11-14T01:15:31Z", "action": "open", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "303", "price": 0.5592, "stop": "0.6983", "target": "0.2846", "leverage": 3, "risk_usdt": 42.16}
+{"ts": "2026-11-14T05:03:19Z", "action": "amend_stop", "inst": "GRASS-USDT-SWAP", "dry_run": false, "old": 0.48412690584165247, "new": 0.47172690584165244}
+{"ts": "2026-11-14T05:03:19Z", "action": "amend_stop", "inst": "CRV-USDT-SWAP", "dry_run": false, "old": 0.2503257770071324, "new": 0.24882577700713235}
+{"ts": "2026-11-14T05:03:19Z", "action": "amend_stop", "inst": "LPT-USDT-SWAP", "dry_run": false, "old": 1.2782531924294842, "new": 1.249253192429484}
+{"ts": "2026-11-14T05:03:19Z", "action": "closed_on_exchange", "inst": "ETC-USDT-SWAP", "dry_run": false, "strategy": "evolved", "pnl": -196.96992802490777, "price_pnl": -189.46855000000005, "funding": -2.9473666299077284, "close_price": 6.284300962527657, "fee": -4.554011395, "outcome": "stop"}
+{"ts": "2026-11-14T05:03:19Z", "action": "amend_stop", "inst": "BNB-USDT-SWAP", "dry_run": false, "old": 683.3533231866604, "new": 673.4233231865718}
+{"ts": "2026-11-14T05:03:19Z", "action": "amend_stop", "inst": "XRP-USDT-SWAP", "dry_run": false, "old": 1.0558481147046708, "new": 1.0389481147046709}
+{"ts": "2026-11-14T05:03:19Z", "action": "closed_on_exchange", "inst": "ETH-USDT-SWAP", "dry_run": false, "strategy": "evolved", "pnl": 43.32453600069563, "price_pnl": 48.10881, "funding": -3.2376859943043717, "close_price": 1865.85, "fee": -1.546588005, "outcome": "target"}
+{"ts": "2026-11-14T05:03:19Z", "action": "amend_stop", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "old": 0.6983089334602194, "new": 0.6910089334602193}
