@@ -104,3 +104,28 @@ sudo tail -n 20 /var/lib/modi-okx-live/okx_live/actions.jsonl
 ```
 
 日志只有动作、币种、价格、数量和交易所错误码，没有密钥。常见错误：`50101`/`50113` 类（密钥或环境不匹配：模拟盘密钥不能用于实盘）、`50110`（IP 不在白名单）、`signals.json 已过期`（GitHub 定时任务停了或延迟，检查 Actions）。
+
+## 只读 HTTPS 接口（看板每分钟刷新）
+
+`tools/live_readapi.py` 以 `modi-live` 身份常驻（`modi-okx-readapi.service`），每 60 秒用同一个只交易 key **只读**账户（客户端强制 dry-run，任何非 GET 请求都会被拒绝），合并 `okx_live/` 里的文件（只读），用 `live_sync.py` 的同一白名单与密钥检查生成 `/live.json`，缓存在内存。HTTP 只监听 `127.0.0.1:8787`，由 Caddy 在 443 提供 `https://139-180-146-42.sslip.io`。它不写任何文件，与交易服务互不影响。
+
+```bash
+# 代码放在独立目录，升级接口不会改动交易程序的 /opt/modi-okx-live
+sudo git clone https://github.com/modi-cjh/crypto-panel.git /opt/modi-okx-readapi
+sudo chown -R root:root /opt/modi-okx-readapi && sudo chmod -R a+rX,go-w /opt/modi-okx-readapi
+sudo install -m 644 /opt/modi-okx-readapi/deploy/live/modi-okx-readapi.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now modi-okx-readapi
+curl -s http://127.0.0.1:8787/healthz
+
+# HTTPS（Ubuntu 自带 caddy 2.6；证书用 443 的 TLS-ALPN 验证，不需要开 80）
+sudo apt-get install -y caddy
+sudo install -m 644 /opt/modi-okx-readapi/deploy/live/Caddyfile.readapi /etc/caddy/Caddyfile
+sudo systemctl restart caddy
+
+# 防火墙：只新增 443；22 必须保持开放（先确认 `ufw status` 里有 22/tcp，再另开一个 ssh 验证能登录）
+sudo ufw allow 443/tcp
+```
+
+升级：`sudo git -C /opt/modi-okx-readapi pull --ff-only && sudo systemctl restart modi-okx-readapi`。
+停用：`sudo systemctl disable --now modi-okx-readapi caddy && sudo ufw delete allow 443/tcp`（看板自动退回 GitHub live-data）。
+排查：`journalctl -u modi-okx-readapi -n 20 --no-pager`（只有“状态：正常 / OKX 读取失败”这类短句，没有数据和密钥）。

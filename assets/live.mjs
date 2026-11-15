@@ -1,4 +1,6 @@
-// OKX live account (real money), published by tools/live_sync.py on the live-data branch:
+// OKX live account (real money). Two sources with the same fields:
+//   1. the server's read-only API (tools/live_readapi.py behind Caddy): /live.json = {snapshot, fills, trades}, refreshed every minute
+//   2. the live-data branch, published hourly by tools/live_sync.py (fallback when the API cannot be reached):
 //   snapshot.json  equity / available / day PnL / paused / halted / positions with stop and target
 //   fills.json     recent opens / closes and a short list of skips / pauses
 //   trades.json    closed trades (entry / exit / PnL / hold time / exit type / seed) and statistics (optional, newer syncs)
@@ -8,6 +10,12 @@ import { coinIcon } from './coins.mjs';
 export const LIVE_BASE = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/live-data/';
 export const LIVE_SNAPSHOT_URL = LIVE_BASE + 'snapshot.json';
 export const LIVE_FILLS_URL = LIVE_BASE + 'fills.json';
+// Server read-only API (GET only, whitelisted fields, no keys). tickers.json = OKX public tickers cached by the server,
+// the market fallback when the browser cannot reach OKX directly (some 4G networks block it).
+export const LIVE_API_BASE = 'https://139-180-146-42.sslip.io/';
+export const LIVE_API_URL = LIVE_API_BASE + 'live.json';
+export const LIVE_TICKERS_URL = LIVE_API_BASE + 'tickers.json';
+export const API_FRESH = 5 * 60000;    // an API document older than this is no better than live-data: say so
 // The trader runs hourly on the server and the box syncs hourly; raw.githubusercontent caches ~5 minutes.
 export const LIVE_STALE = 2.5 * 3600000;
 export const LIVE_COLOR = '#06727d';
@@ -315,4 +323,32 @@ export function tradeMarkers(subject, bars) {
   if (subject.opened) { const t = at(subject.opened); if (t !== null) out.push({ time: t, position: subject.side === 1 ? 'belowBar' : 'aboveBar', color: levelColor('entry'), shape: subject.side === 1 ? 'arrowUp' : 'arrowDown', text: '入场' }); }
   if (subject.closed) { const t = at(subject.closed); if (t !== null) out.push({ time: t, position: subject.side === 1 ? 'aboveBar' : 'belowBar', color: levelColor('exit'), shape: 'circle', text: '出场' }); }
   return out.sort((a, b) => a.time - b.time);
+}
+
+// ---- server read-only API (/live.json) ----
+// {snapshot, fills, trades} when the document is valid (fills / trades may be missing or invalid: null), else null.
+export function splitLiveApi(doc) {
+  if (!doc || typeof doc !== 'object' || doc.source !== 'okx-live-api' || !validLiveSnapshot(doc.snapshot)) return null;
+  return { snapshot: doc.snapshot, fills: validLiveFills(doc.fills) ? doc.fills : null, trades: validLiveTrades(doc.trades) ? doc.trades : null,
+    account: doc.api?.account === 'okx' ? 'okx' : 'file' };
+}
+// Server tickers (/tickers.json) in the shape of OKX market/tickers rows, or null.
+export function serverTickerRows(doc, now = Date.now()) {
+  if (!doc || typeof doc !== 'object' || !Array.isArray(doc.tickers) || !stamp(doc.updated_at)) return null;
+  if (now - Date.parse(doc.updated_at) > API_FRESH) return null;
+  const rows = doc.tickers.filter(r => r && isInst(r.instId) && num(r.last) > 0);
+  return rows.length ? rows : null;
+}
+// Where the account and the prices come from, for the status pill and the connection badge.
+//   source: 'api' | 'github' | null    quotes: 'ws' | 'rest' | 'server' | null
+export function sourceText(source, account) {
+  if (source === 'api') return account === 'okx' ? '实盘账户来自服务器只读接口（约每分钟刷新，只读、白名单字段、无密钥）。' : '实盘账户来自服务器只读接口（服务器暂时读不到 OKX，显示最近一次交易程序快照）。';
+  if (source === 'github') return '服务器接口暂时连不上，实盘账户改用 GitHub live-data 分支（约每小时同步，只读、无密钥）。';
+  return '正在读取实盘账户…';
+}
+export function connectionBadge({ ws = false, rest = false, server = false } = {}) {
+  if (ws) return { text: '行情实时', ok: true };
+  if (rest) return { text: '行情轮询', ok: true };
+  if (server) return { text: '服务器行情', ok: true };
+  return { text: '行情断开', ok: false };
 }

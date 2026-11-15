@@ -1,0 +1,39 @@
+# OKX 实盘只读接口（tools/live_readapi.py）：每 60 秒只读刷新账户，GET /live.json 返回白名单 JSON。
+# 只在新加坡服务器 139.180.146.42 使用；只监听 127.0.0.1:8787，对外由 Caddy（443，HTTPS）反代。
+# 代码目录与交易程序分开（/opt/modi-okx-readapi），升级这里不会改动 /opt/modi-okx-live 的交易代码。
+# 客户端强制 dry-run：任何非 GET 请求在 OKX 客户端里就被拒绝；状态文件只读（ProtectSystem=strict，不写任何文件）。
+[Unit]
+Description=MODI OKX live read-only API (GET only, whitelisted JSON)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/modi-okx-live/okx-live.env
+
+[Service]
+Type=simple
+User=modi-live
+Group=modi-live
+WorkingDirectory=/opt/modi-okx-readapi
+# 密钥只在这个 root:root 0600 文件里，由 systemd 读入进程环境；不会出现在命令行、日志或接口返回里。
+EnvironmentFile=/etc/modi-okx-live/okx-live.env
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 tools/live_readapi.py --data /var/lib/modi-okx-live/okx_live --listen 127.0.0.1 --port 8787
+Restart=on-failure
+RestartSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/lib/modi-okx-live
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

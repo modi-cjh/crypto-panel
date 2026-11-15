@@ -35,7 +35,7 @@ const candles = Array.from({ length: 60 }, (_, i) => { const t = Math.floor((now
   let mode = 'ok';
   const requests = [];
   context.on('request', r => requests.push(r.url()));
-  await context.route(/okx\.com/, r => r.abort());
+  await context.route(/okx\.com/, r => r.abort()); await context.route(/sslip\.io/, r => r.abort());
   const sockets = [], subs = [];
   await context.routeWebSocket(/ws\.okx\.com/, ws => { sockets.push(ws); ws.onMessage(m => { if (m === 'ping') return ws.send('pong'); const b = JSON.parse(m); if (b.op === 'subscribe') subs.push(...b.args); }); });
   await context.route('**/live-data/snapshot.json*', r => mode === 'ok' ? r.fulfill({ body: JSON.stringify(snapshot), contentType: 'application/json' }) : r.fulfill({ status: 404, body: 'missing' }));
@@ -112,7 +112,7 @@ const candles = Array.from({ length: 60 }, (_, i) => { const t = Math.floor((now
 
   // Stale data: offline warning.
   const stale = await browser.newContext();
-  await stale.route(/okx\.com/, r => r.abort());
+  await stale.route(/okx\.com/, r => r.abort()); await stale.route(/sslip\.io/, r => r.abort());
   await stale.route('**/live-data/snapshot.json*', r => r.fulfill({ body: JSON.stringify({ ...snapshot, updated_at: iso(now - 4 * 3600e3) }), contentType: 'application/json' }));
   await stale.route('**/live-data/fills.json*', r => r.fulfill({ body: JSON.stringify(fills), contentType: 'application/json' }));
   const sp = await stale.newPage();
@@ -124,7 +124,7 @@ const candles = Array.from({ length: 60 }, (_, i) => { const t = Math.floor((now
 
   // Desktop with public candles available: the popup draws a real chart (entry marker, stop / target lines).
   const desk = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await desk.route(/okx\.com/, r => r.abort());   // registered first: the candle route below takes precedence
+  await desk.route(/okx\.com/, r => r.abort()); await desk.route(/sslip\.io/, r => r.abort());   // registered first: the candle route below takes precedence
   await desk.route(/okx\.com\/api\/v5\/market\/(history-)?candles/, r => r.fulfill({ body: JSON.stringify({ code: '0', data: candles }), contentType: 'application/json' }));
   await desk.route('**/live-data/snapshot.json*', r => r.fulfill({ body: JSON.stringify({ ...snapshot, halted: true }), contentType: 'application/json' }));
   await desk.route('**/live-data/fills.json*', r => r.fulfill({ body: JSON.stringify(fills), contentType: 'application/json' }));
@@ -143,7 +143,7 @@ const candles = Array.from({ length: 60 }, (_, i) => { const t = Math.floor((now
 
   // Feed missing on first load: an alert, no crash, no blank page.
   const missing = await browser.newContext();
-  await missing.route(/okx\.com/, r => r.abort());
+  await missing.route(/okx\.com/, r => r.abort()); await missing.route(/sslip\.io/, r => r.abort());
   await missing.route('**/live-data/**', r => r.fulfill({ status: 404, body: 'missing' }));
   const mp = await missing.newPage(), merrors = [];
   mp.on('pageerror', e => merrors.push(String(e)));

@@ -49,10 +49,11 @@ widgets/                   iPhone 主屏幕小组件（Scriptable）与安装说
 manifest.webmanifest, assets/icons/   手机“添加到主屏幕”App 配置
 ```
 
-看板读取 `https://raw.githubusercontent.com/modi-cjh/crypto-panel/live-data/snapshot.json`、`fills.json` 与 `trades.json`（可缺，旧同步时显示空状态）（约 5 分钟缓存，`?t=` 每分钟换一次），持仓浮盈用 **OKX 公共标记价**（`wss://ws.okx.com` 推送，连不上时用快照值）。`live-data` 分支只由 `tools/live_sync.py` 写入（白名单字段 + 密钥检查，不 force push），不要手动修改；GitHub 凭据只在本地机器，服务器上不放。
+看板优先读服务器只读接口 `https://139-180-146-42.sslip.io/live.json`（`{snapshot, fills, trades}`，与 live-data 同字段，每 60 秒刷新），读不到时静默退回 `https://raw.githubusercontent.com/modi-cjh/crypto-panel/live-data/snapshot.json`、`fills.json` 与 `trades.json`（可缺，旧同步时显示空状态）（约 5 分钟缓存，`?t=` 每分钟换一次），持仓浮盈用 **OKX 公共标记价**（`wss://ws.okx.com` 推送，备用 `wss://wsaws.okx.com:8443`，连不上时用快照值）。公共 REST 依次试 `www.okx.com` → `aws.okx.com` → 服务器 `/tickers.json`，有一个成功就不显示红色错误。浏览器测试必须拦截 `sslip.io`（否则会读到真实账户）。`live-data` 分支只由 `tools/live_sync.py` 写入（白名单字段 + 密钥检查，不 force push），不要手动修改；GitHub 凭据只在本地机器，服务器上不放。
 
 ```
 tools/live_sync.py         本地机器：ssh 只读服务器 okx_live/{summary,state}.json + actions.jsonl → 白名单 → live-data 分支 {snapshot,fills,trades}.json（trades = 已平仓明细 + 胜率 / 盈亏比 / 回撤 / 按种子统计）
+tools/live_readapi.py      实盘服务器（modi-okx-readapi.service，modi-live 身份，代码在 /opt/modi-okx-readapi）：每 60 秒只读 OKX 账户（强制 dry-run 客户端）+ okx_live 文件 → 与 live_sync 同一白名单 + 密钥检查 → 内存缓存；127.0.0.1:8787 只回 GET /live.json /tickers.json /healthz；Caddy 在 443 提供 https://139-180-146-42.sslip.io（只开 443 与 22）
 tools/live_alert.py        本地机器：live_sync 之后只读检查实盘异常（停跑 / 熔断 / 暂停 / 日亏 >10% / 连续 3 止损 / 报错）→ stdout JSON + 退出码（0 正常 / 1 需通知 / 2 已报过），不发消息
 assets/live.mjs            实盘看板纯逻辑：校验、实时浮盈、新鲜度 / 状态、持仓 / 成交渲染、机器人状态
 ```
@@ -79,6 +80,7 @@ PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs    # 机器人交
 PANEL_URL=http://127.0.0.1:8008/ node tests/market_browser.cjs    # 市场行情前 100
 PANEL_URL=http://127.0.0.1:8008/ node tests/float_browser.cjs     # 电脑桌面悬浮窗
 PANEL_URL=http://127.0.0.1:8008/ node tests/app_browser.cjs       # 手机主屏幕 App（manifest / 图标）
+PANEL_URL=http://127.0.0.1:8008/ node tests/fallback_browser.cjs  # 手机 4G 屏蔽 OKX：服务器接口 / aws 域名 / 服务器行情兜底，无红条
 ```
 
 已知：`tests/mascot_browser.cjs` 中“Esc 关闭面板后焦点回到机器人”一项偶发失败（焦点落在 body；基线 `9ffb027` 上用 Playwright 1.65 / Chromium 也出现过），重跑即可通过。浏览器测试全部失败、报 `ERR_CONNECTION_REFUSED` 时，是本地服务没启动。
