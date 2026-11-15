@@ -1,0 +1,23 @@
+{
+ "schema_version": 1,
+ "source": "okx-live",
+ "updated_at": "2026-11-15T15:54:09Z",
+ "trades": [],
+ "stats": {
+  "overall": {
+   "trades": 0,
+   "with_pnl": 0,
+   "wins": 0,
+   "losses": 0,
+   "pnl": 0.0,
+   "tp": 0,
+   "sl": 0,
+   "max_drawdown_closed": 0.0
+  },
+  "by_strategy": [],
+  "equity_drawdown": {
+   "usdt": 0.0,
+   "pct": 0.0
+  }
+ }
+}
