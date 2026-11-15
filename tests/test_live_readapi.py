@@ -1,10 +1,12 @@
 """tools/live_readapi.py: read-only live API. No network: the OKX client and the public endpoint are fakes,
 the trader's files are written to a temporary directory."""
+import http.client
 import json
 import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -58,7 +60,20 @@ class FakeClient:
         raise AssertionError(path)
 
 
-def fake_public(path):
+CANDLE_ROWS = [['1794751200000', '91000.5', '91200', '90900', '91100', '12.5', '0.125', '11387.5', '0'],
+               ['1794747600000', '90900', '91050', '90800', '91000.5', '10', '0.1', '9100', '1']]
+PUBLIC_CALLS = []
+
+
+def fake_public(path, timeout=10):
+    PUBLIC_CALLS.append(path)
+    if 'mark-price' in path:
+        return {'code': '0', 'data': [{'instId': 'SOL-USDT-SWAP', 'markPx': '70.5', 'ts': '1794751218000'},
+                                      {'instId': 'ETH-USDT-SWAP', 'markPx': '2990.1'}, {'instId': 'BTC-USDT-SWAP', 'markPx': '91000'}]}
+    if 'candles' in path:
+        if 'FAIL-USDT' in path:
+            return {'code': '51001', 'msg': 'Instrument ID does not exist', 'data': []}
+        return {'code': '0', 'msg': '', 'data': CANDLE_ROWS + [['1794744000000', '<script>', '1', '1', '1', '1'], 'bad']}
     if 'instruments' in path:
         return {'code': '0', 'data': [{'instId': 'SOL-USDT-SWAP', 'ctVal': '1'}, {'instId': 'ETH-USDT-SWAP', 'ctVal': '0.1'}]}
     if 'tickers' in path:
@@ -194,7 +209,9 @@ class Http(Base):
         self.f = self.feed()
         self.f.refresh_live()
         self.f.refresh_tickers()
-        self.server = ThreadingHTTPServer(('127.0.0.1', 0), ra.make_handler(self.f, ra.RateLimit(per_min=60, burst=5)))
+        self.hub = ra.Hub(self.f, public=fake_public, clock=lambda: self.now[0], max_streams=3, per_ip=2)
+        handler = ra.make_handler(self.f, ra.RateLimit(per_min=60, burst=5), self.hub, push_every=0.05, max_age=5)
+        self.server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.base = f'http://127.0.0.1:{self.server.server_address[1]}'
 
@@ -247,6 +264,152 @@ class Http(Base):
         finally:
             server.shutdown()
             server.server_close()
+
+
+class Candles(Base):
+    def setUp(self):
+        super().setUp()
+        PUBLIC_CALLS.clear()
+
+    def test_query_whitelist(self):
+        q = lambda **kw: ra.candle_query({k: [v] for k, v in kw.items()})
+        self.assertEqual(q(instId='BTC-USDT-SWAP', bar='1H', limit='10'), ('BTC-USDT-SWAP', '1H', 10, ''))
+        self.assertEqual(q(instId='BTC-USDT-SWAP'), ('BTC-USDT-SWAP', '1H', 300, ''))
+        self.assertEqual(q(instId='BTC-USDT-SWAP', bar='1Dutc', limit='300', after='1794751200000'), ('BTC-USDT-SWAP', '1Dutc', 100, '1794751200000'))
+        for bad in (dict(instId='btc-usdt-swap'), dict(instId='BTC-USDT'), dict(instId='BTC-USD-SWAP'), dict(instId='BTC-USDT-SWAP&x=1'),
+                    dict(instId='../../etc/passwd'), dict(instId='BTC-USDT-SWAP', bar='7H'), dict(instId='BTC-USDT-SWAP', bar='1h'),
+                    dict(instId='BTC-USDT-SWAP', limit='301'), dict(instId='BTC-USDT-SWAP', limit='0'), dict(instId='BTC-USDT-SWAP', limit='-1'),
+                    dict(instId='BTC-USDT-SWAP', limit='1e2'), dict(instId='BTC-USDT-SWAP', after='abc'),
+                    dict(instId='BTC-USDT-SWAP', after='12345678901234'), dict(instId='BTC-USDT-SWAP', apiKey='x'), {}):
+            with self.assertRaises(ValueError, msg=bad):
+                q(**bad)
+        with self.assertRaises(ValueError):
+            ra.candle_query({'instId': ['BTC-USDT-SWAP', 'ETH-USDT-SWAP']})
+
+    def test_rows_and_short_cache(self):
+        f = self.feed()
+        p = {'instId': ['BTC-USDT-SWAP'], 'bar': ['1H'], 'limit': ['10']}
+        doc = json.loads(f.get_candles(p))
+        self.assertEqual(doc, {'code': '0', 'msg': '', 'data': CANDLE_ROWS})          # junk rows dropped, OKX shape kept
+        self.assertEqual(PUBLIC_CALLS, ['/api/v5/market/candles?instId=BTC-USDT-SWAP&bar=1H&limit=10'])
+        for _ in range(5):
+            f.get_candles(p)
+        self.assertEqual(len(PUBLIC_CALLS), 1)                                         # same key within the TTL: cached
+        f.get_candles({**p, 'limit': ['20']})
+        self.assertEqual(len(PUBLIC_CALLS), 2)
+        self.now[0] += ra.CANDLE_TTL
+        f.get_candles(p)
+        self.assertEqual(len(PUBLIC_CALLS), 3)                                         # expired: one new request
+        f.get_candles({**p, 'after': ['1794751200000'], 'limit': ['300']})
+        self.assertEqual(PUBLIC_CALLS[-1], '/api/v5/market/history-candles?instId=BTC-USDT-SWAP&bar=1H&limit=100&after=1794751200000')
+        with self.assertRaises(ra.AccountError):
+            f.get_candles({'instId': ['FAIL-USDT-SWAP']})
+        self.assertFalse(f.client.calls)                                               # never the signed client
+
+
+class Push(Http):
+    def open_stream(self, ip='192.0.2.10'):
+        conn = http.client.HTTPConnection('127.0.0.1', self.server.server_address[1], timeout=5)
+        conn.request('GET', '/stream', headers={'X-Forwarded-For': ip})
+        resp = conn.getresponse()
+        conn.close = lambda c=conn.close, r=resp: (r.close(), c())     # closing the connection also drops the response's socket
+        return conn, resp
+
+    def events(self, resp, n):
+        out = []
+        while len(out) < n:
+            line = resp.fp.readline().decode()
+            if line.startswith('data: '):
+                out.append(json.loads(line[6:]))
+        return out
+
+    def wait_count(self, n):
+        for _ in range(100):
+            if self.hub.count == n:
+                return
+            time.sleep(0.02)
+        self.fail(f'stream count {self.hub.count} != {n}')
+
+    def test_stream_pushes_position_marks(self):
+        PUBLIC_CALLS.clear()
+        self.assertFalse(self.hub.poll_once())                       # nobody connected: OKX is not read
+        self.assertEqual(PUBLIC_CALLS, [])
+        conn, resp = self.open_stream()
+        try:
+            self.assertEqual(resp.status, 200)
+            self.assertTrue(resp.getheader('Content-Type').startswith('text/event-stream'))
+            self.assertEqual(resp.getheader('Access-Control-Allow-Origin'), 'https://modi-cjh.github.io')
+            self.assertEqual(resp.getheader('Content-Length'), None)
+            first = self.events(resp, 1)[0]
+            self.assertEqual(first['marks'], {})                          # nothing polled yet
+            self.assertEqual(first['live_at'], ra.iso(self.now[0]))
+            self.wait_count(1)
+            self.assertTrue(self.hub.poll_once())
+            self.assertEqual(PUBLIC_CALLS, ['/api/v5/public/mark-price?instType=SWAP'])
+            ev = self.events(resp, 1)[0]
+            self.assertEqual(ev['marks'], {'SOL-USDT-SWAP': 70.5, 'ETH-USDT-SWAP': 2990.1})   # positions only, not BTC
+            self.assertEqual(ev['ts'], int(self.now[0] * 1000))
+            self.now[0] += 1
+            self.hub.poll_once()
+            self.assertEqual(self.events(resp, 1)[0]['ts'], int(self.now[0] * 1000))   # a new push every poll
+            self.now[0] += 11
+            self.assertEqual(self.events(resp, 1)[0]['marks'], {})          # stale prices are not pushed
+            self.assertEqual({m for m, _ in self.f.client.calls}, {'GET'})
+        finally:
+            conn.close()
+        self.wait_count(0)                                                  # client gone: slot released
+
+    def test_stream_limits(self):
+        a = [self.open_stream('192.0.2.1') for _ in range(2)]
+        try:
+            for _, r in a:
+                self.assertEqual(r.status, 200)
+            conn, r = self.open_stream('192.0.2.1')                         # per address cap
+            self.assertEqual(r.status, 503)
+            conn.close()
+            b = self.open_stream('192.0.2.2')
+            self.assertEqual(b[1].status, 200)
+            conn, r = self.open_stream('192.0.2.3')                         # total cap
+            self.assertEqual(r.status, 503)
+            self.assertEqual(r.getheader('Access-Control-Allow-Origin'), 'https://modi-cjh.github.io')
+            conn.close()
+            b[0].close()
+        finally:
+            for c, _ in a:
+                c.close()
+        self.wait_count(0)
+        self.assertEqual(self.open_stream('192.0.2.3')[1].status, 200)
+
+    def test_stream_get_only_and_rate_limited(self):
+        for method in ('POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'):
+            code, headers, _ = self.call('/stream', method, body=b'{}' if method in ('POST', 'PUT', 'PATCH') else None)
+            self.assertEqual(code, 405, method)
+        codes = []
+        for _ in range(8):
+            conn, r = self.open_stream('198.51.100.9')
+            codes.append(r.status)
+            conn.close()
+        self.assertIn(429, codes)
+
+    def test_candles_http(self):
+        code, headers, body = self.call('/candles?instId=BTC-USDT-SWAP&bar=1H&limit=10')
+        self.assertEqual(code, 200)
+        self.assertEqual(headers['Access-Control-Allow-Origin'], 'https://modi-cjh.github.io')
+        self.assertEqual(json.loads(body)['data'], CANDLE_ROWS)
+        for q in ('', '?instId=x', '?instId=BTC-USDT-SWAP&bar=2h', '?instId=BTC-USDT-SWAP&limit=1000', '?instId=BTC-USDT-SWAP&foo=1',
+                  '?instId=BTC-USDT-SWAP&&&', '?instId=%00', '?' + '&'.join(f'a{i}=1' for i in range(20))):
+            code, _, body = self.call('/candles' + q, ip='192.0.2.%d' % (60 + len(q) % 100))
+            self.assertEqual(code, 400, q)
+            self.assertEqual(json.loads(body), {'error': 'bad parameters'})
+        code, _, body = self.call('/candles?instId=FAIL-USDT-SWAP', ip='192.0.2.51')
+        self.assertEqual(code, 502)
+        self.assertNotIn(b'Instrument', body)
+        for method in ('POST', 'DELETE'):
+            self.assertEqual(self.call('/candles?instId=BTC-USDT-SWAP', method, body=b'{}' if method == 'POST' else None)[0], 405)
+        self.assertEqual(self.call('/candles/x')[0], 404)
+        codes = [self.call('/candles?instId=BTC-USDT-SWAP', ip='198.51.100.70')[0] for _ in range(8)]
+        self.assertEqual(codes[:5], [200] * 5)
+        self.assertIn(429, codes[5:])
 
 
 if __name__ == '__main__':

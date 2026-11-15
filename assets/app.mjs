@@ -1,17 +1,18 @@
 // MODI dashboard: OKX live account (real money) + the 策略进化 page (paper-data/evolve, the strategy engine that feeds the signals). The account comes from the
 // server's read-only API (tools/live_readapi.py, every minute), else the live-data branch (tools/live_sync.py, hourly); prices, marks and candles come from
-// OKX public endpoints (www.okx.com, then aws.okx.com), with the server's cached tickers as the last fallback.
+// OKX public endpoints (www.okx.com, then aws.okx.com), with the server's cached tickers / candles as the last fallback. While the server's push
+// (/stream, SSE) is up, position marks arrive about once a second and PnL / equity tick live; when it drops, the 60-second polling carries on.
 import { coinIcon } from './coins.mjs';
 import { Mascot } from './mascot.mjs';
 import { okxDailyReturns, okxDailyMarkup } from './okx.mjs';
-import { LIVE_SNAPSHOT_URL, LIVE_FILLS_URL, LIVE_TRADES_URL, LIVE_API_URL, LIVE_TICKERS_URL, API_FRESH, splitLiveApi, serverTickerRows, sourceText, connectionBadge, validLiveSnapshot, validLiveFills, validLiveTrades, liveView, liveFreshness, liveStatus, liveCurveSVG, livePositionsMarkup, liveFillsMarkup, liveNewFills, liveFeed, liveMascotState,
-  liveLight, liveLightMarkup, closedTradesMarkup, tradeStatsMarkup, chartSubject, candleRequest, levelsLadderSVG, tradeMarkers, levelColor, px as livePx } from './live.mjs?v=20261116-api';
-import { PublicStream, mergeCandle } from './realtime.mjs';
+import { LIVE_SNAPSHOT_URL, LIVE_FILLS_URL, LIVE_TRADES_URL, LIVE_API_BASE, LIVE_API_URL, LIVE_TICKERS_URL, LIVE_STREAM_URL, API_FRESH, streamUpdate, splitLiveApi, serverTickerRows, sourceText, connectionBadge, validLiveSnapshot, validLiveFills, validLiveTrades, liveView, liveFreshness, liveStatus, liveCurveSVG, livePositionsMarkup, liveFillsMarkup, liveNewFills, liveFeed, liveMascotState,
+  liveLight, liveLightMarkup, closedTradesMarkup, tradeStatsMarkup, chartSubject, candleRequest, levelsLadderSVG, tradeMarkers, levelColor, px as livePx } from './live.mjs?v=20261116-push';
+import { PublicStream, ServerPush, mergeCandle } from './realtime.mjs?v=20261116-push';
 import { configureMotion, rollNumber, toast } from './effects.mjs';
 import { workState, pnlMood, tradeBurst, positionReport, pnlComment } from './robot-work.mjs';
 import { dayNumber } from './account.mjs';
 import config from '../config.js';
-import { PublicAPI, OKX_REST_BASES, normalizeTickers, number } from './api.mjs?v=20261116-api';
+import { PublicAPI, OKX_REST_BASES, normalizeTickers, number, getCandles } from './api.mjs?v=20261116-push';
 import { parseCandles, analyze } from './indicators.mjs';
 import { chartAvailable, createCandleCharts, createTradeChart } from './charts.mjs?v=20261116-dash';
 import { EVOLVE_URL, EVOLVE_NODES_URL, validNodeDetails, needsDetails, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, teamMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays, updateSchedule, evolveIntroMarkup } from './evolve.mjs?v=20261115-evolve';
@@ -20,7 +21,7 @@ import { GeneFx } from './evolve-fx.mjs';
 const $ = id => document.getElementById(id);
 configureMotion();
 const mascot = new Mascot($('mascot'), $('mascot-drawer'), { tabs: ['status', 'feed'] });
-const BUILD = '2026-11-16 · OKX 实盘看板 · 服务器接口', diagLog = [];
+const BUILD = '2026-11-16 · OKX 实盘看板 · 服务器推送', diagLog = [];
 const diagNote = text => { if (diagLog.length && diagLog.at(-1).endsWith(' ' + text)) return; diagLog.push(`${new Date().toISOString().slice(11, 19)}Z ${text}`); diagLog.splice(0, diagLog.length - 12); };
 addEventListener('error', e => diagNote(`脚本错误：${e.message || e.type}${e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : ''}`));
 addEventListener('unhandledrejection', e => diagNote(`未处理的异常：${e.reason?.message || e.reason}`));
@@ -45,6 +46,18 @@ let live = null, fills = null, trades = null, liveBusy = false;
 let liveSource = null, liveAccount = null, quoteSource = null;   // 'api' | 'github' ; 'okx' | 'server' (where the account / tickers came from)
 const marks = new Map();   // inst -> {price, at}: OKX public mark prices for the live positions
 let quoteStream = null, candleStream = null, quoteStreamKey = '', candleStreamKey = '';
+let candleSource = 'okx', pushReadAt = 0;   // where the coin page's candles came from: 'okx' | 'server'
+const candles = (path, params, priority) => getCandles(api, path, params, priority, { serverBase: LIVE_API_BASE });
+// Server push: marks of the open positions about once a second; a newer account on the server triggers an immediate /live.json read.
+const push = new ServerPush({ url: LIVE_STREAM_URL, staleMs: 25000,
+  onState: (state, why) => { diagNote(`服务器推送：${state}${why ? ' · ' + why : ''}`); updateStreamStatus(); renderStatusPill(); },
+  onMessage: body => {
+    const u = streamUpdate(body, (live?.positions || []).map(p => p.inst)); if (!u) return false;
+    const at = Date.now(); for (const [inst, value] of u.marks) marks.set(inst, { price: value, at });
+    if (u.liveAt && (!live || Date.parse(u.liveAt) > Date.parse(live.updated_at)) && at - pushReadAt > 10000) { pushReadAt = at; refreshLive(); }
+    if (u.marks.length) scheduleLiveRender();
+    return true;
+  } });
 
 function setError(key, message) {
   if (message) errors.set(key, message); else errors.delete(key);
@@ -156,7 +169,7 @@ function updateChartOverlays() {
 }
 function showCandles(bars, at) {
   renderAnalysis(bars);
-  $('candle-updated').textContent = `${bars.length} 根 · ${time(at)} 更新`;
+  $('candle-updated').textContent = `${bars.length} 根 · ${time(at)} 更新${candleSource === 'server' ? ' · 备用：服务器 K 线' : ''}`;
   if (!chartAvailable()) { $('chart-error').hidden = false; $('chart-error').textContent = '图表库加载失败，请检查 CDN 连接后刷新页面。'; return; }
   if (route !== 'coin') return;
   try {
@@ -171,12 +184,13 @@ async function refreshCandles(force = false) {
   if (candleBusy.has(key) || (!force && cached && Date.now() - cached.at < 60000)) return;
   candleBusy.add(key); lastCandleRequest = key;
   try {
-    const bars = parseCandles(await api.get('market/candles', { instId: id, bar, limit: 300 }, 8));
+    const got = await candles('market/candles', { instId: id, bar, limit: 300 }, 8), bars = parseCandles(got.data);
     if (!bars.length) throw new Error('接口未返回有效 K 线');
     const at = Date.now(); candleCache.set(key, { bars, at });
     if (route !== 'coin' || coin !== id || timeframe !== bar) return;
     if (version !== routeVersion && lastCandleRequest !== key) return;
-    setError('candles', null); showCandles(bars, at); updateStreamStatus();
+    if (got.source !== candleSource) diagNote(got.source === 'server' ? 'OKX K 线连不上，改用服务器 K 线' : 'K 线恢复 OKX 直连');
+    candleSource = got.source; setError('candles', null); showCandles(bars, at); updateStreamStatus();
   } catch (error) { if (route === 'coin' && coin === id && timeframe === bar) setError('candles', `K 线：${description(error)}`); }
   finally { candleBusy.delete(key); }
 }
@@ -276,12 +290,12 @@ async function openTradeChart(subject) {
   if (!chartAvailable()) return fallback('图表库没有加载');
   const req = candleRequest(subject);
   try {
-    const bars = parseCandles(await api.get(req.path, req.params, 9));
+    const got = await candles(req.path, req.params, 9), bars = parseCandles(got.data);
     if (token !== tradeChartToken || !dlg.open) return;
     if (!bars.length) return fallback('没有取到 K 线');
     tradeChart = createTradeChart(box);
     tradeChart.draw(bars, subject.levels.map(l => ({ ...l, color: levelColor(l.role) })), tradeMarkers(subject, bars));
-    $('trade-chart-note').textContent = `${req.bar.replace('utc', '')} K 线 · ${bars.length} 根 · OKX 公共行情（含未收盘 K 线）`;
+    $('trade-chart-note').textContent = `${req.bar.replace('utc', '')} K 线 · ${bars.length} 根 · ${got.source === 'server' ? '服务器备用（OKX 公共行情）' : 'OKX 公共行情'}（含未收盘 K 线）`;
   } catch (error) { fallback(`K 线读取失败（${description(error)}）`); }
 }
 function closeTradeChart() { tradeChartToken++; tradeChart?.destroy(); tradeChart = null; const dlg = $('trade-chart'); if (dlg.open) { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); } }
@@ -314,7 +328,7 @@ function renderPositions(v) {
 }
 function renderPinned(v, fresh) {
   if (!v) return;
-  setText($('pinned-source'), liveSource === 'api' ? 'OKX 实盘 · 服务器约每分钟刷新' : 'OKX 实盘 · 约每小时同步');
+  setText($('pinned-source'), push.live && live?.positions.length ? 'OKX 实盘 · 服务器实时推送' : liveSource === 'api' ? 'OKX 实盘 · 服务器约每分钟刷新' : 'OKX 实盘 · 约每小时同步');
   rollNumber($('pinned-equity'), v.equity, .01);
   const pct = $('pinned-pct'); pct.textContent = Number.isFinite(v.dayPct) ? `${signed(v.dayPct)}%` : '—'; pct.className = `pinned-pct ${tone(v.dayPct)}`;
   $('pinned-daily').textContent = `今日 ${Number.isFinite(v.day) ? `${signed(v.day)}（${signed(v.dayPct)}%）` : '—'}${fresh.stale ? ' · 离线' : ''}`;
@@ -327,7 +341,7 @@ function renderStatusPill() {
   label.textContent = failed ? `● ${list.length} 项读取失败` : live ? (fresh.stale ? '● 实盘数据离线' : `● 实盘 · ${fresh.minutes < 1 ? '刚刚' : fresh.minutes < 90 ? fresh.minutes + ' 分钟前' : Math.round(fresh.minutes / 60) + ' 小时前'}更新`) : '● 等待更新';
   pill.classList.toggle('stale', fresh.stale && !failed && Boolean(live));
   pill.classList.toggle('error', failed);
-  const lines = [live ? fresh.text : '正在读取实盘快照…', sourceText(liveSource, liveAccount)];
+  const lines = [live ? fresh.text : '正在读取实盘快照…', sourceText(liveSource, liveAccount, push.live && Boolean(live?.positions.length))];
   if (quoteSource === 'server') lines.push('OKX 公共行情暂时连不上，价格与浮盈改用服务器数据（约每分钟更新）。');
   if (failed) lines.push('读取失败：' + list.join('；') + '。已有数据保留，自动重试。');
   setHTML(body, lines.map(s => `<p>${escape(s)}</p>`).join(''));
@@ -352,7 +366,7 @@ function updateStreamStatus() {
   const quotesLive = quoteStream?.state === '实时' && Date.now() - quoteStream.lastData < 45000, recent = priceAt && Date.now() - priceAt < 24000;
   // Fallbacks count as connected: the server's tickers, or (home page) the server's account read with OKX marks and PnL.
   const server = (recent && quoteSource === 'server') || (liveSource === 'api' && live && Date.now() - Date.parse(live.updated_at) < API_FRESH);
-  const badge = connectionBadge({ ws: quotesLive, rest: recent && quoteSource === 'okx', server });
+  const badge = connectionBadge({ push: push.live && Boolean(live?.positions.length), ws: quotesLive, rest: recent && quoteSource === 'okx', server });
   setText($('connection-text'), badge.text);
   $('connection-dot').className = 'dot ' + (badge.ok ? 'live' : 'error');
   document.documentElement.classList.toggle('has-live-state', badge.ok);
@@ -365,6 +379,7 @@ function scheduleLiveRender() {
 }
 function syncStreams() {
   if (document.hidden) return;
+  push.start();
   const symbols = [...new Set([...(route === 'coin' ? [coin] : []), ...(live?.positions || []).map(p => p.inst)])].filter(Boolean).sort();
   const key = symbols.join(',');
   if (key !== quoteStreamKey) {
@@ -410,7 +425,8 @@ function diagText() {
   return [`版本：${BUILD}`, `时间：${new Date().toISOString()}`, `页面可见：${!document.hidden} · 路由：${route}`, `浏览器：${navigator.userAgent}`,
     `行情 REST：最近成功 ${ago(priceAt)} · 合约数 ${tickers.length} · 来源 ${quoteSource === 'server' ? '服务器备用' : api.base || '连不上'}`,
     `实盘账户来源：${liveSource === 'api' ? '服务器只读接口' : liveSource === 'github' ? 'GitHub live-data' : '未读取'}`, `当前报错：${[...errors.values()].join(' / ') || '无'}`,
-    `标记价 WS（${quoteStreamKey || '无订阅'}）：${ws(quoteStream)}`, `标记价：${marksText}`,
+    `标记价 WS（${quoteStreamKey || '无订阅'}）：${ws(quoteStream)}`, `服务器推送：${push.state} · 最近数据 ${ago(push.lastData)} · 连续失败 ${push.failures}`, `标记价：${marksText}`,
+    `K 线来源：${candleSource === 'server' ? '服务器备用' : 'OKX'}`,
     `实盘快照：${live ? live.updated_at + ' · 持仓 ' + live.positions.length : '未读取'}`, '最近事件：', ...(diagLog.length ? diagLog : ['（无）'])].join('\n');
 }
 function openDiag() { $('diag-body').textContent = diagText(); $('diag').hidden = false; $('diag-close').focus(); }
@@ -419,7 +435,7 @@ $('diag-close').addEventListener('click', () => { $('diag').hidden = true; $('co
 $('diag').addEventListener('click', e => { if (e.target.id === 'diag') $('diag').hidden = true; });
 $('diag-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(diagText() + '\n' + $('diag-test-out').textContent); $('diag-copy').textContent = '已复制'; } catch { $('diag-copy').textContent = '复制失败，请长按选取'; } });
 $('diag-reconnect').addEventListener('click', () => {
-  quoteStream?.stop(); candleStream?.stop(); quoteStream = candleStream = null; quoteStreamKey = candleStreamKey = '';
+  quoteStream?.stop(); candleStream?.stop(); push.stop(); quoteStream = candleStream = null; quoteStreamKey = candleStreamKey = '';
   diagNote('用户主动重新连接行情'); syncStreams(); refreshPrices(); refreshLive();
   $('diag-body').textContent = diagText();
 });
@@ -570,7 +586,7 @@ $('reset-chart').addEventListener('click', () => candleCharts?.reset());
 window.addEventListener('hashchange', navigate);
 window.addEventListener('load', () => { if (route === 'coin') { const cached = candleCache.get(coin + '/' + timeframe); if (cached) showCandles(cached.bars, cached.at); } });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { quoteStream?.stop(); candleStream?.stop(); quoteStream = candleStream = null; quoteStreamKey = candleStreamKey = ''; }
+  if (document.hidden) { quoteStream?.stop(); candleStream?.stop(); push.stop(); quoteStream = candleStream = null; quoteStreamKey = candleStreamKey = ''; }
   else { syncStreams(); refreshPrices(); refreshLive(); if (route === 'coin') refreshCandles(true); }
 });
 

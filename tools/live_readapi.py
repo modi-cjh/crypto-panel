@@ -12,11 +12,21 @@ Runs only on the live server (the API key is bound to its IP), as the unprivileg
   * The result is cached in memory. HTTP requests only ever return the cached bytes (OKX is never called per
     request), so the request rate cannot reach OKX.
   * Public market tickers (no key) are cached the same way for the dashboard's market fallback (/tickers.json).
+  * Public candles (/candles, no key) for the coin page / position chart when the browser cannot reach OKX: strict
+    parameter whitelist, one OKX public request per instId+bar+limit+after at most every CANDLE_TTL seconds.
+  * Public mark prices of the open positions pushed as Server-Sent Events (/stream): while at least one browser is
+    connected, a background thread polls the OKX public mark-price list (one request every MARK_POLL seconds, no key,
+    whatever the number of clients) and every client gets the latest prices once a second. The account itself
+    (equity base, positions, avgPx) still comes only from the minute refresh above.
 
-Routes (GET / HEAD only; every other method answers 405, every other path 404):
-  /live.json     {"snapshot": ..., "fills": ..., "trades": ..., "api": {...}}   same fields as live-data/*.json
-  /tickers.json  USDT perpetual tickers (instId, last, open24h, volCcy24h, ts) from the OKX public endpoint
-  /healthz       {"ok": true/false, "age_s": ...}
+Routes (every other method answers 405, every other path 404):
+  /live.json     GET/HEAD {"snapshot": ..., "fills": ..., "trades": ..., "api": {...}}   same fields as live-data/*.json
+  /tickers.json  GET/HEAD USDT perpetual tickers (instId, last, open24h, volCcy24h, ts) from the OKX public endpoint
+  /healthz       GET/HEAD {"ok": true/false, "age_s": ...}
+  /candles       GET/HEAD ?instId=BTC-USDT-SWAP&bar=1H&limit=300[&after=ms]  -> {"code":"0","msg":"","data":[[ts,o,h,l,c,vol,...]]}
+                 (same shape as OKX market/candles; `after` reads market/history-candles, at most 100 rows); bad parameters 400
+  /stream        GET only, text/event-stream: `data: {"ts":ms,"marks":{"SOL-USDT-SWAP":70.1},"live_at":"..."}` about once a
+                 second (repeated every PING_EVERY seconds when unchanged); at most MAX_STREAMS connections (MAX_STREAMS_PER_IP per address), else 503
 
 Credentials come from the environment (systemd EnvironmentFile, root-owned 0600); they are never printed, logged,
 or written anywhere, and a document containing them (or anything shaped like a key) is refused by the secret check.
@@ -24,6 +34,9 @@ or written anywhere, and a document containing them (or anything shaped like a k
 import argparse
 import json
 import os
+import re
+import select
+import socket
 import subprocess
 import sys
 import threading
@@ -32,6 +45,7 @@ from collections import deque
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import live_sync as ls  # noqa: E402  (whitelist + secret check, shared with the hourly live-data sync)
@@ -46,6 +60,18 @@ RATE_PER_MIN, RATE_BURST = 30, 15   # per client IP (Caddy passes the client add
 MAX_CLIENTS = 5000
 PUBLIC_BASE = 'https://www.okx.com'
 ROUTES = ('/live.json', '/tickers.json', '/healthz')
+CANDLE_BARS = frozenset(('1m', '3m', '5m', '15m', '30m', '1H', '2H', '4H', '6H', '12H', '1D', '2D', '3D', '1W', '1M',
+                         '6Hutc', '12Hutc', '1Dutc', '2Dutc', '3Dutc', '1Wutc', '1Mutc'))
+CANDLE_MAX, CANDLE_HISTORY_MAX, CANDLE_DEFAULT = 300, 100, 300
+CANDLE_TTL = 4               # seconds: the same instId+bar+limit+after reaches OKX at most once per TTL
+CANDLE_CACHE_MAX = 256
+DIGITS_RE = re.compile(r'^[0-9]{1,13}$')
+NUM_RE = re.compile(r'^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$')
+MARK_POLL = 1.0              # seconds between OKX public mark-price reads while a browser is connected
+PUSH_EVERY = 1.0             # seconds between pushes to each stream client
+PING_EVERY = 15              # an unchanged event is repeated this often (keep-alive the browser can see)
+STREAM_MAX_AGE = 1800        # a stream is closed after 30 minutes; EventSource reconnects by itself
+MAX_STREAMS, MAX_STREAMS_PER_IP = 50, 4
 
 
 def iso(ts=None):
@@ -169,6 +195,51 @@ def build_tickers(resp, now=None):
     return {'schema_version': 1, 'source': 'okx-public', 'updated_at': iso(now), 'tickers': rows}
 
 
+def candle_query(params):
+    """(instId, bar, limit, after) from the query string, or ValueError. Only whitelisted values ever reach OKX."""
+    if set(params) - {'instId', 'bar', 'limit', 'after', 't'}:
+        raise ValueError('unknown parameter')
+    if any(len(v) != 1 for v in params.values()):
+        raise ValueError('repeated parameter')
+    one = {k: v[0] for k, v in params.items()}
+    inst = ls.inst(one.get('instId'))
+    if not inst:
+        raise ValueError('instId')
+    bar = one.get('bar', '1H')
+    if bar not in CANDLE_BARS:
+        raise ValueError('bar')
+    after = one.get('after', '')
+    if after and not DIGITS_RE.match(after):
+        raise ValueError('after')
+    limit = one.get('limit', str(CANDLE_DEFAULT))
+    if not DIGITS_RE.match(limit) or not 1 <= int(limit) <= CANDLE_MAX:
+        raise ValueError('limit')
+    limit = min(int(limit), CANDLE_HISTORY_MAX) if after else int(limit)
+    return inst, bar, limit, after
+
+
+def build_candles(resp):
+    """OKX candle rows kept only when every field is a plain number string (same shape as market/candles)."""
+    if not ok(resp):
+        raise AccountError('candles')
+    rows = [[str(x) for x in r[:9]] for r in resp['data']
+            if isinstance(r, list) and len(r) >= 5 and all(isinstance(x, str) and NUM_RE.match(x) for x in r[:9])]
+    return {'code': '0', 'msg': '', 'data': rows}
+
+
+def build_marks(resp, insts):
+    """instId -> mark price for the wanted instruments, from the OKX public mark-price list."""
+    if not ok(resp):
+        raise AccountError('mark-price')
+    wanted, out = set(insts), {}
+    for r in resp['data']:
+        inst = r.get('instId') if isinstance(r, dict) else None
+        price = ls.number(r.get('markPx')) if inst in wanted else None
+        if price and price > 0:
+            out[inst] = price
+    return out
+
+
 # ---- cache -----------------------------------------------------------------------------------------
 class Feed:
     """Builds and holds the served documents. `client` and `public` are injectable for tests."""
@@ -182,6 +253,10 @@ class Feed:
         self.ct_vals = {}
         self.ct_at = 0.0
         self.last_error = None
+        self.insts = ()                              # instIds of the served snapshot's positions (what /stream pushes)
+        self.live_updated = None                     # snapshot updated_at, pushed so browsers re-read /live.json at once
+        self.candles = {}                            # key -> (built_at, bytes)
+        self.candle_lock = threading.Lock()          # one OKX candle request at a time
 
     def contract_values(self, now):
         """ctVal per swap from the public instruments list, refreshed hourly (needed for live PnL in the browser)."""
@@ -230,6 +305,8 @@ class Feed:
             return False
         with self.lock:
             self.live, self.live_at = body, now
+            self.insts = tuple(sorted({p['inst'] for p in snapshot.get('positions') or [] if ls.inst(p.get('inst'))}))
+            self.live_updated = snapshot.get('updated_at')
         if source == 'okx':
             self.last_error = None
         return True
@@ -243,6 +320,28 @@ class Feed:
         with self.lock:
             self.tickers, self.tickers_at = body, now
         return True
+
+    def get_candles(self, params):
+        """Validated candle query -> served bytes (cached CANDLE_TTL seconds). ValueError: bad parameters; AccountError: OKX."""
+        key = candle_query(params)
+        now = self.clock()
+        with self.candle_lock:
+            hit = self.candles.get(key)
+            if hit and 0 <= now - hit[0] < CANDLE_TTL:
+                return hit[1]
+            inst, bar, limit, after = key
+            path = (f'/api/v5/market/history-candles?instId={inst}&bar={bar}&limit={limit}&after={after}' if after else
+                    f'/api/v5/market/candles?instId={inst}&bar={bar}&limit={limit}')
+            body = ls.checked(build_candles(self.public(path, timeout=6)), 'candles').encode()
+            if len(self.candles) >= CANDLE_CACHE_MAX:
+                for k in sorted(self.candles, key=lambda k: self.candles[k][0])[:CANDLE_CACHE_MAX // 4]:
+                    del self.candles[k]
+            self.candles[key] = (now, body)
+            return body
+
+    def stream_targets(self):
+        with self.lock:
+            return self.insts, self.live_updated
 
     def get(self, path):
         with self.lock:
@@ -262,6 +361,71 @@ class Feed:
                 last = self.last_error
                 print(f'状态：{last or "正常"}', flush=True)
             stop.wait(REFRESH)
+
+
+# ---- push (Server-Sent Events) ---------------------------------------------------------------------
+class Hub:
+    """Latest public mark prices for the positions, shared by every /stream client.
+
+    `poll()` runs in its own thread: it reads OKX only while someone is connected and there are positions to price,
+    one public request per MARK_POLL seconds in total (never per client)."""
+    def __init__(self, feed, public=public_get, clock=time.time, max_streams=MAX_STREAMS, per_ip=MAX_STREAMS_PER_IP):
+        self.feed, self.public, self.clock = feed, public, clock
+        self.max_streams, self.per_ip = max_streams, per_ip
+        self.lock = threading.Lock()
+        self.clients = {}                       # address -> open streams
+        self.marks, self.marks_at = {}, 0.0
+        self.polls = 0
+
+    @property
+    def count(self):
+        with self.lock:
+            return sum(self.clients.values())
+
+    def join(self, who):
+        with self.lock:
+            if sum(self.clients.values()) >= self.max_streams or self.clients.get(who, 0) >= self.per_ip:
+                return False
+            self.clients[who] = self.clients.get(who, 0) + 1
+            return True
+
+    def leave(self, who):
+        with self.lock:
+            n = self.clients.get(who, 0) - 1
+            if n > 0:
+                self.clients[who] = n
+            else:
+                self.clients.pop(who, None)
+
+    def poll_once(self):
+        """One public mark-price read when it is needed; True when prices were updated."""
+        insts, _ = self.feed.stream_targets()
+        if not insts or not self.count:
+            return False
+        marks = build_marks(self.public('/api/v5/public/mark-price?instType=SWAP', timeout=5), insts)
+        self.polls += 1
+        with self.lock:
+            self.marks, self.marks_at = marks, self.clock()
+        return True
+
+    def poll(self, stop):
+        failures = 0
+        while not stop.is_set():
+            try:
+                self.poll_once()
+                failures = 0
+            except Exception:                   # noqa: BLE001  (network / OKX error: back off, keep the last prices)
+                failures += 1
+            stop.wait(MARK_POLL if not failures else min(30, 2 ** failures))
+
+    def message(self):
+        """The event pushed to every client: prices of the snapshot's current positions only (fresh ones)."""
+        insts, live_at = self.feed.stream_targets()
+        with self.lock:
+            fresh = self.clock() - self.marks_at < 10
+            marks = {k: v for k, v in self.marks.items() if k in insts} if fresh else {}
+            ts = int(self.marks_at * 1000) if fresh else None
+        return json.dumps({'ts': ts, 'marks': marks, 'live_at': live_at}, separators=(',', ':'))
 
 
 # ---- HTTP ------------------------------------------------------------------------------------------
@@ -285,7 +449,7 @@ class RateLimit:
             return True
 
 
-def make_handler(feed, limiter):
+def make_handler(feed, limiter, hub=None, push_every=PUSH_EVERY, max_age=STREAM_MAX_AGE):
     class Handler(BaseHTTPRequestHandler):
         server_version, sys_version = 'modi-readapi', ''
         protocol_version = 'HTTP/1.1'
@@ -312,15 +476,68 @@ def make_handler(feed, limiter):
                 self.wfile.write(body)
 
         def serve(self, head=False):
-            path = self.path.split('?', 1)[0]
-            if path not in ROUTES:
+            path, _, query = self.path.partition('?')
+            if path == '/stream' and hub is not None:
+                return self.refuse() if head else self.stream()
+            if path not in ROUTES and path != '/candles':
                 return self.send(404, b'{"error":"not found"}', head=head)
             if not limiter.allow(self.client()):
                 return self.send(429, b'{"error":"too many requests"}', head=head, extra=(('Retry-After', '10'),))
+            if path == '/candles':
+                return self.candles(query, head)
             body = feed.get(path)
             if body is None:
                 return self.send(503, b'{"error":"warming up"}', head=head, extra=(('Retry-After', '30'),))
             self.send(200, body, head=head)
+
+        def candles(self, query, head):
+            try:
+                params = parse_qs(query, keep_blank_values=True, strict_parsing=bool(query), max_num_fields=8)
+                body = feed.get_candles(params)
+            except ValueError:
+                return self.send(400, b'{"error":"bad parameters"}', head=head)
+            except Exception:                   # noqa: BLE001  (OKX unreachable / error answer: never echoed)
+                return self.send(502, b'{"error":"upstream unavailable"}', head=head, extra=(('Retry-After', '5'),))
+            self.send(200, body, head=head)
+
+        def stream(self):
+            who = self.client()
+            self.close_connection = True               # a stream (or its refusal) always ends the connection
+            if not limiter.allow(who):
+                return self.send(429, b'{"error":"too many requests"}', extra=(('Retry-After', '10'),))
+            if not hub.join(who):
+                return self.send(503, b'{"error":"too many streams"}', extra=(('Retry-After', '30'),))
+            try:
+                self.send_response(200)
+                for k, v in (('Content-Type', 'text/event-stream; charset=utf-8'), ('Cache-Control', 'no-store, no-transform'),
+                             ('Access-Control-Allow-Origin', ALLOWED_ORIGIN), ('Vary', 'Origin'), ('Connection', 'close'),
+                             ('X-Accel-Buffering', 'no'), ('X-Content-Type-Options', 'nosniff')):
+                    self.send_header(k, v)
+                self.end_headers()
+                self.wfile.write(b'retry: 3000\n: modi live stream\n\n')
+                self.wfile.flush()
+                started = last_ping = time.monotonic()
+                last = None
+                while time.monotonic() - started < max_age and not self.gone():
+                    msg = hub.message()
+                    now = time.monotonic()
+                    if msg != last or now - last_ping >= PING_EVERY:   # unchanged prices are repeated as the keep-alive
+                        self.wfile.write(f'data: {msg}\n\n'.encode())
+                        last, last_ping = msg, now
+                    self.wfile.flush()
+                    time.sleep(push_every)
+            except (OSError, ValueError):       # client went away (broken pipe / reset): just clean up
+                pass
+            finally:
+                hub.leave(who)
+
+        def gone(self):
+            """The client closed its side (readable with EOF, or an error): stop pushing and free the slot."""
+            try:
+                readable, _, _ = select.select([self.connection], [], [], 0)
+                return bool(readable) and not self.connection.recv(1, socket.MSG_PEEK)
+            except (OSError, ValueError):
+                return True
 
         def do_GET(self):
             self.serve()
@@ -345,11 +562,13 @@ def main(argv=None):
     if args.listen not in ('127.0.0.1', '::1', 'localhost'):
         raise SystemExit('只监听本机回环地址（对外由 Caddy 提供 HTTPS）')
     feed = Feed(args.data, make_client())
+    hub = Hub(feed)
     stop = threading.Event()
     threading.Thread(target=feed.loop, args=(stop,), daemon=True).start()
-    server = ThreadingHTTPServer((args.listen, args.port), make_handler(feed, RateLimit()))
+    threading.Thread(target=hub.poll, args=(stop,), daemon=True).start()
+    server = ThreadingHTTPServer((args.listen, args.port), make_handler(feed, RateLimit(), hub))
     server.daemon_threads = True
-    print(f'live_readapi 已启动：{args.listen}:{args.port} · 每 {REFRESH} 秒只读刷新 · 只提供 GET', flush=True)
+    print(f'live_readapi 已启动：{args.listen}:{args.port} · 每 {REFRESH} 秒只读刷新 · 只提供 GET（含 /candles、/stream 推送）', flush=True)
     try:
         server.serve_forever()
     finally:

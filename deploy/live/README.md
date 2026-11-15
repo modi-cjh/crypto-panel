@@ -126,6 +126,8 @@ sudo systemctl restart caddy
 sudo ufw allow 443/tcp
 ```
 
-升级：`sudo git -C /opt/modi-okx-readapi pull --ff-only && sudo systemctl restart modi-okx-readapi`。
+另有两条公共行情路由（不碰私有 key）：`/candles`（K 线备用源，参数白名单，同键 4 秒缓存）与 `/stream`（SSE 实时推送持仓标记价，约每秒一条；有人连着才每秒读一次 OKX 公共标记价；最多 50 个连接）。Caddy 对 `/stream` 用 `flush_interval -1` 不缓冲。
+
+升级：`sudo git -C /opt/modi-okx-readapi pull --ff-only && sudo systemctl restart modi-okx-readapi`（Caddyfile 有变化时再 `sudo install -m 644 /opt/modi-okx-readapi/deploy/live/Caddyfile.readapi /etc/caddy/Caddyfile && sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy`）。
 停用：`sudo systemctl disable --now modi-okx-readapi caddy && sudo ufw delete allow 443/tcp`（看板自动退回 GitHub live-data）。
 排查：`journalctl -u modi-okx-readapi -n 20 --no-pager`（只有“状态：正常 / OKX 读取失败”这类短句，没有数据和密钥）。
