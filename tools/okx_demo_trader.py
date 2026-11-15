@@ -75,7 +75,7 @@ MAJOR_FACTOR = 2.0   # majors (execution.MAJORS) risk twice as much (execution.A
 PRICE_TOLERANCE = .01             # demo mode: no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
 CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
 SAME_SIDE_CAP = .05
-MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 10 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
+MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 15 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
 OPEN_WINDOW = 5 * 3600_000        # paper entries at most this old are mirrored as they are (runs are 4 h apart, plus delay)
@@ -98,7 +98,7 @@ def configure_evolved(universe=None):
     # Each order risks its strategy's own risk gene (2–10 %, capped at 10 % after crowding and the major-coin factor)
     # and its leverage gene (1–20×, clamped to that coin's OKX max). An order is skipped if its stop would leave
     # account equity at or below total maintenance margin (0.5 % majors / 2.5 % others).
-    # No total-risk cap per direction (only at most MAX_SAME_SIDE = 10 open per side); a 25 % daily loss on the whole account closes every
+    # No total-risk cap per direction (only at most MAX_SAME_SIDE = 15 open per side); a 25 % daily loss on the whole account closes every
     # position until tomorrow. The leader uses the same gene ranges; the title only decides signal priority.
     INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], None, EVOLVED_DAILY_HALT
     if isinstance(universe, list) and universe and len(set(universe)) == len(universe) and all(

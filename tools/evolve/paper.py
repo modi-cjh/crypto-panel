@@ -5,7 +5,7 @@ risk gene, 2–10 %, then major-coin doubling and crowding, capped at 10 %). Eve
 own risk and leverage genes (leverage 1–20×, clamped to that coin's OKX max). Margin is
 shared and cross (全仓): liquidation is when account equity falls to or below total maintenance margin, and then every position is closed. The same-side cap (20 %) and the
 daily halt (10 %) still apply to everyone, including the leader, and so does the same-side count (at most
-ACCOUNT_RULES['max_same_side'] = 6 open positions on one side; only for entries after account['side_cap_from'], the
+ACCOUNT_RULES['max_same_side'] = 15 open positions on one side; only for entries after account['side_cap_from'], the
 first run that had it, so positions already open are not replayed away). The OKX demo mirror (tools/okx_demo_trader.py) follows the same 2–10 % / 1–20× genes on cross margin,
 clamped to each coin's OKX max leverage (20× if the public spec is missing). Live trading is decided separately.
 Each run replays the account from its start bar with the full seat history, so the result is exactly what the engine
