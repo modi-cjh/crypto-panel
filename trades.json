@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-15T15:54:09Z",
+ "updated_at": "2026-11-15T16:50:01Z",
  "trades": [],
  "stats": {
   "overall": {
@@ -16,8 +16,10 @@
   },
   "by_strategy": [],
   "equity_drawdown": {
-   "usdt": 0.0,
-   "pct": 0.0
+   "usdt": 0.22,
+   "pct": 0.16995,
+   "peak_at": "2026-11-15T15:50:04Z",
+   "trough_at": "2026-11-15T16:50:01Z"
   }
  }
 }
