@@ -1,0 +1,93 @@
+{
+ "schema_version": 1,
+ "source": "okx-live",
+ "trading_mode": "live",
+ "updated_at": "2026-11-15T15:19:08Z",
+ "equity": 129.05204,
+ "available": 111.94674,
+ "day_start": 126.670001,
+ "day_pnl": 2.382039,
+ "day_pnl_pct": 1.88051,
+ "start_equity": 126.66404,
+ "total_pnl": 2.388,
+ "paused": false,
+ "halted": false,
+ "dry_run": false,
+ "closed_trades": 0,
+ "positions": [
+  {
+   "inst": "IMX-USDT-SWAP",
+   "side": "short",
+   "contracts": 200.0,
+   "lever": 10.0,
+   "mgnMode": "cross",
+   "avgPx": 0.0995,
+   "markPx": 0.09896,
+   "upl": 0.108,
+   "uplRatio": 0.0542714,
+   "margin": 1.9792,
+   "ctVal": 1.0,
+   "ours": true,
+   "stop": 0.1300398,
+   "target": 0.05510678,
+   "strategy": "evolved",
+   "champion": "s15653",
+   "leader": false,
+   "opened_at": "2026-11-15T14:00:18Z"
+  },
+  {
+   "inst": "AVAX-USDT-SWAP",
+   "side": "short",
+   "contracts": 5.4,
+   "lever": 10.0,
+   "mgnMode": "cross",
+   "avgPx": 7.256,
+   "markPx": 7.167,
+   "upl": 0.4806,
+   "uplRatio": 0.122657,
+   "margin": 3.87018,
+   "ctVal": 1.0,
+   "ours": true,
+   "stop": 8.375175,
+   "target": 4.248441,
+   "strategy": "evolved",
+   "champion": "s15653",
+   "leader": false,
+   "opened_at": "2026-11-15T14:00:18Z"
+  },
+  {
+   "inst": "SOL-USDT-SWAP",
+   "side": "short",
+   "contracts": 1.58,
+   "lever": 10.0,
+   "mgnMode": "cross",
+   "avgPx": 72.43,
+   "markPx": 71.24,
+   "upl": 1.8802,
+   "uplRatio": 0.164297,
+   "margin": 11.25592,
+   "ctVal": 1.0,
+   "ours": true,
+   "stop": 80.18402,
+   "target": 48.08685,
+   "strategy": "evolved",
+   "champion": "s15653",
+   "leader": false,
+   "opened_at": "2026-11-15T14:00:18Z"
+  }
+ ],
+ "history": [
+  [
+   1794751218461,
+   126.66
+  ],
+  [
+   1794754204317,
+   128.96
+  ],
+  [
+   1794755948096,
+   129.05
+  ]
+ ]
+}

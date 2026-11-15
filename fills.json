@@ -1,0 +1,221 @@
+{
+ "schema_version": 1,
+ "source": "okx-live",
+ "updated_at": "2026-11-15T15:19:08Z",
+ "fills": [
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "open",
+   "inst": "IMX-USDT-SWAP",
+   "side": "short",
+   "contracts": 200.0,
+   "price": 0.09956,
+   "stop": 0.13004,
+   "target": 0.05511,
+   "leverage": 10.0,
+   "strategy": "evolved",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "open",
+   "inst": "AVAX-USDT-SWAP",
+   "side": "short",
+   "contracts": 5.4,
+   "price": 7.258,
+   "stop": 8.375,
+   "target": 4.248,
+   "leverage": 10.0,
+   "strategy": "evolved",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "open",
+   "inst": "SOL-USDT-SWAP",
+   "side": "short",
+   "contracts": 1.58,
+   "price": 72.46,
+   "stop": 80.18,
+   "target": 48.09,
+   "leverage": 10.0,
+   "strategy": "evolved",
+   "dry_run": false
+  }
+ ],
+ "events": [
+  {
+   "ts": "2026-11-15T14:50:04Z",
+   "action": "skip",
+   "inst": "GRASS-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:50:04Z",
+   "action": "skip",
+   "inst": "CRV-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:50:04Z",
+   "action": "skip",
+   "inst": "LTC-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:50:04Z",
+   "action": "skip",
+   "inst": "ADA-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:50:04Z",
+   "action": "skip",
+   "inst": "NEAR-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:50:04Z",
+   "action": "skip",
+   "inst": "BNB-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:01:15Z",
+   "action": "skip",
+   "inst": "GRASS-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:01:15Z",
+   "action": "skip",
+   "inst": "CRV-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:01:15Z",
+   "action": "skip",
+   "inst": "LTC-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:01:15Z",
+   "action": "skip",
+   "inst": "ADA-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:01:15Z",
+   "action": "skip",
+   "inst": "NEAR-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:01:15Z",
+   "action": "skip",
+   "inst": "BNB-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "LPT-USDT-SWAP",
+   "reason": "paper_entry_too_old",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "GRASS-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "H-USDT-SWAP",
+   "reason": "paper_entry_too_old",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "CRV-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "DOGE-USDT-SWAP",
+   "reason": "paper_entry_too_old",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "BTC-USDT-SWAP",
+   "reason": "paper_entry_too_old",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "LTC-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "ADA-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "NEAR-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "ETHFI-USDT-SWAP",
+   "reason": "paper_entry_too_old",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "INJ-USDT-SWAP",
+   "reason": "paper_entry_too_old",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "skip",
+   "inst": "BNB-USDT-SWAP",
+   "reason": "same_side_risk",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-15T14:00:18Z",
+   "action": "resume",
+   "dry_run": false
+  }
+ ]
+}
