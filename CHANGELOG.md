@@ -583,6 +583,12 @@
 - 为什么：用户要求文档 = 代码；之前的文档仍是旧值，会让接手的助手误判实盘风险。
 - 不变：没有改任何交易代码或参数（只改文档与一条显示文案）。
 
+### 实盘异常告警检查（盒子端，接每小时 live_sync）
+- 做了什么：新增 `tools/live_alert.py`（只用标准库，复用 `live_sync.read_server` 的 ssh 只读路径，服务器上不写任何东西）：检查 `stale`（updated_at 超过 2 小时）、`halted`、`paused`、`day_loss`（当日亏损超过 10%）、`stop_streak`（最近连续 3 笔平仓都是止损 / 强平，合并 `summary.recent_actions` 补上的 outcome）、`api_error`（过去 90 分钟内的 `error` 动作）、`read_error`（读不到服务器）；输出 JSON（`ok` / `notify` / `alerts` / `new_alerts` / `resolved` / `checked_at`），退出码 0 正常、1 有新异常需通知、2 异常已报过。状态文件 `/workspace/modi/.live_alert_state.json` 按指纹去重，持续存在的异常只报一次。脚本本身不发消息，由每小时「OKX 实盘看板同步」定时在同步后调用，`notify: true` 时由 Grok Bot 转发。README 写明调用方式与输出格式。
+- 为什么：用户要求实盘出现异常（停跑、熔断、大亏、连续止损、下单报错）时主动通知，正常时不打扰。
+- 不变：交易代码、服务器、凭据、`OKX_DRY_RUN`、`live-data` / `paper-data` 分支。
+- 测试：新增 `tests/test_live_alert.py`（每个条件一个 mock 样本 + 边界、正常样本无告警、outcome 由 summary 补全、报错详情疑似密钥时隐藏、去重：持续不重复 / 新条件 / 恢复后再出现 / 新报错事件 / 状态文件损坏、CLI 退出码、ssh 失败转为 read_error）。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

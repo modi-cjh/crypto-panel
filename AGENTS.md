@@ -53,6 +53,7 @@ manifest.webmanifest, assets/icons/   手机“添加到主屏幕”App 配置
 
 ```
 tools/live_sync.py         本地机器：ssh 只读服务器 okx_live/{summary,state}.json + actions.jsonl → 白名单 → live-data 分支 {snapshot,fills}.json
+tools/live_alert.py        本地机器：live_sync 之后只读检查实盘异常（停跑 / 熔断 / 暂停 / 日亏 >10% / 连续 3 止损 / 报错）→ stdout JSON + 退出码（0 正常 / 1 需通知 / 2 已报过），不发消息
 assets/live.mjs            实盘看板纯逻辑：校验、实时浮盈、新鲜度 / 状态、持仓 / 成交渲染、机器人状态
 ```
 

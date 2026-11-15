@@ -23,7 +23,35 @@
   参数：`--host`、`--key`、`--remote-dir`、`--remote-user`、`--branch`、`--repo`、`--workdir`（数据分支专用克隆，默认 `~/.cache/modi-live-sync/repo`，不碰其它 worktree）。退出码：0 已推送或无变化，1 读取 / 数据错误，2 密钥检查未通过，3 git 错误。建议每小时定时运行一次（服务器上的交易程序也是每小时一次）。
 - **安全**：GitHub 凭据只在本地机器；服务器上不放任何 GitHub 凭据，也不需要。输出只含白名单字段（不含订单号、clOrdId、执行档案等），写出前对最终 JSON 文本检查：含 `OKX_API_KEY` / `OKX_API_SECRET` / `OKX_API_PASSPHRASE` 变量名或其值、UUID、长度 ≥ 16 的连续 base64 / hex 串（纯数字时间戳与小写下划线代码词除外）即拒绝发布并以退出码 2 结束；错误信息只给简短原因，不打印服务器文件内容。数据不是 `trading_mode: live` 时拒绝发布。
 - **看板显示**：权益、日内盈亏（额 + %）、累计盈亏、可用、运行状态（实盘运行中 / 空跑 / 已暂停 / 日亏停手 / 数据离线）、每笔持仓（币种、方向、张数、杠杆、全仓、均价、标记价、浮盈、止损、止盈、保证金）、最近成交与运行记录、资金曲线、每日收益；时间按金边时间（UTC+7）；超过 2.5 小时没有新快照显示“可能离线”。持仓浮盈在行情连上时按 OKX 公共标记价（`wss://ws.okx.com`）实时估算。市场行情页和单币 K 线页保留；“策略进化”页（`#/evolve`）已在 PR #97 恢复（进化引擎在 GitHub Actions 后台运行，为实盘提供信号；不恢复模拟盘账户）。
-- 验收：`npm test`、`python3 -m unittest discover -s tests -p 'test_*.py'`（`tests/test_live_sync.py`）、`PANEL_URL=http://127.0.0.1:8008/ node tests/live_browser.cjs`。
+- **异常告警检查** `tools/live_alert.py`（只用标准库，只读，自己不发任何消息）：每小时 `live_sync.py` 之后运行，用同样的 ssh 只读路径读 `summary.json` 与 `actions.jsonl` 末尾，检查以下条件，任一命中即告警：
+
+  | code | 条件 |
+  |---|---|
+  | `stale` | `summary.updated_at` 距现在超过 2 小时（服务停了或定时没跑），或缺少该字段 |
+  | `halted` | `halted == true`（含日亏 25% 熔断） |
+  | `paused` | `paused == true` |
+  | `day_loss` | `(equity - day_start) / day_start < -10%` |
+  | `stop_streak` | 最近连续 3 笔平仓（`close` / `closed_on_exchange`，不含 dry-run）都是止损：`outcome` 为 `stop` / `liquidation`，或 `reason` 含 `stop`；`outcome` 可能只在 `summary.recent_actions` 里补上，会自动合并；结果未知的平仓不计入也不打断 |
+  | `api_error` | 过去 90 分钟内有 `action: error`（下单 / 平仓 / 设杠杆 / 补止损失败），消息含步骤、币种与交易所错误摘要（先过密钥检查） |
+  | `read_error` | 服务器读不到（ssh 失败 / 超时 / JSON 损坏） |
+
+  调用与输出（stdout 一个 JSON 对象，退出码区分是否需要通知）：
+
+  ```bash
+  python3 tools/live_sync.py; python3 tools/live_alert.py     # 每小时定时：同步后检查
+  python3 tools/live_alert.py --summary s.json --actions a.jsonl --state '' --now 2026-11-15T16:00:00Z   # 本地演练
+  ```
+
+  ```json
+  {"ok": false, "notify": true, "checked_at": "2026-11-15T16:00:00Z",
+   "alerts":     [{"code": "halted", "msg": "实盘已熔断停手（halted=true…）", "fingerprint": "halted:2026-11-15"}],
+   "new_alerts": [{"code": "halted", "msg": "…", "fingerprint": "halted:2026-11-15"}],
+   "resolved":   []}
+  ```
+
+  退出码：**0** 正常（`ok: true`，不发消息）；**1** 有异常且有新的（`notify: true`，把 `new_alerts` 的 `msg` 发给用户）；**2** 有异常但上一轮都已报过（`notify: false`，不发）。服务器读不到时也以 `read_error` 告警走同样流程。
+  去重：状态文件默认 `/workspace/modi/.live_alert_state.json`（`--state ''` 关闭去重，每次有异常都 `notify`），记录上一轮仍然存在的告警指纹。指纹 = code（`stale`、`paused`）、code + 日期（`halted`、`day_loss`，第二天再出现会重新通知）、code + 最新事件时间（`stop_streak`、`api_error`，新的止损 / 新的报错会重新通知）。同一异常持续存在只通知一次；消失后（`resolved` 列出，仅供参考，不通知）再出现会重新通知。输出不含密钥：只用白名单字段，错误详情和最终 JSON 都过 `live_sync.secret_problems`。
+- 验收：`npm test`、`python3 -m unittest discover -s tests -p 'test_*.py'`（`tests/test_live_sync.py`、`tests/test_live_alert.py`）、`PANEL_URL=http://127.0.0.1:8008/ node tests/live_browser.cjs`。
 
 > 下面各节是历史说明（模拟盘、旧主力盘、策略引擎）。其中描述看板模拟盘板块的部分已不再适用；后台的模拟盘跟单与策略进化仍按原流程运行。
 
