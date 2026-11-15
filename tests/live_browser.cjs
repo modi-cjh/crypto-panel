@@ -20,6 +20,14 @@ const snapshot = {
 const fills = { schema_version: 1, source: 'okx-live', updated_at: snapshot.updated_at,
   fills: [{ ts: iso(now - 700e3), action: 'open', inst: 'SOL-USDT-SWAP', side: 'short', contracts: 1.58, price: 72.46, stop: 80.18, target: 48.09, leverage: 10, strategy: 'evolved', dry_run: false }],
   events: [{ ts: iso(now - 700e3), action: 'skip', inst: 'BNB-USDT-SWAP', reason: 'same_side_risk', dry_run: false }] };
+const trades = { schema_version: 1, source: 'okx-live', updated_at: snapshot.updated_at,
+  trades: [{ inst: 'AVAX-USDT-SWAP', side: 'short', contracts: 5.4, leverage: 10, entry: 7.258, exit: 8.37, stop: 8.375, target: 4.248, pnl: -6.5,
+    pnl_pct: -15.32, roe_pct: -153.2, r: -1.07, opened_at: iso(now - 9 * 3600e3), closed_at: iso(now - 3 * 3600e3), hold_minutes: 360,
+    exit_type: 'sl', outcome: 'stop', strategy: 'evolved', champion: 's20001' }],
+  stats: { overall: { trades: 1, with_pnl: 1, wins: 0, losses: 1, win_rate: 0, pnl: -6.5, avg_loss: 6.5, avg_r: -1.07, tp: 0, sl: 1, max_drawdown_closed: 6.5 },
+    by_strategy: [{ key: 's20001', trades: 1, wins: 0, losses: 1, win_rate: 0, pnl: -6.5, avg_r: -1.07 }], equity_drawdown: { usdt: 1.2, pct: 0.95 } } };
+const candles = Array.from({ length: 60 }, (_, i) => { const t = Math.floor((now - (59 - i) * 900e3) / 900e3) * 900e3, o = 72 + Math.sin(i / 5);
+  return [String(t), o.toFixed(2), (o + .5).toFixed(2), (o - .5).toFixed(2), (o + .1).toFixed(2), '1000', '1000', '72000', i === 59 ? '0' : '1']; }).reverse();
 
 (async () => {
   const browser = await chromium.launch();
@@ -32,6 +40,7 @@ const fills = { schema_version: 1, source: 'okx-live', updated_at: snapshot.upda
   await context.routeWebSocket(/ws\.okx\.com/, ws => { sockets.push(ws); ws.onMessage(m => { if (m === 'ping') return ws.send('pong'); const b = JSON.parse(m); if (b.op === 'subscribe') subs.push(...b.args); }); });
   await context.route('**/live-data/snapshot.json*', r => mode === 'ok' ? r.fulfill({ body: JSON.stringify(snapshot), contentType: 'application/json' }) : r.fulfill({ status: 404, body: 'missing' }));
   await context.route('**/live-data/fills.json*', r => mode === 'ok' ? r.fulfill({ body: JSON.stringify(fills), contentType: 'application/json' }) : r.fulfill({ status: 404, body: 'missing' }));
+  await context.route('**/live-data/trades.json*', r => mode === 'ok' ? r.fulfill({ body: JSON.stringify(trades), contentType: 'application/json' }) : r.fulfill({ status: 404, body: 'missing' }));
   await context.addInitScript(() => { try { localStorage.setItem('modi-companion-position', JSON.stringify({ side: 'right', bottom: 20, docked: false })); } catch {} });
   const page = await context.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e)));
@@ -51,6 +60,35 @@ const fills = { schema_version: 1, source: 'okx-live', updated_at: snapshot.upda
   assert.match(await page.locator('#live-fills').innerText(), /开仓 · SOL[\s\S]*空 1.58 张 @ 72.46 · 止损 80.18 · 止盈 48.09/);
   assert.match(await page.locator('#live-events').innerHTML(), /同向风险上限/);
   assert.match(await page.locator('#live-curve').innerHTML(), /<svg/);
+
+  // Header status light: green / 运行正常 for a 10-minute-old snapshot.
+  assert.equal(await page.locator('#live-light').getAttribute('data-state'), 'ok');
+  assert.match(await page.locator('#live-light').innerText(), /运行正常/);
+  assert.ok(await page.locator('#live-light').isVisible(), 'status light visible on a phone');
+  // Compact phone rows: entry / stop / target on the summary line.
+  assert.match(await page.locator('#live-positions details[data-inst="SOL-USDT-SWAP"] .okx-pos-line').innerText(), /入 72\.43 · 损 80\.18\d* · 盈 48\.087/);
+  // Statistics and closed trades.
+  const stats = await page.locator('#live-stats').innerText();
+  for (const s of ['已平仓', '1 笔', '胜率', '0.0%', '平均 R', '-1.07 R', '最大回撤', '0.95%', 's20001']) assert.ok(stats.includes(s), s);
+  assert.equal(await page.locator('#live-trade-count').innerText(), '1');
+  const row = await page.locator('#live-trades .trade-row').first().innerText();
+  for (const s of ['AVAX', '7.258', '8.37', '-6.50 U', '-153.20%', '止损', '6 小时', 's20001']) assert.ok(row.includes(s), s);
+  // K line from a position: OKX REST is blocked here, so the popup falls back to the price ladder (no crash).
+  await page.locator('#live-positions [data-chart-inst="SOL-USDT-SWAP"]').click();
+  await page.waitForSelector('#trade-chart[open]');
+  await page.waitForSelector('#trade-chart-box.fallback svg');
+  assert.match(await page.locator('#trade-chart-note').innerText(), /K 线读取失败.*价位参考/);
+  assert.match(await page.locator('#trade-chart-levels').innerText(), /入场 72\.43[\s\S]*止损 80\.18[\s\S]*止盈 48\.08/);
+  assert.equal(await page.locator('#live-positions details[data-inst="SOL-USDT-SWAP"]').getAttribute('open'), '', 'chart button does not toggle the row');
+  await page.locator('#trade-chart-close').click();
+  await page.waitForSelector('#trade-chart:not([open])', { state: 'attached' });
+  // From a closed trade: same popup with the exit level.
+  await page.locator('#live-trades .trade-row').first().click();
+  await page.waitForSelector('#trade-chart[open] #trade-chart-box.fallback svg');
+  assert.match(await page.locator('#trade-chart-title').innerText(), /AVAX 空 · 已平仓/);
+  assert.match(await page.locator('#trade-chart-levels').innerText(), /出场 8\.37/);
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('#trade-chart:not([open])', { state: 'attached' });
 
   // Live-only: no simulated wording, no paper-data or paper/*.json requests, risk notice present.
   const text = await page.locator('body').innerText();
@@ -81,7 +119,27 @@ const fills = { schema_version: 1, source: 'okx-live', updated_at: snapshot.upda
   await sp.goto(BASE);
   await sp.waitForFunction(() => document.querySelector('#live-status')?.textContent === '数据离线');
   assert.match(await sp.locator('#live-fresh').innerText(), /可能离线/);
+  assert.equal(await sp.locator('#live-light').getAttribute('data-state'), 'stale');
   await stale.close();
+
+  // Desktop with public candles available: the popup draws a real chart (entry marker, stop / target lines).
+  const desk = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await desk.route(/okx\.com/, r => r.abort());   // registered first: the candle route below takes precedence
+  await desk.route(/okx\.com\/api\/v5\/market\/(history-)?candles/, r => r.fulfill({ body: JSON.stringify({ code: '0', data: candles }), contentType: 'application/json' }));
+  await desk.route('**/live-data/snapshot.json*', r => r.fulfill({ body: JSON.stringify({ ...snapshot, halted: true }), contentType: 'application/json' }));
+  await desk.route('**/live-data/fills.json*', r => r.fulfill({ body: JSON.stringify(fills), contentType: 'application/json' }));
+  await desk.route('**/live-data/trades.json*', r => r.fulfill({ status: 404, body: 'missing' }));   // older sync: no trades.json yet
+  const dp = await desk.newPage(), derrors = [];
+  dp.on('pageerror', e => derrors.push(String(e)));
+  await dp.goto(BASE);
+  await dp.waitForFunction(() => document.querySelector('#live-light')?.dataset.state === 'halted');
+  assert.match(await dp.locator('#live-light').innerText(), /熔断/);
+  assert.match(await dp.locator('#live-trades').innerText(), /还没有已平仓/);
+  await dp.locator('#live-positions [data-chart-inst="SOL-USDT-SWAP"]').click();
+  await dp.waitForFunction(() => /K 线 · 60 根/.test(document.querySelector('#trade-chart-note')?.textContent || ''), null, { timeout: 10000 });
+  assert.ok(await dp.locator('#trade-chart-box canvas').count() > 0, 'chart canvas drawn');
+  assert.deepEqual(derrors, []);
+  await desk.close();
 
   // Feed missing on first load: an alert, no crash, no blank page.
   const missing = await browser.newContext();

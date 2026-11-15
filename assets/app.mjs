@@ -3,7 +3,8 @@
 import { coinIcon } from './coins.mjs';
 import { Mascot } from './mascot.mjs';
 import { okxDailyReturns, okxDailyMarkup } from './okx.mjs';
-import { LIVE_SNAPSHOT_URL, LIVE_FILLS_URL, validLiveSnapshot, validLiveFills, liveView, liveFreshness, liveStatus, liveCurveSVG, livePositionsMarkup, liveFillsMarkup, liveNewFills, liveFeed, liveMascotState } from './live.mjs?v=20261115-live';
+import { LIVE_SNAPSHOT_URL, LIVE_FILLS_URL, LIVE_TRADES_URL, validLiveSnapshot, validLiveFills, validLiveTrades, liveView, liveFreshness, liveStatus, liveCurveSVG, livePositionsMarkup, liveFillsMarkup, liveNewFills, liveFeed, liveMascotState,
+  liveLight, liveLightMarkup, closedTradesMarkup, tradeStatsMarkup, chartSubject, candleRequest, levelsLadderSVG, tradeMarkers, levelColor, px as livePx } from './live.mjs?v=20261116-dash';
 import { PublicStream, mergeCandle } from './realtime.mjs';
 import { configureMotion, rollNumber, toast } from './effects.mjs';
 import { workState, pnlMood, tradeBurst, positionReport, pnlComment } from './robot-work.mjs';
@@ -11,7 +12,7 @@ import { dayNumber } from './account.mjs';
 import config from '../config.js';
 import { PublicAPI, normalizeTickers, number } from './api.mjs';
 import { parseCandles, analyze } from './indicators.mjs';
-import { chartAvailable, createCandleCharts } from './charts.mjs';
+import { chartAvailable, createCandleCharts, createTradeChart } from './charts.mjs?v=20261116-dash';
 import { EVOLVE_URL, EVOLVE_NODES_URL, validNodeDetails, needsDetails, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, teamMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays, updateSchedule, evolveIntroMarkup } from './evolve.mjs?v=20261115-evolve';
 import { GeneFx } from './evolve-fx.mjs';
 
@@ -39,7 +40,7 @@ const api = new PublicAPI(), errors = new Map(), funding = new Map(), interests 
 let tickers = [], top = [], priceAt = 0, slowAt = 0, priceBusy = false, slowBusy = false;
 let route = 'home', coin = config.symbol, timeframe = '4H', routeVersion = 0, sortKey = 'turnover', sortDirection = -1;
 let candleCharts = null, lastCandleRequest = '', candleBusy = new Set();
-let live = null, fills = null, liveBusy = false;
+let live = null, fills = null, trades = null, liveBusy = false;
 const marks = new Map();   // inst -> {price, at}: OKX public mark prices for the live positions
 let quoteStream = null, candleStream = null, quoteStreamKey = '', candleStreamKey = '';
 
@@ -177,7 +178,7 @@ async function fetchJSON(url) {
 async function refreshLive() {
   if (liveBusy) return; liveBusy = true;
   try {
-    const [snap, list] = await Promise.allSettled([fetchJSON(LIVE_SNAPSHOT_URL), fetchJSON(LIVE_FILLS_URL)]);
+    const [snap, list, closed] = await Promise.allSettled([fetchJSON(LIVE_SNAPSHOT_URL), fetchJSON(LIVE_FILLS_URL), fetchJSON(LIVE_TRADES_URL)]);
     if (snap.status !== 'fulfilled' || !validLiveSnapshot(snap.value)) throw new Error('实盘快照读取失败');
     const lastUpl = new Map(live ? liveView(live, marks).positions.map(p => [p.inst, p.upl]) : []);
     live = snap.value;
@@ -186,6 +187,8 @@ async function refreshLive() {
       fills = list.value; setError('fills', null);
       fresh.map(a => tradeBurst(a, lastUpl)).filter(Boolean).forEach((b, i) => setTimeout(() => { mascot.burst(b); notify({ text: `实盘 · ${b.title}${b.amount ? ' ' + b.amount : ''}`, mood: b.mood }); }, i * 3400));
     } else setError('fills', '实盘成交记录读取失败，保留上次数据');
+    // trades.json is newer than the other two files: missing (older sync) just leaves the panels on their empty state.
+    if (closed.status === 'fulfilled' && validLiveTrades(closed.value)) trades = closed.value;
     setError('live', null); $('live-error').hidden = true;
     syncStreams(); renderLive(); updateChartOverlays();
   } catch {
@@ -196,8 +199,14 @@ async function refreshLive() {
   }
   finally { liveBusy = false; }
 }
+function renderLight() {
+  const el = $('live-light'), l = liveLight(live);
+  if (el.dataset.state !== l.state) el.dataset.state = l.state;
+  setHTML(el, liveLightMarkup(live)); if (el.title !== l.title) el.title = l.title;
+}
 function renderLive() {
   const v = liveView(live, marks), fresh = liveFreshness(live), status = liveStatus(live);
+  renderLight();
   renderPinned(v, fresh);
   updateCompanion(v);
   renderStatusPill();
@@ -216,7 +225,48 @@ function renderLive() {
   setText($('live-pos-count'), String(live.positions.length));
   setHTML($('live-fills'), fills ? liveFillsMarkup(fills.fills, 15) : '<li class="empty">成交记录读取中…</li>');
   setHTML($('live-events'), fills ? liveFillsMarkup(fills.events, 30, '暂无运行记录') : '');
+  setHTML($('live-stats'), tradeStatsMarkup(trades || { trades: [] }, live));
+  setHTML($('live-trades'), closedTradesMarkup(trades || { trades: [] }));
+  setText($('live-trade-count'), String(trades?.stats?.overall?.trades ?? trades?.trades?.length ?? 0));
 }
+
+// ---- K-line popup for a position / closed trade: OKX public candles (browser side), levels as a fallback ----
+let tradeChart = null, tradeChartToken = 0;
+async function openTradeChart(subject) {
+  const dlg = $('trade-chart'); if (!subject) return;
+  const token = ++tradeChartToken;
+  tradeChart?.destroy(); tradeChart = null;
+  const box = $('trade-chart-box'); box.replaceChildren(); box.classList.remove('fallback');
+  $('trade-chart-title').textContent = subject.title;
+  $('trade-chart-meta').textContent = [subject.opened ? `入场 ${time(subject.opened)}` : '', subject.closed ? `出场 ${time(subject.closed)}` : '', 'UTC+7'].filter(Boolean).join(' · ');
+  $('trade-chart-levels').innerHTML = subject.levels.map(l => `<span style="color:${levelColor(l.role)}">${escape(l.title)} ${livePx(l.price)}</span>`).join('');
+  $('trade-chart-note').textContent = '正在读取 OKX 公共 K 线…';
+  if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', ''); }
+  const fallback = why => { if (token !== tradeChartToken) return; box.classList.add('fallback'); box.innerHTML = levelsLadderSVG(subject); $('trade-chart-note').textContent = `${why}，先显示入场 / 止损 / 止盈价位参考。`; };
+  if (!chartAvailable()) return fallback('图表库没有加载');
+  const req = candleRequest(subject);
+  try {
+    const bars = parseCandles(await api.get(req.path, req.params, 9));
+    if (token !== tradeChartToken || !dlg.open) return;
+    if (!bars.length) return fallback('没有取到 K 线');
+    tradeChart = createTradeChart(box);
+    tradeChart.draw(bars, subject.levels.map(l => ({ ...l, color: levelColor(l.role) })), tradeMarkers(subject, bars));
+    $('trade-chart-note').textContent = `${req.bar.replace('utc', '')} K 线 · ${bars.length} 根 · OKX 公共行情（含未收盘 K 线）`;
+  } catch (error) { fallback(`K 线读取失败（${description(error)}）`); }
+}
+function closeTradeChart() { tradeChartToken++; tradeChart?.destroy(); tradeChart = null; const dlg = $('trade-chart'); if (dlg.open) { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); } }
+$('trade-chart-close').addEventListener('click', closeTradeChart);
+$('trade-chart').addEventListener('close', () => { tradeChartToken++; tradeChart?.destroy(); tradeChart = null; });
+$('trade-chart').addEventListener('click', e => { if (e.target.id === 'trade-chart') closeTradeChart(); });
+$('live-positions').addEventListener('click', e => {
+  const b = e.target.closest('[data-chart-inst]'); if (!b) return;
+  e.preventDefault(); e.stopPropagation();   // inside <summary>: do not toggle the row
+  const p = liveView(live, marks)?.positions.find(x => x.inst === b.dataset.chartInst);
+  openTradeChart(chartSubject(p, 'position'));
+});
+const tradeAt = el => trades?.trades?.[Number(el.dataset.trade)];
+$('live-trades').addEventListener('click', e => { const r = e.target.closest('[data-trade]'); if (r) openTradeChart(chartSubject(tradeAt(r), 'trade')); });
+$('live-trades').addEventListener('keydown', e => { const r = e.target.closest('[data-trade]'); if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTradeChart(chartSubject(tradeAt(r), 'trade')); } });
 // Marks tick several times a second: patch only the changed parts of each row so open rows stay open.
 function renderPositions(v) {
   const box = $('live-positions'), tpl = document.createElement('template');

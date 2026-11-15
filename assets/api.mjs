@@ -1,5 +1,5 @@
 const BASE = 'https://www.okx.com/api/v5/';
-const ALLOWED = new Set(['market/tickers', 'market/candles', 'public/funding-rate', 'public/open-interest']);
+const ALLOWED = new Set(['market/tickers', 'market/candles', 'market/history-candles', 'public/funding-rate', 'public/open-interest']);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // 所有公共请求共享队列：启动间隔 >= 150ms，最多 3 个并发，无自动重试风暴。

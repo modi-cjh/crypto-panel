@@ -130,6 +130,99 @@ class Assembly(unittest.TestCase):
         self.assertEqual(row, {'dry_run': False})
 
 
+TRADE_STATE = {
+    'mode': 'live',
+    'close_results_v3': {'2026-11-15T18:00:00Z|AVAX-USDT-SWAP': {'pnl': -6.5, 'close_price': 8.37, 'fee': -0.02, 'funding': 0.0}},
+    'mirrored': {
+        'SOL-USDT-SWAP|1': {'inst': 'SOL-USDT-SWAP', 'side': -1, 'posSide': 'net', 'strategy': 'evolved', 'contracts': '1.58',
+                            'stop': 75.0, 'target': 48.09, 'leverage': 10, 'entry': 72.46, 'opened_at': 1794751218461,
+                            'status': 'done', 'champion': 's15653', 'leader': True, 'clOrdId': 'abcDEF1234567890abcdef'},
+        'AVAX-USDT-SWAP|1': {'inst': 'AVAX-USDT-SWAP', 'side': -1, 'posSide': 'net', 'strategy': 'evolved', 'contracts': '5.4',
+                             'stop': 8.375, 'target': 4.248, 'leverage': 10, 'entry': 7.258, 'opened_at': 1794751218461,
+                             'status': 'done', 'champion': 's20001'},
+        'BNB-USDT-SWAP|2': {'inst': 'BNB-USDT-SWAP', 'side': 1, 'posSide': 'net', 'strategy': 'evolved', 'contracts': '8',
+                            'stop': 560.0, 'target': 650.0, 'leverage': 5, 'entry': 590.0, 'opened_at': 1794758400000,
+                            'status': 'done', 'champion': 's15653'},
+        'ADA-USDT-SWAP|3': {'inst': 'ADA-USDT-SWAP', 'side': -1, 'status': 'open', 'opened_at': 1794758400000, 'entry': 0.15},
+    },
+}
+TRADE_ACTIONS = [
+    {'ts': '2026-11-15T14:00:18Z', 'action': 'open', 'inst': 'SOL-USDT-SWAP', 'side': -1, 'strategy': 'evolved', 'contracts': '1.58',
+     'price': 72.46, 'stop': '80.18', 'target': '48.09', 'leverage': 10, 'risk_usdt': 12.2, 'leader': True, 'dry_run': False},
+    {'ts': '2026-11-15T14:00:18Z', 'action': 'open', 'inst': 'AVAX-USDT-SWAP', 'side': -1, 'strategy': 'evolved', 'contracts': '5.4',
+     'price': 7.258, 'stop': '8.375', 'target': '4.248', 'leverage': 10, 'risk_usdt': 6.1, 'dry_run': False},
+    {'ts': '2026-11-15T16:00:00Z', 'action': 'open', 'inst': 'BNB-USDT-SWAP', 'side': 1, 'strategy': 'evolved', 'contracts': '8',
+     'price': 590.0, 'stop': '560', 'target': '650', 'leverage': 5, 'dry_run': False},
+    {'ts': '2026-11-15T16:00:00Z', 'action': 'amend_stop', 'inst': 'SOL-USDT-SWAP', 'old': 80.18, 'new': 75.0, 'dry_run': False},
+    {'ts': '2026-11-15T17:00:00Z', 'action': 'closed_on_exchange', 'inst': 'SOL-USDT-SWAP', 'strategy': 'evolved', 'pnl': 18.4,
+     'close_price': 48.2, 'fee': -0.05, 'funding': 0.1, 'outcome': 'target', 'dry_run': False},
+    {'ts': '2026-11-15T18:00:00Z', 'action': 'closed_on_exchange', 'inst': 'AVAX-USDT-SWAP', 'strategy': 'evolved', 'dry_run': False},
+    {'ts': '2026-11-15T19:00:00Z', 'action': 'close', 'inst': 'BNB-USDT-SWAP', 'strategy': 'evolved', 'reason': 'paper_closed',
+     'pnl': 1.2, 'close_price': 600.0, 'dry_run': False},
+    {'ts': '2026-11-15T19:30:00Z', 'action': 'close', 'inst': 'XRP-USDT-SWAP', 'execution_test': True, 'pnl': 5, 'dry_run': False},
+    {'ts': '2026-11-15T19:40:00Z', 'action': 'close', 'inst': 'DOGE-USDT-SWAP', 'pnl': 5, 'dry_run': True},
+]
+
+
+class Trades(unittest.TestCase):
+    def build(self):
+        summary = sample_summary(history=[[1794751218461, 100.0], [1794754800000, 120.0], [1794758400000, 90.0], [1794762000000, 110.0]],
+                                 recent_actions=[])
+        return ls.build_trades(TRADE_ACTIONS, TRADE_STATE, summary)
+
+    def test_pairs_closes_with_opens(self):
+        doc = self.build()
+        self.assertEqual(doc['schema_version'], 1)
+        bnb, avax, sol = doc['trades']                                   # newest first; test / dry-run closes dropped
+        self.assertEqual((sol['inst'], sol['side'], sol['entry'], sol['exit']), ('SOL-USDT-SWAP', 'short', 72.46, 48.2))
+        self.assertEqual((sol['pnl'], sol['champion'], sol['leader']), (18.4, 's15653', True))
+        self.assertEqual(sol['stop'], 80.18)                             # the stop at entry, not the amended one
+        self.assertEqual((sol['opened_at'], sol['closed_at'], sol['hold_minutes']), ('2026-11-15T14:00:18Z', '2026-11-15T17:00:00Z', 180))
+        self.assertAlmostEqual(sol['pnl_pct'], (1 - 48.2 / 72.46) * 100, places=3)
+        self.assertAlmostEqual(sol['roe_pct'], sol['pnl_pct'] * 10, places=2)
+        self.assertAlmostEqual(sol['r'], 18.4 / 12.2, places=3)          # PnL / risk at entry
+        self.assertEqual(sol['outcome'], 'target')
+        self.assertEqual([t['exit'] for t in doc['trades']], [600.0, 8.37, 48.2])
+        self.assertEqual(avax['pnl'], -6.5)                              # from the trader's close_results_v3 cache
+        self.assertEqual(bnb['reason'], 'paper_closed')
+        self.assertAlmostEqual(bnb['r'], (600 - 590) / 30, places=3)     # no risk_usdt: price R against the entry stop
+
+    def test_exit_kind(self):
+        bnb, avax, sol = self.build()['trades']
+        # sol: exchange target -> tp; avax: exchange close without a recorded outcome, fill next to the stop -> sl;
+        # bnb: closed by the program -> other
+        self.assertEqual([t['exit_type'] for t in (sol, avax, bnb)], ['tp', 'sl', 'other'])
+
+    def test_stats(self):
+        st = self.build()['stats']
+        o = st['overall']
+        self.assertEqual((o['trades'], o['wins'], o['losses']), (3, 2, 1))
+        self.assertAlmostEqual(o['win_rate'], 200 / 3, places=3)
+        self.assertAlmostEqual(o['pnl'], 18.4 - 6.5 + 1.2, places=5)
+        self.assertAlmostEqual(o['payoff'], ((18.4 + 1.2) / 2) / 6.5, places=4)
+        self.assertAlmostEqual(o['max_drawdown_closed'], 6.5, places=5)
+        self.assertEqual((o['tp'], o['sl']), (1, 1))
+        seeds = {r['key']: r for r in st['by_strategy']}
+        self.assertEqual(seeds['s15653']['trades'], 2)
+        self.assertAlmostEqual(seeds['s15653']['pnl'], 19.6, places=5)
+        self.assertEqual(seeds['s20001']['losses'], 1)
+        dd = st['equity_drawdown']
+        self.assertAlmostEqual(dd['pct'], 25.0)
+        self.assertAlmostEqual(dd['usdt'], 30.0)
+
+    def test_whitelist_and_secret_check(self):
+        text = ls.render(self.build())
+        self.assertNotIn('clOrdId', text)
+        self.assertNotIn('abcDEF', text)
+        self.assertEqual(ls.secret_problems(text, env={}), [])
+
+    def test_empty(self):
+        doc = ls.build_trades([], {'mode': 'live'}, {})
+        self.assertEqual(doc['trades'], [])
+        self.assertEqual(doc['stats']['overall']['trades'], 0)
+        self.assertIsNone(doc['stats']['equity_drawdown'])
+
+
 class SecretCheck(unittest.TestCase):
     def test_flags(self):
         cases = {
@@ -197,7 +290,7 @@ class Publish(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(out.startswith('pushed'))
         files = sorted(git(self.remote, 'ls-tree', '--name-only', 'live-data').split())
-        self.assertEqual(files, ['README.md', 'fills.json', 'snapshot.json'])
+        self.assertEqual(files, ['README.md', 'fills.json', 'snapshot.json', 'trades.json'])
         self.assertEqual(git(self.remote, 'rev-list', '--count', 'live-data').strip(), '1')   # orphan: no master history
         snap = json.loads(git(self.remote, 'show', 'live-data:snapshot.json'))
         self.assertEqual(snap['positions'][0]['stop'], 80.18402)

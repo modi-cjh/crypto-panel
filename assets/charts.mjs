@@ -95,3 +95,28 @@ export function createBalanceChart(points) {
   group.chart.timeScale().fitContent();
   return group;
 }
+
+// A single candle pane for the position / closed-trade popup: entry / exit markers, stop / target / entry lines.
+export function createTradeChart(element) {
+  const group = makeChart(element);
+  const candles = group.chart.addCandlestickSeries({ upColor: up, downColor: down, borderVisible: false, wickUpColor: up, wickDownColor: down, priceLineVisible: false });
+  let overlays = [];
+  candles.applyOptions({ autoscaleInfoProvider: original => {
+    const info = original(); if (!info) return info;
+    for (const row of overlays) { info.priceRange.minValue = Math.min(info.priceRange.minValue, row.price); info.priceRange.maxValue = Math.max(info.priceRange.maxValue, row.price); }
+    return info;
+  } });
+  return {
+    draw(bars, levels, markers) {
+      const lows = bars.map(b => b.low).concat(levels.map(l => l.price)), minimum = Math.min(...lows);
+      const precision = minimum >= 100 ? 2 : minimum >= 1 ? 4 : minimum >= .01 ? 6 : 8;
+      candles.applyOptions({ priceFormat: { type: 'price', precision, minMove: 10 ** -precision } });
+      candles.setData(bars.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+      overlays = levels;
+      levels.forEach(l => candles.createPriceLine({ price: l.price, color: l.color, title: l.title, lineWidth: 1, lineStyle: l.role === 'entry' ? 0 : 2, axisLabelVisible: true }));
+      candles.setMarkers(markers);
+      group.chart.timeScale().fitContent();
+    },
+    destroy() { group.destroy(); },
+  };
+}
