@@ -734,8 +734,9 @@ MIN_TRADE_RISK = .02
 # most about half of the book on one side (13 open, 12 short was the situation that asked for this) while three
 # 3-position seats still fit on one side. With the default 6 the quarter step of CROWD_STEPS is no longer reached;
 # it applies again if the cap is raised.
-MAX_SAME_SIDE_POSITIONS = 6
-ACCOUNT_RULES = dict(leader_risk=MAX_TRADE_RISK, leader_lever=LEVERAGE, lever=LEVERAGE, same_side_cap=.20, daily_halt=.10,
+MAX_SAME_SIDE_POSITIONS = 10   # 2026-11-15 user: at most 10 per side (was 6); with 10 the quarter step of CROWD_STEPS applies again
+ACCOUNT_RULES = dict(leader_risk=MAX_TRADE_RISK, leader_lever=LEVERAGE, lever=LEVERAGE, same_side_cap=None, daily_halt=.25,   # 2026-11-15 user: no same-side total-risk cap, daily halt 25 %
+                    
                      day_shift=7 * HOUR, majors=MAJORS, major_factor=2.0, max_risk=MAX_TRADE_RISK, min_risk=MIN_TRADE_RISK,
                      min_lever=MIN_LEVERAGE, margin_mode=MARGIN_MODE, max_same_side=MAX_SAME_SIDE_POSITIONS)
 CROWD_STEPS = ((6, .25), (3, .5))     # same-side positions already open → risk factor for the next entry on that side
@@ -784,8 +785,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     - `blocked` = {inst: [(i0, i1 or None)]}: bar ranges in which a coin takes no new entry (its OKX demo price was
       away from the real market, data.price_check); positions already open run on;
     - crowding: with 3+ positions already open on a side the next entry on that side risks half, with 6+ a quarter;
-    - same-side cap: the open risk of every position on one side, including the leader, plus the new one stays within
-      rules['same_side_cap'] × equity;
+    - same-side cap: when rules['same_side_cap'] is set, the open risk of one side plus the new entry stays within
+      that × equity; None (the default since 2026-11-15) = no total-risk cap per side, only the count below;
     - same-side count: with rules['max_same_side'] positions already open on a side (the leader included), a new
       entry on that side is skipped (same_side_full); the other side and exits are not affected. side_cap_from = a
       bar index: the count only applies to fills after that bar, so switching it on does not rewrite the replay of
@@ -879,7 +880,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                     continue
                 qty *= ct
             same = sum(p['qty'] * max((p['entry'] - p['stop']) * p['side'], 0) for p in pos.values() if p['side'] == d)
-            if same + qty * dist > cap_side * mark * (1 + 1e-9):
+            if cap_side is not None and same + qty * dist > cap_side * mark * (1 + 1e-9):
                 continue
             cap = rules['leader_lever'] if boost else rules['lever']
             mmr = maintenance_rate(inst)

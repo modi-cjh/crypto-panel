@@ -554,6 +554,11 @@
 - 为什么：Codex 对 PR #92 的审查（阻塞项）：元数据缺失时以 20× 下单无法证明符合该币真实上限（fail-open）；未来时间戳得到负年龄，绕过 9 小时过期检查。交易参数未改。
 - 测试：`tests/test_okx_demo_trader.py` 夹具 `SPECS` 补上 `lever`（真实接口总会返回；之前的测试实际依赖 20× 兜底），原两条“缺规格按 20×”测试改为“缺 / 空 / 非数字 / 0 / 负数的 `lever` → 不发任何请求、`no_leverage_spec`”，并新增“规格缺失时已有仓位仍能补挂止损、上移止损、平仓”；`tests/test_okx_live_mode.py` 新增未来时间戳（36 秒、1 小时、1 年）被实盘拒绝且不发请求、`signal_age_ms` 边界测试。
 
+### 实盘放宽同方向 + 提高日亏阈值：同向最多 10 单、去掉同向风险上限、日亏 25%
+- 做了什么：①`tools/evolve/execution.py`：`MAX_SAME_SIDE_POSITIONS` 6 → 10；`ACCOUNT_RULES` 的 `same_side_cap` .20 → `None`（`simulate_account` 在 `None` 时不做同方向合计风险检查，显式传数值仍生效）、`daily_halt` .10 → .25。②`tools/okx_demo_trader.py`（模拟盘与实盘共用）：`MAX_SAME_SIDE` 跟随为 10；进化模式 `SAME_SIDE_CAP = None`，开仓时不再计算同向已有风险、不再产生 `same_side_risk` 跳过（旧档位仍可设数值上限）；`EVOLVED_DAILY_HALT` .10 → .25。摘要 `execution_profile` 显示 `max_same_side: 10`、`daily_halt: 0.25`、`same_side_cap: null`（= 不设上限）。③看板文字：`assets/control.mjs`、`assets/evolve.mjs` 在 `same_side_cap` 为空时显示“同向风险不设上限”，日亏阈值取数据里的值。
+- 为什么：用户（2026-11-15 21:16 / 21:18）要求实盘同方向最多开 10 单、同方向总风险不设上限、当天最多亏 25% 才停手。实盘只跟随纸面账户的持仓信号，纸面账户原来同向最多 6 仓、合计风险 ≤ 20%，会让实盘永远到不了 10 单，所以引擎侧同步放宽（回测与纸面同源）。注意：纸面账户每次从起点整体重放，新规则会改写重放结果（同向数量只对 `side_cap_from` 之后的成交生效，不变）。保留：每笔交易所止损、止盈由基因决定、杠杆 1–20×、单笔风险 2–10%、全仓、同向 ≥3 仓减半 / ≥6 仓减到四分之一、日亏停手规则本身。
+- 测试：`tests/test_okx_demo_trader.py` 新增“默认同向 10 单、合计风险超过 20% 也照开、第 11 单 `same_side_count`”“进化模式日亏 20% 不停、25% 停”，原 20% 风险上限测试改为“默认无上限、显式上限仍生效”，第一名日亏测试改为 25%；`tests/test_okx_live_mode.py`、`tests/test_evolve.py` 同步新默认值（同向数量边界改用 12 个多头信号）。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |
