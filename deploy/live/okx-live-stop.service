@@ -1,0 +1,24 @@
+# 全部平仓并暂停（只作用于程序自己开的实盘仓位，人工仓位不动）。需要 OKX_DRY_RUN=0；dry-run 时程序从未开仓，会直接退出。
+[Unit]
+Description=MODI OKX live mirror: close program positions and pause
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/modi-okx-live/okx-live.env
+
+[Service]
+Type=oneshot
+User=modi-live
+Group=modi-live
+WorkingDirectory=/opt/modi-okx-live
+EnvironmentFile=/etc/modi-okx-live/okx-live.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+StateDirectory=modi-okx-live
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 tools/stop_demo.py --data /var/lib/modi-okx-live
+TimeoutStartSec=300
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/modi-okx-live

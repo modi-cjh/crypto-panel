@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
-"""Mirror the combined paper account onto an OKX *demo trading* account (learning only).
+"""Mirror the combined paper account onto an OKX account: demo trading (default) or, explicitly, the live account.
+
+Mode switch (environment, read once per process; see trading_mode / dry_run_forced):
+  OKX_TRADING_MODE=demo (default)  every request carries `x-simulated-trading: 1`; state in <data>/okx_demo/.
+  OKX_TRADING_MODE=live            no simulated header (real account); state in <data>/okx_live/. Refused inside
+                                   GitHub Actions and the runtime/ service; only follows evolve/signals.json.
+  OKX_DRY_RUN                      live: dry-run unless exactly `0` (orders are never sent by default);
+                                   demo: `1` forces dry-run, unset keeps the existing behaviour.
+In dry-run the OKX client itself refuses every non-GET request, so no code path can place, amend or close an order.
 
 The paper trader (tools/paper_trader.py) decides; this script executes those decisions on OKX's demo
-environment so that real order handling, fills, slippage and exchange-side stops can be compared with
-the paper results. Every request carries `x-simulated-trading: 1`; it cannot reach a real account.
+environment (or, in live mode, on the real account) so that real order handling, fills, slippage and exchange-side
+stops can be compared with the paper results. In demo mode every request carries `x-simulated-trading: 1`.
 
 Each run, against <data>/combined/state.json:
   - a paper position opened in the last OPEN_WINDOW that is not mirrored yet is opened at market,
@@ -13,12 +21,13 @@ Each run, against <data>/combined/state.json:
   - when the paper stop trails, the exchange stop is amended;
   - when the paper position is gone, the mirrored position is closed;
   - if the exchange stop already closed a mirrored position, it is marked done and never reopened.
-Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; this process is demo-only and
-refuses to start or send any request without `x-simulated-trading: 1`. Evolved mode uses cross margin (全仓), the strategy's own risk (2–10 %) and leverage
+Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; in demo mode
+the process refuses to send any request without `x-simulated-trading: 1`. Evolved mode uses cross margin (全仓), the strategy's own risk (2–10 %) and leverage
 (1–20×, clamped to that coin's OKX max; fallback 20× if the public spec is missing). A new order is skipped if its stop would leave account equity at or below total maintenance margin. A UTC+7 day
 loss of 10% closes everything and blocks new entries until the next day; actions `pause`, `resume`,
 `flatten` (close all and pause) and `dry-run` (log intended orders, send nothing) are available.
-Secrets come from OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE, reach curl through stdin and are never logged.
+Secrets come only from OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE (environment), reach curl through stdin and are
+never printed, logged or written to any file.
 """
 import argparse
 import base64
@@ -53,12 +62,15 @@ EVOLVED_MAX_LEVERAGE = GENE_MAX_LEVERAGE   # 20×, same cap as the evolve levera
 # daily-loss stop, same as everyone else. LEADER_RISK / LEADER_LEVERAGE are the caps, not a fixed bigger size.
 LEADER_RISK, LEADER_LEVERAGE = MAX_TRADE_RISK, EVOLVED_MAX_LEVERAGE
 MARGIN_MODE = 'cross'             # evolved and legacy modes both use cross margin (全仓); liquidation is at the account level
-# Demo-only lock: flipped only in tests to prove the process refuses to start without the simulated-trading header.
-DEMO_ONLY = True
+# Trading mode switch. demo = OKX demo trading (x-simulated-trading: 1); live = the real account (header omitted).
+MODE_ENV, DRY_RUN_ENV = 'OKX_TRADING_MODE', 'OKX_DRY_RUN'
+MODES = ('demo', 'live')
+STATE_DIRS = {'demo': 'okx_demo', 'live': 'okx_live'}   # live never shares (or inherits) the demo mirror's state
 SIMULATED_HEADER = 'x-simulated-trading'
 SIMULATED_VALUE = '1'
+LIVE_SIGNAL_MAX_AGE = 9 * 3600_000   # live refuses to act on evolve/signals.json older than this (cron is every 4 h)
 MAJOR_FACTOR = 2.0   # majors (execution.MAJORS) risk twice as much (execution.ACCOUNT_RULES)
-PRICE_TOLERANCE = .01             # no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
+PRICE_TOLERANCE = .01             # demo mode: no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
 CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
 SAME_SIDE_CAP = .05
 MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 6 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
@@ -117,20 +129,69 @@ def real_price(inst):
         return None
 
 
-def assert_demo_only():
-    """Refuse to start (or to build a request) unless this process is locked to OKX demo trading."""
-    if not DEMO_ONLY or SIMULATED_HEADER != 'x-simulated-trading' or str(SIMULATED_VALUE) != '1':
-        raise SystemExit('OKX demo trader is demo-only and refused to run without x-simulated-trading: 1')
+def trading_mode(env=None):
+    """demo (default) or live, from OKX_TRADING_MODE. Live is refused where it must never run: GitHub Actions (the key
+    is bound to the Singapore server's IP, and the scheduled job is the demo mirror) and the runtime/ service (demo-only)."""
+    env = os.environ if env is None else env
+    mode = str(env.get(MODE_ENV, '')).strip().lower() or 'demo'
+    if mode not in MODES:
+        raise SystemExit(f'{MODE_ENV} 只能是 demo 或 live，已拒绝运行')
+    if mode == 'live':
+        if str(env.get('GITHUB_ACTIONS', '')).lower() == 'true':
+            raise SystemExit('实盘只在绑定 IP 的服务器上运行：拒绝在 GitHub Actions 中以 live 模式启动')
+        if env.get('PANEL_RUNTIME_CONTROL_FILE'):
+            raise SystemExit('runtime/ 常驻服务仍只支持模拟盘；实盘请用 deploy/live 的 systemd 定时任务')
+    return mode
 
 
-def simulated_headers(key, sign, ts, passphrase):
-    """Signed OKX headers; the simulated-trading flag is always forced and cannot be omitted."""
-    assert_demo_only()
+def dry_run_forced(mode, env=None):
+    """Live: dry-run unless OKX_DRY_RUN is exactly '0' (default on). Demo: dry-run only when OKX_DRY_RUN=1 (unchanged default)."""
+    env = os.environ if env is None else env
+    value = str(env.get(DRY_RUN_ENV, '')).strip()
+    return value != '0' if mode == 'live' else value == '1'
+
+
+def assert_mode(mode):
+    """Refuse an unknown mode, or a demo mode whose simulated-trading flag has been tampered with."""
+    if mode not in MODES:
+        raise SystemExit('未知交易模式，已拒绝运行')
+    if mode == 'demo' and (SIMULATED_HEADER != 'x-simulated-trading' or str(SIMULATED_VALUE) != '1'):
+        raise SystemExit('模拟盘模式必须带 x-simulated-trading: 1，已拒绝运行')
+
+
+def signed_headers(key, sign, ts, passphrase, mode):
+    """Signed OKX headers. Demo always carries x-simulated-trading: 1; live never does (it would be rejected by a live key)."""
+    assert_mode(mode)
     headers = {'OK-ACCESS-KEY': key, 'OK-ACCESS-SIGN': sign, 'OK-ACCESS-TIMESTAMP': ts, 'OK-ACCESS-PASSPHRASE': passphrase,
-               SIMULATED_HEADER: SIMULATED_VALUE, 'Content-Type': 'application/json'}
-    if headers.get('x-simulated-trading') != '1':
-        raise OKXError('demo-only: refused to send a request without x-simulated-trading: 1')
+               'Content-Type': 'application/json'}
+    if mode == 'demo':
+        headers[SIMULATED_HEADER] = SIMULATED_VALUE
+        if headers.get('x-simulated-trading') != '1':
+            raise OKXError('demo: refused to send a request without x-simulated-trading: 1')
+    elif any(k.lower() == 'x-simulated-trading' for k in headers):
+        raise OKXError('live: the simulated-trading header must not be sent')
     return headers
+
+
+def state_dir(data, mode):
+    return Path(data) / STATE_DIRS[mode]
+
+
+def load_state(path, mode):
+    """The mirror's own state for this mode. A state written by the other mode is refused (live must never manage
+    positions recorded by the demo mirror, and vice versa); demo states from before the switch carry no mode."""
+    state = json.loads(Path(path).read_text()) if Path(path).exists() else new_state(mode)
+    if state.get('mode', 'demo') != mode:
+        raise SystemExit(f'{path} 属于 {state.get("mode", "demo")} 模式，当前为 {mode}，已拒绝运行')
+    return state
+
+
+def signal_age_ms(sig, now):
+    try:
+        ts = datetime.fromisoformat(str(sig.get('updated_at')).replace('Z', '+00:00'))
+        return int((now - ts).total_seconds() * 1000)
+    except (TypeError, ValueError):
+        return None
 
 
 class OKXError(RuntimeError):
@@ -138,16 +199,26 @@ class OKXError(RuntimeError):
 
 
 class OKX:
-    """Minimal signed client for OKX demo trading."""
-    def __init__(self, key, secret, passphrase, curl='curl', attempts=3):
+    """Minimal signed client for OKX: demo trading (simulated header) or the live account, chosen by `mode`
+    (default: OKX_TRADING_MODE). With dry_run (default: OKX_DRY_RUN, on for live) every non-GET request is refused
+    here, below all trading logic, so a dry-run can read the account but never place, amend or close anything."""
+    def __init__(self, key, secret, passphrase, curl='curl', attempts=3, mode=None, dry_run=None):
         self.key, self.secret, self.passphrase, self.curl = key, secret, passphrase, curl
+        self.mode = trading_mode() if mode is None else mode
+        assert_mode(self.mode)
+        self.dry_run = dry_run_forced(self.mode) if dry_run is None else bool(dry_run)
         self.attempts = 1 if os.environ.get('PANEL_RUNTIME_CONTROL_FILE') else attempts
 
+    def __repr__(self):   # never expose the credentials through repr / tracebacks
+        return f'OKX(mode={self.mode!r}, dry_run={self.dry_run!r})'
+
     def request(self, method, path, body=None):
+        if method != 'GET' and self.dry_run:
+            raise OKXError(f'dry-run：已拒绝发送 {method} {path.split("?")[0]}（{self.mode}）')
         payload = json.dumps(body, separators=(',', ':')) if body is not None else ''
         ts = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
         sign = base64.b64encode(hmac.new(self.secret.encode(), f'{ts}{method}{path}{payload}'.encode(), hashlib.sha256).digest()).decode()
-        headers = simulated_headers(self.key, sign, ts, self.passphrase)
+        headers = signed_headers(self.key, sign, ts, self.passphrase, self.mode)
         config = ''.join(f'header = "{k}: {v}"\n' for k, v in headers.items()) + f'url = "{BASE}{path}"\nrequest = "{method}"\n'
         if payload:
             config += 'data = "' + payload.replace('\\', '\\\\').replace('"', '\\"') + '"\n'
@@ -187,9 +258,13 @@ def local_day(now):
     return now.astimezone(UTC7).date().isoformat()
 
 
-def new_state():
-    # Starts paused: run `dry-run` first, then `resume` to begin placing demo orders.
-    return dict(mirrored={}, paused=True, halted=False, day=None, day_start=None)
+def new_state(mode='demo'):
+    # Starts paused: run `dry-run` first, then `resume` to begin placing orders. A live state is stamped so that it can
+    # never be confused with the demo mirror's (load_state).
+    state = dict(mirrored={}, paused=True, halted=False, day=None, day_start=None)
+    if mode != 'demo':
+        state['mode'] = mode
+    return state
 
 
 def enrich_closes(mirror, state, actions):
@@ -281,7 +356,7 @@ class Mirror:
     def __init__(self, client, state, paper, now, dry_run=False):
         self.c, self.s, self.paper, self.now, self.dry = client, state, paper, now, dry_run
         self.actions = []
-        self.live = None                  # set to real_price when following the evolution champions
+        self.live = None                  # demo mode only: real_price, to skip entries while the demo price is off the real market
         self.new_order_risk = {}
         self.now_ms = int(now.timestamp() * 1000)
         self.specs = {}
@@ -304,7 +379,7 @@ class Mirror:
             raise OKXError('account config: ' + first_error(cfg))
         c = cfg['data'][0]
         if str(c.get('acctLv')) == '1':
-            raise OKXError('账户为现货模式，无法交易永续合约：请在 OKX 模拟交易中切换到合约模式')
+            raise OKXError('账户为现货模式，无法交易永续合约：请在 OKX 账户设置中切换到合约模式')
         if 'withdraw' in str(c.get('perm', '')):
             raise OKXError('密钥开启了提现权限，已拒绝运行')
         self.hedged = c.get('posMode') == 'long_short_mode'
@@ -755,14 +830,26 @@ def main():
     ap.add_argument('--data', type=Path, required=True)
     ap.add_argument('--action', default='run', choices=['run', 'dry-run', 'pause', 'resume', 'flatten', 'follow-current', 'snapshot'])
     args = ap.parse_args()
-    assert_demo_only()
+    mode = trading_mode()
+    assert_mode(mode)
+    forced_dry = dry_run_forced(mode)
+    live = mode == 'live'
+    print(f"OKX {'实盘' if live else '模拟盘'} · {'dry-run（只读账户、记录意图，不发送任何订单）' if forced_dry else '真实下单' if live else '模拟下单'}")
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
     if not all(creds):
+        if live:
+            raise SystemExit('未配置 OKX 实盘密钥（OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE 环境变量），未运行。')
         print('未配置 OKX 模拟交易密钥，跳过跟单。'); return
     # Signal source: the evolution champion's paper positions when present (tools/evolve), else the retired strategy engine.
     evolved_path, paper_path = args.data / 'evolve' / 'signals.json', args.data / 'combined' / 'state.json'
+    if live and not evolved_path.exists():
+        raise SystemExit('实盘只跟随进化冠军信号 evolve/signals.json；文件不存在，未运行。')
     if evolved_path.exists():
         sig = json.loads(evolved_path.read_text())
+        age = signal_age_ms(sig, datetime.now(timezone.utc))
+        if live and args.action != 'snapshot' and (age is None or age > LIVE_SIGNAL_MAX_AGE):
+            # A stale signal file would keep closed paper positions open and follow old entries; the exchange stops stay in place.
+            raise SystemExit(f'evolve/signals.json 已过期或缺少 updated_at（超过 {LIVE_SIGNAL_MAX_AGE // 3600_000} 小时），实盘本轮不操作。')
         paper = {'positions': sig.get('positions', {}), 'source': 'evolve'}
         applied = configure_evolved(sig.get('instruments'))
         print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，缺省 {FALLBACK_INST_LEVERAGE}×）· 全仓 · 同向 ≤ {SAME_SIDE_CAP:.0%}、≤ {MAX_SAME_SIDE} 仓 · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
@@ -774,13 +861,17 @@ def main():
         print(describe_volume(applied))
     if args.action in ('run', 'resume', 'follow-current', 'dry-run') and applied['mode'] == 'aggressive' and len(INSTRUMENTS) != applied['scan_limit']:
         raise SystemExit('Aggressive execution requires the confirmed 100-contract signal universe; no orders submitted')
-    out = args.data / 'okx_demo'; out.mkdir(parents=True, exist_ok=True)
+    out = state_dir(args.data, mode); out.mkdir(parents=True, exist_ok=True)
     state_path = out / 'state.json'
-    state = json.loads(state_path.read_text()) if state_path.exists() else new_state()
-    dry = args.action == 'dry-run'
-    mirror = Mirror(OKX(*creds), json.loads(json.dumps(state)) if dry else state, paper, datetime.now(timezone.utc), dry)
-    if applied.get('mode') == 'evolved':
-        mirror.live = real_price
+    state = load_state(state_path, mode)
+    # dry-run: the requested action, or forced by the mode (live default). Snapshot is read-only either way.
+    dry = args.action == 'dry-run' or (forced_dry and args.action != 'snapshot')
+    if forced_dry and args.action not in ('run', 'dry-run', 'snapshot'):
+        print(f'dry-run：{args.action} 只做预演，不保存状态、不发送订单。')
+    mirror = Mirror(OKX(*creds, mode=mode, dry_run=forced_dry or dry), json.loads(json.dumps(state)) if dry else state, paper,
+                    datetime.now(timezone.utc), dry)
+    if applied.get('mode') == 'evolved' and not live:
+        mirror.live = real_price      # live trades the real market already: nothing to compare against
     error = None
     try:
         if args.action == 'snapshot':
@@ -792,6 +883,10 @@ def main():
         error = str(exc); mirror.log('error', '-', step='run', detail=error)
     for a in mirror.actions:
         print(json.dumps(a, ensure_ascii=False))
+    if dry and live:
+        # Evidence for switching on: what this run would have done. Account numbers and intended orders only, no credentials.
+        atomic_json(out / 'dry_run_preview.json', dict(updated_at=mirror.now.isoformat(timespec='seconds').replace('+00:00', 'Z'),
+                    mode=mode, dry_run=True, action=args.action, equity=getattr(mirror, 'equity', None), actions=mirror.actions))
     if not dry and hasattr(mirror, 'equity'):
         mirror.record_equity()
     if not dry:
@@ -800,6 +895,8 @@ def main():
             f.writelines(json.dumps(a, ensure_ascii=False) + '\n' for a in mirror.actions)
         if hasattr(mirror, 'equity'):
             summary = mirror.summary()
+            if live:
+                summary['trading_mode'] = 'live'
             summary.update(decision_snapshot(args.data))
             lines = (out / 'actions.jsonl').read_text().splitlines()[-30:]
             summary['recent_actions'], tests_closed = dashboard_actions(out, [json.loads(l) for l in lines])

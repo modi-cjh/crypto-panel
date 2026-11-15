@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Pause new entries, close this program's demo positions, and verify exchange positions."""
+"""Pause new entries, close this program's positions, and verify exchange positions.
+
+Follows the trader's mode switch (OKX_TRADING_MODE): demo works on <data>/okx_demo, live on <data>/okx_live.
+Live closes are real orders, so they need OKX_DRY_RUN=0; in live dry-run the program never opened anything and this exits."""
 import argparse
 import json
 import os
@@ -7,14 +10,15 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from okx_demo_trader import OKX, OKXError, Mirror, new_state, configure_volume_test, dashboard_actions, decision_snapshot
+from okx_demo_trader import (OKX, OKXError, Mirror, configure_volume_test, dashboard_actions, decision_snapshot,
+                             trading_mode, dry_run_forced, state_dir, load_state)
 from runtime_guard import atomic_json
 
 
-def stop(data, client, wait=time.sleep):
-    out = Path(data) / 'okx_demo'; out.mkdir(parents=True, exist_ok=True)
+def stop(data, client, wait=time.sleep, mode='demo'):
+    out = state_dir(data, mode); out.mkdir(parents=True, exist_ok=True)
     path = out / 'state.json'
-    state = json.loads(path.read_text()) if path.exists() else new_state()
+    state = load_state(path, mode)
     targets = {k: m for k, m in state['mirrored'].items() if m['status'] == 'open'}
     state['paused'] = True
     atomic_json(path, state)
@@ -75,13 +79,16 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--data', type=Path, required=True)
     args = ap.parse_args()
+    mode = trading_mode()
+    if dry_run_forced(mode):
+        raise SystemExit('dry-run 模式下程序不会开仓，也不会发送平仓；实盘真实平仓需同时设置 OKX_DRY_RUN=0。')
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
     if not all(creds):
-        raise SystemExit('OKX demo credentials are missing')
+        raise SystemExit('OKX credentials are missing')
     signal_path = args.data / 'combined' / 'state.json'
     signal_state = json.loads(signal_path.read_text()) if signal_path.exists() else {}
     configure_volume_test(universe=signal_state.get('universe') if signal_state.get('profile_mode') == 'aggressive' else None)
-    print(json.dumps(stop(args.data, OKX(*creds)), ensure_ascii=False))
+    print(json.dumps(stop(args.data, OKX(*creds, mode=mode, dry_run=False), mode=mode), ensure_ascii=False))
 
 
 if __name__ == '__main__':

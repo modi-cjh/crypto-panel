@@ -1,0 +1,12 @@
+# 每小时 :50（UTC）跑一次实盘跟单。信号由 GitHub Actions 每 4 小时（:17）更新到 paper-data；
+# 中间几次只核对止损 / 平仓与日亏停手，没有新信号时不会开仓。
+[Unit]
+Description=MODI OKX live mirror, hourly
+
+[Timer]
+OnCalendar=*-*-* *:50:00 UTC
+Persistent=false
+Unit=okx-live@run.service
+
+[Install]
+WantedBy=timers.target

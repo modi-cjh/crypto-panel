@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
-from okx_demo_trader import OKX, OKXError, fmt, quantize, local_day
+from okx_demo_trader import OKX, OKXError, fmt, quantize, local_day, trading_mode
 
 INST = 'BTC-USDT-SWAP'
 ENTRY_ID, EXIT_ID = 'smk20261104a', 'smk20261104closea'
@@ -127,6 +127,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--output', type=Path, required=True)
     args = ap.parse_args()
+    if trading_mode() != 'demo':
+        raise SystemExit('冒烟测试只用于模拟盘（会真实开平一笔 BTC），实盘模式拒绝运行。')
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
     if not all(creds):
         raise SystemExit('OKX demo credentials are not configured')
@@ -139,7 +141,7 @@ def main():
     def save(report):
         args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2))
         print(json.dumps(report, ensure_ascii=False))
-    once(OKX(*creds, attempts=1), save)
+    once(OKX(*creds, attempts=1, mode='demo', dry_run=False), save)
 
 
 if __name__ == '__main__':

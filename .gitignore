@@ -30,3 +30,10 @@ rec-mascot.webm
 shot-home.png
 shot-home-demo.png
 rec-home.webm
+
+# OKX 实盘 / 本地凭据与状态：永远不提交（模板 *.env.example 除外）
+*.env
+okx-live.env
+okx_live/
+secrets/
+credentials*.json
