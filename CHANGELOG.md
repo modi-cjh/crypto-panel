@@ -566,6 +566,12 @@
 - 测试：新增 `tests/test_live_sync.py`（白名单、止损止盈合并、拒绝非实盘数据、密钥检查各种形态且报错不含密钥、本地裸仓库模拟推送：首次建孤儿分支、重复运行无提交、新数据快进、master 不动、密钥命中时不推送、ssh 失败信息不泄密）、`tests/live.test.mjs`、`tests/live_browser.cjs`；`mascot_browser.cjs`、`float_browser.cjs` 改用 live-data 夹具；删除针对已移除界面的 `okx_browser.cjs`、`okx_rest_browser.cjs`、`evolve_browser.cjs` 以及基线就失败的 `team_browser.cjs`、`browser_smoke.cjs`。
 
 
+### 实盘与进化币池从 86 个减到 50 个（成交量前 50）
+- 做了什么：①`tools/evolve/data.py`：`UNIVERSE_SIZE` 100 → 50。`universe()` 遇到已保存的更长列表（paper-data 上现有 86 个，按成交量从大到小、BTC 在首位）时按原顺序截取前 50，同步裁掉 `specs`、更新 `rule`、记 `trimmed_at` 并写回 `universe.json`；不重新按当天成交量排名、不改 `UNIVERSE_VERSION`，所以不会换币。②`tools/okx_demo_trader.py`（模拟盘与实盘共用）：新增 `SCAN_LIMIT = 50`，`configure_evolved()` 只取 `signals.json` `instruments` 的前 50 个，摘要 `execution_profile` 显示 `scan_limit: 50`、`instruments` 50 个。实盘部署后立刻生效，不必等下一次进化运行重新生成 `signals.json`；下一次进化运行后两边列表完全相同。③`AGENTS.md` 币池说明改为前 50。
+- 为什么：用户（2026-11-15 22:45）要求实盘扫描币种从 86 个减到 50 个，按现有排序取成交量最大的前 50，进化那边保持一致。
+- 影响：不在前 50 的币不再开新仓；程序已经开的仓仍照常管理（`managed` 包含 `mirrored` 中的未平仓位），等下一次进化运行后纸面账户不再含这些币，对应仓位会按“纸面已平”平掉。纸面账户每次从起点整体重放，去掉 36 个币会改写重放历史。其余参数（同向 10 单、同向风险不设上限、日亏 25%、风险 / 杠杆基因、全仓、每笔止损）未改。
+- 测试：`tests/test_evolve.py` 新增“86 个旧列表按原顺序截到前 50、specs 同步、写回后保持 50”；`tests/test_okx_demo_trader.py` 新增“86 个信号币 → `INSTRUMENTS` / `scan_limit` = 前 50”。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

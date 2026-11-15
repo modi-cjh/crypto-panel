@@ -269,8 +269,11 @@ class MirrorTests(unittest.TestCase):
             p = odt.configure_evolved()
             self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT, p['margin_mode']), ('evolved', .02, .10, None, .25, 'cross'))
             self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
-            odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])     # the evolution's top-100 list
+            odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])     # the evolution's coin list
             self.assertEqual(odt.INSTRUMENTS, ['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])
+            coins = [f'C{k}-USDT-SWAP' for k in range(86)]                                  # an 86-coin list from an older run
+            p = odt.configure_evolved(coins)
+            self.assertEqual((odt.SCAN_LIMIT, odt.INSTRUMENTS, p['instruments'], p['scan_limit']), (50, coins[:50], coins[:50], 50))
             odt.configure_evolved(['BTC-USD-SWAP'])                                          # not a USDT perpetual: majors only
             self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
             odt.configure_evolved()

@@ -24,7 +24,7 @@ from pathlib import Path
 from execution import Series
 
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']   # fallback / tests
-UNIVERSE_SIZE = 100
+UNIVERSE_SIZE = 50        # 2026-11-15: 86 → 50 (user); the live mirror caps its scan at the same number (okx_demo_trader.SCAN_LIMIT)
 WORKERS = 4           # parallel downloads; the shared pacing below keeps the total under OKX's rate limit
 WINDOW_DAYS = 365
 TRAIN_SHARE = .6
@@ -119,10 +119,17 @@ def universe(data_dir, now_ms, get=okx_get, with_specs=False):
         u = dict(version=UNIVERSE_VERSION, chosen_at=now_ms,
                  rule=f'top {UNIVERSE_SIZE} USDT perpetuals by 24h volume, listed ≥ {WINDOW_DAYS} days, also on OKX demo trading',
                  instruments=select_universe(now_ms, get, demo_get=(lambda p: okx_get(p, demo=True)) if real else None))
+    if len(u['instruments']) > UNIVERSE_SIZE:
+        # A list chosen under a larger size keeps its order (most traded first, BTC leading) and is cut to the first
+        # UNIVERSE_SIZE coins, so the evolution keeps the same coins rather than re-ranking on today's volume.
+        u['instruments'] = u['instruments'][:UNIVERSE_SIZE]
+        u['specs'] = {k: v for k, v in (u.get('specs') or {}).items() if k in u['instruments']}
+        u['rule'] = f'top {UNIVERSE_SIZE} USDT perpetuals by 24h volume, listed ≥ {WINDOW_DAYS} days, also on OKX demo trading'
+        u['trimmed_at'] = now_ms
     if with_specs and not u.get('specs'):
         meta = {d['instId']: d for d in get('public/instruments?instType=SWAP')}
         u['specs'] = {k: [float(meta[k]['ctVal']), float(meta[k]['lotSz']), float(meta[k]['minSz'])] for k in u['instruments'] if k in meta}
-    if not path.exists() or with_specs or u.get('chosen_at') == now_ms:
+    if not path.exists() or with_specs or now_ms in (u.get('chosen_at'), u.get('trimmed_at')):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(u, indent=1))
     return (u['instruments'], u.get('specs', {})) if with_specs else u['instruments']
