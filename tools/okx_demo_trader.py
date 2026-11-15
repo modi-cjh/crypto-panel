@@ -47,7 +47,7 @@ from volume_test import profile as volume_profile, describe as describe_volume
 from runtime_guard import entries_allowed, atomic_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
-from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, cross_open_allowed, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FALLBACK_INST_LEVERAGE, FEE, MAX_SAME_SIDE_POSITIONS, same_side_full  # noqa: E402
+from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, cross_open_allowed, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FEE, MAX_SAME_SIDE_POSITIONS, same_side_full  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -56,7 +56,9 @@ EVOLVED_DAILY_HALT = .10                         # following the evolution champ
 RISK_RANGE = (.02, .10)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
 MAX_TRADE_RISK = .10
 EVOLVED_MAX_LEVERAGE = GENE_MAX_LEVERAGE   # 20×, same cap as the evolve leverage gene
-# FALLBACK_INST_LEVERAGE and MAJORS come from execution (20× if the public spec has no usable `lever`)
+# MAJORS comes from execution. The per-instrument OKX leverage cap is read from the public instruments spec; when it is
+# missing or unusable no new position is opened on that coin (fail closed, no 20× fallback). Existing positions are
+# still managed and closed.
 # Every seat including the leader uses its own risk and leverage genes (2–10 %, 1–20×). Majors may be doubled then
 # clamped so the result never exceeds 10 %. The leader counts toward the same-direction cap and is subject to the
 # daily-loss stop, same as everyone else. LEADER_RISK / LEADER_LEVERAGE are the caps, not a fixed bigger size.
@@ -102,7 +104,7 @@ def configure_evolved(universe=None):
         INSTRUMENTS = list(universe)
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT,
                           leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE, max_risk=MAX_TRADE_RISK, max_leverage=EVOLVED_MAX_LEVERAGE,
-                          fallback_leverage=FALLBACK_INST_LEVERAGE, margin_mode=MARGIN_MODE, majors=list(MAJORS), major_factor=MAJOR_FACTOR,
+                          fallback_leverage=None, margin_mode=MARGIN_MODE, majors=list(MAJORS), major_factor=MAJOR_FACTOR,
                           max_same_side=MAX_SAME_SIDE)
     return ACTIVE_PROFILE
 
@@ -187,11 +189,14 @@ def load_state(path, mode):
 
 
 def signal_age_ms(sig, now):
+    """Age of the signal file in ms; None when updated_at is missing, unparsable or in the future (a future timestamp
+    gives a negative age that would slip past the max-age check, so it is treated as an invalid signal)."""
     try:
         ts = datetime.fromisoformat(str(sig.get('updated_at')).replace('Z', '+00:00'))
-        return int((now - ts).total_seconds() * 1000)
+        age = int((now - ts).total_seconds() * 1000)
     except (TypeError, ValueError):
         return None
+    return age if age >= 0 else None
 
 
 class OKXError(RuntimeError):
@@ -441,13 +446,16 @@ class Mirror:
         return caps
 
     def inst_max_lever(self, inst):
-        """Per-instrument OKX max leverage; 20× if the public spec is missing or unusable."""
+        """Per-instrument OKX max leverage, or None if the public spec is missing or unusable (open() then refuses the
+        new entry; there is no default cap to fall back to)."""
         caps = self.load_instrument_caps()
         if inst in caps:
             return caps[inst]
-        sp = self.spec(inst)
-        n = int(sp.get('maxLever') or 0)
-        return n if n >= 1 else FALLBACK_INST_LEVERAGE
+        try:
+            n = int(self.spec(inst).get('maxLever') or 0)
+        except (OKXError, TypeError, ValueError, KeyError):
+            return None
+        return n if n >= 1 else None
 
     def price(self, inst):
         r = self.c.request('GET', f'/api/v5/market/ticker?instId={inst}')
@@ -493,6 +501,9 @@ class Mirror:
         sp = self.spec(inst)
         if not sp['ctVal']:
             return self.log('skip', inst, reason='no_instrument_spec')
+        inst_cap = self.inst_max_lever(inst)
+        if not inst_cap:                       # fail closed: without OKX's own leverage cap for this coin, no new entry
+            return self.log('skip', inst, reason='no_leverage_spec')
         r = RISK
         evolved = bool(ACTIVE_PROFILE and ACTIVE_PROFILE.get('mode') == 'evolved')
         leader = evolved and bool(p.get('leader'))
@@ -536,14 +547,13 @@ class Mirror:
             want = max(1, min(want, EVOLVED_MAX_LEVERAGE))
             # per-instrument OKX cap (leverage only sets initial margin on cross)
             lever = clamp_leverage(want, cap=EVOLVED_MAX_LEVERAGE)
-            lever = max(1, min(lever, self.inst_max_lever(inst)))
+            lever = max(1, min(lever, inst_cap))
         else:
             cap = MAX_LEVERAGE
             try:
                 want = int(p.get('leverage') or cap)
             except (TypeError, ValueError):
                 want = cap
-            inst_cap = sp.get('maxLever') or cap
             lever = max(1, min(cap, want, int(.8 / dist), inst_cap))
         margin = float(contracts) * sp['ctVal'] * px / lever
         if margin > self.available * .95:
@@ -849,10 +859,10 @@ def main():
         age = signal_age_ms(sig, datetime.now(timezone.utc))
         if live and args.action != 'snapshot' and (age is None or age > LIVE_SIGNAL_MAX_AGE):
             # A stale signal file would keep closed paper positions open and follow old entries; the exchange stops stay in place.
-            raise SystemExit(f'evolve/signals.json 已过期或缺少 updated_at（超过 {LIVE_SIGNAL_MAX_AGE // 3600_000} 小时），实盘本轮不操作。')
+            raise SystemExit(f'evolve/signals.json 已过期、时间戳在未来或缺少 updated_at（超过 {LIVE_SIGNAL_MAX_AGE // 3600_000} 小时），实盘本轮不操作。')
         paper = {'positions': sig.get('positions', {}), 'source': 'evolve'}
         applied = configure_evolved(sig.get('instruments'))
-        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，缺省 {FALLBACK_INST_LEVERAGE}×）· 全仓 · 同向 ≤ {SAME_SIDE_CAP:.0%}、≤ {MAX_SAME_SIDE} 仓 · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
+        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，规格缺失则不开新仓）· 全仓 · 同向 ≤ {SAME_SIDE_CAP:.0%}、≤ {MAX_SAME_SIDE} 仓 · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
     else:
         if not paper_path.exists():
             print('没有策略信号，跳过跟单。'); return

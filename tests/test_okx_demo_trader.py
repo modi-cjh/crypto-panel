@@ -9,9 +9,10 @@ import okx_demo_trader as odt
 
 NOW = datetime(2026, 11, 4, 1, 30, tzinfo=timezone.utc)
 NOW_MS = int(NOW.timestamp() * 1000)
-SPECS = {'BTC-USDT-SWAP': dict(ctVal='0.01', lotSz='0.01', minSz='0.01', tickSz='0.1'), 'XRP-USDT-SWAP': dict(ctVal='100', lotSz='1', minSz='1', tickSz='0.0001'),
-         'ETH-USDT-SWAP': dict(ctVal='0.1', lotSz='0.01', minSz='0.01', tickSz='0.01'), 'SOL-USDT-SWAP': dict(ctVal='1', lotSz='0.01', minSz='0.01', tickSz='0.001'),
-         'DOGE-USDT-SWAP': dict(ctVal='1000', lotSz='0.01', minSz='0.01', tickSz='0.00001')}
+# OKX's public instruments rows always carry `lever` (the coin's max leverage); without it the follower opens nothing.
+SPECS = {'BTC-USDT-SWAP': dict(ctVal='0.01', lotSz='0.01', minSz='0.01', tickSz='0.1', lever='100'), 'XRP-USDT-SWAP': dict(ctVal='100', lotSz='1', minSz='1', tickSz='0.0001', lever='75'),
+         'ETH-USDT-SWAP': dict(ctVal='0.1', lotSz='0.01', minSz='0.01', tickSz='0.01', lever='100'), 'SOL-USDT-SWAP': dict(ctVal='1', lotSz='0.01', minSz='0.01', tickSz='0.001', lever='50'),
+         'DOGE-USDT-SWAP': dict(ctVal='1000', lotSz='0.01', minSz='0.01', tickSz='0.00001', lever='50')}
 
 
 class FakeOKX:
@@ -237,7 +238,7 @@ class MirrorTests(unittest.TestCase):
         self.assertEqual(fake2.posts, []); self.assertIn('stop_too_close_or_crossed', [a.get('reason') for a in m2.actions])
 
     def test_manual_positions_on_any_usdt_swap_are_shown_but_never_managed(self):
-        SPECS.setdefault('PEPE-USDT-SWAP', dict(ctVal='10000000', lotSz='1', minSz='1', tickSz='0.00000001'))
+        SPECS.setdefault('PEPE-USDT-SWAP', dict(ctVal='10000000', lotSz='1', minSz='1', tickSz='0.00000001', lever='50'))
         fake = FakeOKX(positions=[dict(instId='PEPE-USDT-SWAP', posSide='long', pos='2', avgPx='0.00001', markPx='0.000011', upl='20', lever='5', margin='40'),
                                   dict(instId='BTC-USD-SWAP', posSide='long', pos='1', avgPx='70000', upl='1', lever='5')])
         m, _ = run(fake, paper())
@@ -421,7 +422,7 @@ class MirrorTests(unittest.TestCase):
         self.assertEqual(odt.MARGIN_MODE, 'cross')                                             # volume-test / legacy profiles also use cross margin
 
     def test_the_five_majors_risk_twice_as_much_as_other_coins(self):
-        SPECS.setdefault('PEPE-USDT-SWAP', dict(ctVal='10000000', lotSz='1', minSz='1', tickSz='0.00000001'))
+        SPECS.setdefault('PEPE-USDT-SWAP', dict(ctVal='10000000', lotSz='1', minSz='1', tickSz='0.00000001', lever='50'))
         try:
             odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP'])
             self.assertEqual((odt.MAJORS, odt.MAJOR_FACTOR), (('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'), 2.0))
@@ -497,7 +498,7 @@ class MirrorTests(unittest.TestCase):
             m, _ = run(fake, paper(**sig))
             self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 15)
             # an alt / BNB with a lower OKX max: gene 100× → that coin's cap when it is below the 20× gene cap
-            SPECS.setdefault('BNB-USDT-SWAP', dict(ctVal='0.01', lotSz='1', minSz='1', tickSz='0.01'))
+            SPECS.setdefault('BNB-USDT-SWAP', dict(ctVal='0.01', lotSz='1', minSz='1', tickSz='0.01', lever='50'))
             bnb = {'BNB-USDT-SWAP': dict(long_btc(stop=600 * .98), strategy='evolved', risk=.02, leverage=100, entry=600.0)}
             caps2 = {'BNB-USDT-SWAP': dict(SPECS['BNB-USDT-SWAP'], lever='10')}
             odt.configure_evolved(['BTC-USDT-SWAP', 'BNB-USDT-SWAP'])
@@ -514,55 +515,88 @@ class MirrorTests(unittest.TestCase):
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
-    def test_instrument_max_leverage_falls_back_to_twenty_when_the_spec_is_missing(self):
+    def test_missing_or_unusable_instrument_leverage_refuses_new_entries_instead_of_assuming_twenty(self):
+        """PR #92 review: no 20× fallback. Without OKX's own `lever` for a coin the follower opens nothing on it (fail closed)."""
+        class NoLever(FakeOKX):
+            """List endpoint fails; the per-instrument row has the contract spec but `lever` is missing / junk / zero."""
+            lever = None
+            def request(self, method, path, body=None):
+                if method == 'GET' and path.startswith('/api/v5/public/instruments'):
+                    if 'instId=' not in path:
+                        return {'code': '50014', 'msg': 'unavailable', 'data': []}
+                    inst = path.split('instId=')[1].split('&')[0]
+                    row = {k: v for k, v in SPECS[inst].items() if k != 'lever'}
+                    if self.lever is not None:
+                        row['lever'] = self.lever
+                    return {'code': '0', 'data': [dict(row, instId=inst)]}
+                return super().request(method, path, body)
         try:
             odt.configure_evolved()
-            px, stop = 78000.0, 78000.0 * 0.997   # tight stop, gene 80× would otherwise stand
-            sig = {'BTC-USDT-SWAP': dict(long_btc(stop=stop), strategy='evolved', risk=.02, leverage=80, entry=px)}
-            # list endpoint fails and the per-inst row has no lever
-            bare = {'BTC-USDT-SWAP': dict(SPECS['BTC-USDT-SWAP'])}  # no lever key
-            fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments=False)
-            # per-inst fetch still works (FakeOKX list=False only fails the list path); force both to lack lever
-            fake.instruments = False
-            # When the list fails, inst_max_lever falls through to spec(); give spec no lever
-            class Bare(FakeOKX):
-                def request(self, method, path, body=None):
-                    if path.startswith('/api/v5/public/instruments') and 'instId=' in path:
-                        inst = path.split('instId=')[1].split('&')[0]
-                        return {'code': '0', 'data': [dict(SPECS[inst], instId=inst)]}  # no lever
-                    if path.startswith('/api/v5/public/instruments'):
-                        return {'code': '50014', 'msg': 'unavailable', 'data': []}
-                    return super().request(method, path, body)
-            fake = Bare(equity=100000, prices={'BTC-USDT-SWAP': px})
+            self.assertFalse(hasattr(odt, 'FALLBACK_INST_LEVERAGE'))
+            self.assertIsNone(odt.ACTIVE_PROFILE['fallback_leverage'])
+            px = 78000.0
+            sig = {'BTC-USDT-SWAP': dict(long_btc(stop=px * .97), strategy='evolved', risk=.02, leverage=10, entry=px)}
+            for lever in (None, '', 'abc', '0', '-5'):
+                fake = NoLever(equity=100000, prices={'BTC-USDT-SWAP': px}); fake.lever = lever
+                m, state = run(fake, paper(**sig))
+                self.assertEqual(fake.posts, [], lever)                              # no set-leverage, no order
+                self.assertFalse([a for a in m.actions if a['action'] == 'open'], lever)
+                self.assertEqual(m.actions[-1]['reason'], 'no_leverage_spec', lever)
+                self.assertEqual(state['mirrored'], {})
+            # the instrument missing from the list response and the per-instrument lookup failing too: also refused
+            fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments={'ETH-USDT-SWAP': SPECS['ETH-USDT-SWAP']})
             m, _ = run(fake, paper(**sig))
-            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 20)
-            self.assertEqual(odt.FALLBACK_INST_LEVERAGE, 20)
+            self.assertEqual(fake.posts, []); self.assertIn(m.actions[-1]['reason'], ('no_instrument_spec', 'no_leverage_spec'))
+            # a usable lever below the gene still caps it, as before
+            fake = FakeOKX(equity=100000, prices={'BTC-USDT-SWAP': px}, instruments={'BTC-USDT-SWAP': dict(SPECS['BTC-USDT-SWAP'], lever='5')})
+            m, _ = run(fake, paper(**sig))
+            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 5)
+            # the list failing but the per-instrument row having `lever` is enough (same as before)
+            fake = NoLever(equity=100000, prices={'BTC-USDT-SWAP': px}); fake.lever = '100'
+            m, _ = run(fake, paper(**sig))
+            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 10)
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+        # legacy (non-evolved) profile shares the same gate
+        fake = NoLever(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
+        self.assertEqual(fake.posts, []); self.assertEqual(m.actions[-1]['reason'], 'no_leverage_spec')
 
-    def test_a_major_missing_from_the_spec_falls_back_to_twenty_like_paper(self):
+    def test_missing_leverage_spec_still_lets_existing_positions_be_closed_and_their_stops_restored(self):
+        """Only new entries are refused: closing, restoring a missing stop and trailing the stop do not need the leverage cap."""
+        class NoLever(FakeOKX):
+            def request(self, method, path, body=None):
+                if method == 'GET' and path.startswith('/api/v5/public/instruments'):
+                    if 'instId=' not in path:
+                        return {'code': '50014', 'msg': 'unavailable', 'data': []}
+                    inst = path.split('instId=')[1].split('&')[0]
+                    return {'code': '0', 'data': [dict({k: v for k, v in SPECS[inst].items() if k != 'lever'}, instId=inst)]}
+                return super().request(method, path, body)
         try:
             odt.configure_evolved()
-            self.assertIs(odt.MAJORS, __import__('execution', fromlist=['MAJORS']).MAJORS)
-            self.assertEqual(odt.FALLBACK_INST_LEVERAGE, 20)
-            px, stop = 78000.0, 78000.0 * 0.997
-            sig = {'BTC-USDT-SWAP': dict(long_btc(stop=stop), strategy='evolved', risk=.02, leverage=80, entry=px)}
-            class BareMajor(FakeOKX):
-                def request(self, method, path, body=None):
-                    if path.startswith('/api/v5/public/instruments') and 'instId=' in path:
-                        inst = path.split('instId=')[1].split('&')[0]
-                        return {'code': '0', 'data': [dict(SPECS[inst], instId=inst)]}  # no lever
-                    if path.startswith('/api/v5/public/instruments'):
-                        return {'code': '50014', 'msg': 'unavailable', 'data': []}
-                    return super().request(method, path, body)
-            fake = BareMajor(equity=100000, prices={'BTC-USDT-SWAP': px})
-            m, _ = run(fake, paper(**sig))
-            self.assertEqual([a for a in m.actions if a['action'] == 'open'][-1]['leverage'], 20)
+            sig = {'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved', risk=.02)}
+            fake = FakeOKX(); _, state = run(fake, paper(**sig))                       # opened while the spec was fine
+            self.assertEqual(next(iter(state['mirrored'].values()))['status'], 'open')
+            held = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3', mgnMode='cross')]
+            # spec loses `lever`: the missing exchange stop is still restored
+            bare = NoLever(positions=held)
+            later = odt.Mirror(bare, state, paper(**sig), NOW + odt.timedelta(hours=4), False); later.run('run')
+            algo = next(b for q, b in bare.posts if q == '/api/v5/trade/order-algo')
+            self.assertEqual(algo['slTriggerPx'], '68600'); self.assertIn('restore_stop', [a['action'] for a in later.actions])
+            # ... a tighter paper stop is still trailed on the exchange
+            bare = NoLever(positions=held, algos=[dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1', slTriggerPx='68600')])
+            sig2 = {'BTC-USDT-SWAP': dict(long_btc(stop=69300.0), strategy='evolved', risk=.02)}
+            odt.Mirror(bare, state, paper(**sig2), NOW + odt.timedelta(hours=6), False).run('run')
+            self.assertEqual([q for q, _ in bare.posts], ['/api/v5/trade/amend-algos'])
+            # ... and when the paper position closes, the mirror still closes it
+            bare = NoLever(positions=held)
+            odt.Mirror(bare, state, paper(), NOW + odt.timedelta(hours=8), False).run('run')
+            self.assertEqual(bare.posts[0][0], '/api/v5/trade/close-position')
+            self.assertFalse([q for q, _ in bare.posts if q in ('/api/v5/trade/order', '/api/v5/account/set-leverage')])
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
     def test_evolved_entry_is_skipped_when_its_stop_would_leave_equity_at_or_below_maintenance_margin(self):
-        SPECS.setdefault('WIF-USDT-SWAP', dict(ctVal='1', lotSz='1', minSz='1', tickSz='0.0001'))
+        SPECS.setdefault('WIF-USDT-SWAP', dict(ctVal='1', lotSz='1', minSz='1', tickSz='0.0001', lever='50'))
         try:
             odt.configure_evolved()
             px = 78000.0
@@ -598,7 +632,7 @@ class MirrorTests(unittest.TestCase):
         # but on the way to the stop (position still open, its 2.5 % MM still counted) equity falls below MM → skipped.
         # Under the 20× gene cap (PR #90) this entry never fits the free margin in the first place, so the gate is
         # exercised with the mirror's cap raised to 100× for this test only; the real cap is checked at the end.
-        SPECS.setdefault('WIF-USDT-SWAP', dict(ctVal='1', lotSz='1', minSz='1', tickSz='0.0001'))
+        SPECS.setdefault('WIF-USDT-SWAP', dict(ctVal='1', lotSz='1', minSz='1', tickSz='0.0001', lever='50'))
         try:
             odt.configure_evolved(universe=['WIF-USDT-SWAP'])        # the evolution's coin list includes this alt
             caps = {'WIF-USDT-SWAP': dict(SPECS['WIF-USDT-SWAP'], lever='50')}

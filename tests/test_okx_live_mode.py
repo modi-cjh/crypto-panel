@@ -295,6 +295,28 @@ class MainTests(LiveModeBase):
         self.assertTrue(code); self.assertIn('signals.json', text)
         self.assertEqual(self.requests(), [])
 
+    def test_live_refuses_signals_stamped_in_the_future(self):
+        """PR #92 review: a future updated_at gave a negative age and slipped past the max-age check."""
+        for hours_ahead in (0.01, 1, 24 * 365):
+            self.write_signals(signals(age_hours=-hours_ahead))
+            text, code = self.main(OKX_TRADING_MODE='live', OKX_DRY_RUN='0')
+            self.assertTrue(code, hours_ahead); self.assertIn('未来', text)
+            self.assertEqual(self.requests(), [], hours_ahead)
+        # a fresh signal from the past still goes through to the account
+        self.write_signals(signals(age_hours=.5))
+        text, code = self.main(OKX_TRADING_MODE='live', OKX_DRY_RUN='0')
+        self.assertFalse(code, text)
+        self.assertTrue(self.requests())
+
+    def test_signal_age_is_none_for_future_missing_or_bad_timestamps(self):
+        now = datetime(2026, 11, 15, 12, tzinfo=timezone.utc)
+        self.assertEqual(odt.signal_age_ms({'updated_at': '2026-11-15T11:00:00+00:00'}, now), 3600_000)
+        self.assertEqual(odt.signal_age_ms({'updated_at': '2026-11-15T12:00:00Z'}, now), 0)
+        self.assertIsNone(odt.signal_age_ms({'updated_at': '2026-11-15T12:00:01+00:00'}, now))   # 1 s in the future
+        self.assertIsNone(odt.signal_age_ms({'updated_at': '2099-01-01T00:00:00+00:00'}, now))
+        self.assertIsNone(odt.signal_age_ms({}, now))
+        self.assertIsNone(odt.signal_age_ms({'updated_at': 'yesterday'}, now))
+
     def test_credentials_come_only_from_the_environment(self):
         for missing in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE'):
             text, code = self.main(OKX_TRADING_MODE='live', **{missing: None})
