@@ -1,14 +1,14 @@
 {
- "updated_at": "2026-11-15T13:05:28Z",
- "champion": "s15653",
+ "updated_at": "2026-11-15T16:52:26Z",
+ "champion": "s19566",
  "team": [
   "s18771",
-  "s15653",
-  "s14653",
+  "s15594",
+  "s20401",
   "s14934",
   "s19566",
   "s14155",
-  "s18637",
+  "s20822",
   "s19112"
  ],
  "instruments": [
@@ -61,43 +61,7 @@
   "MINA-USDT-SWAP",
   "AXS-USDT-SWAP",
   "IMX-USDT-SWAP",
-  "CFX-USDT-SWAP",
-  "BIO-USDT-SWAP",
-  "CHZ-USDT-SWAP",
-  "SYRUP-USDT-SWAP",
-  "ZIL-USDT-SWAP",
-  "CRO-USDT-SWAP",
-  "COMP-USDT-SWAP",
-  "SUSHI-USDT-SWAP",
-  "SPK-USDT-SWAP",
-  "LPT-USDT-SWAP",
-  "YB-USDT-SWAP",
-  "XTZ-USDT-SWAP",
-  "A-USDT-SWAP",
-  "NOT-USDT-SWAP",
-  "LINEA-USDT-SWAP",
-  "HMSTR-USDT-SWAP",
-  "SKY-USDT-SWAP",
-  "YGG-USDT-SWAP",
-  "GMT-USDT-SWAP",
-  "KSM-USDT-SWAP",
-  "AUCTION-USDT-SWAP",
-  "IOTA-USDT-SWAP",
-  "YFI-USDT-SWAP",
-  "MASK-USDT-SWAP",
-  "RESOLV-USDT-SWAP",
-  "NEO-USDT-SWAP",
-  "CELO-USDT-SWAP",
-  "1INCH-USDT-SWAP",
-  "THETA-USDT-SWAP",
-  "ZETA-USDT-SWAP",
-  "BAND-USDT-SWAP",
-  "QTUM-USDT-SWAP",
-  "ETHW-USDT-SWAP",
-  "COAI-USDT-SWAP",
-  "BRETT-USDT-SWAP",
-  "USDC-USDT-SWAP",
-  "LQTY-USDT-SWAP"
+  "CFX-USDT-SWAP"
  ],
  "positions": {
   "H-USDT-SWAP": {
@@ -138,19 +102,6 @@
    "leverage": 10,
    "leader": true
   },
-  "LPT-USDT-SWAP": {
-   "side": -1,
-   "entry": 1.2557488,
-   "stop": 1.130253192429484,
-   "tp": 0.9985651804403929,
-   "opened": 1794441600000,
-   "strategy": "evolved",
-   "champion": "s13215",
-   "rank": 100,
-   "risk": 0.0234,
-   "leverage": 10,
-   "leader": true
-  },
   "INJ-USDT-SWAP": {
    "side": -1,
    "entry": 7.518496,
@@ -159,9 +110,22 @@
    "opened": 1794441600000,
    "strategy": "evolved",
    "champion": "s14155",
-   "rank": 5,
+   "rank": 6,
    "risk": 0.0235,
    "leverage": 10
+  },
+  "ENA-USDT-SWAP": {
+   "side": -1,
+   "entry": 0.142051584,
+   "stop": 0.12757533570031498,
+   "tp": 0.09432817760914952,
+   "opened": 1794470400000,
+   "strategy": "evolved",
+   "champion": "s13215",
+   "rank": 100,
+   "risk": 0.0234,
+   "leverage": 10,
+   "leader": true
   },
   "BTC-USDT-SWAP": {
    "side": -1,
@@ -195,7 +159,7 @@
    "opened": 1794528000000,
    "strategy": "evolved",
    "champion": "s14155",
-   "rank": 5,
+   "rank": 6,
    "risk": 0.0235,
    "leverage": 10
   },
@@ -207,7 +171,7 @@
    "opened": 1794614400000,
    "strategy": "evolved",
    "champion": "s14155",
-   "rank": 5,
+   "rank": 6,
    "risk": 0.0235,
    "leverage": 10
   },
@@ -219,7 +183,7 @@
    "opened": 1794614400000,
    "strategy": "evolved",
    "champion": "s15653",
-   "rank": 2,
+   "rank": 100,
    "risk": 0.0482,
    "leverage": 10
   },
@@ -231,7 +195,7 @@
    "opened": 1794700800000,
    "strategy": "evolved",
    "champion": "s15653",
-   "rank": 2,
+   "rank": 100,
    "risk": 0.0482,
    "leverage": 10
   },
@@ -243,7 +207,7 @@
    "opened": 1794700800000,
    "strategy": "evolved",
    "champion": "s15653",
-   "rank": 2,
+   "rank": 100,
    "risk": 0.0482,
    "leverage": 10
   },
@@ -255,7 +219,7 @@
    "opened": 1794700800000,
    "strategy": "evolved",
    "champion": "s18637",
-   "rank": 8,
+   "rank": 100,
    "risk": 0.055,
    "leverage": 20
   },
@@ -267,7 +231,7 @@
    "opened": 1794700800000,
    "strategy": "evolved",
    "champion": "s18637",
-   "rank": 8,
+   "rank": 100,
    "risk": 0.055,
    "leverage": 20
   },
@@ -279,7 +243,7 @@
    "opened": 1794700800000,
    "strategy": "evolved",
    "champion": "s18637",
-   "rank": 8,
+   "rank": 100,
    "risk": 0.055,
    "leverage": 20
   }

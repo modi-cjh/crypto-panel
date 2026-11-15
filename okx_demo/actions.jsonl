@@ -181,3 +181,5 @@
 {"ts": "2026-11-15T05:05:28Z", "action": "amend_stop", "inst": "NEAR-USDT-SWAP", "dry_run": false, "old": 4.065896198163237, "new": 3.9758961981632375}
 {"ts": "2026-11-15T05:05:28Z", "action": "amend_stop", "inst": "ADA-USDT-SWAP", "dry_run": false, "old": 0.1794350872360656, "new": 0.17563508723606563}
 {"ts": "2026-11-15T05:05:28Z", "action": "amend_stop", "inst": "LTC-USDT-SWAP", "dry_run": false, "old": 51.439659154222824, "new": 50.599659154222834}
+{"ts": "2026-11-15T16:53:09Z", "action": "close", "inst": "LPT-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-15T16:53:09Z", "action": "skip", "inst": "ENA-USDT-SWAP", "dry_run": false, "reason": "same_side_count", "open_same_side": 11, "max_same_side": 10}

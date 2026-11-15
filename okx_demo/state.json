@@ -518,6 +518,10 @@
   [
    1794748002515,
    8342.92
+  ],
+  [
+   1794761589704,
+   8479.67
   ]
  ],
  "mirrored": {
@@ -958,11 +962,12 @@
    "entry": 1.262,
    "clOrdId": "evlpt1794441600",
    "opened_at": 1794443627032,
-   "status": "open",
+   "status": "done",
    "leader": true,
    "mgnMode": "cross",
    "ordId": "4091668738680016896",
-   "last_upl": 285.28750000000025
+   "last_upl": 318.27940000000007,
+   "closed_reason": "paper_closed"
   },
   "XTZ-USDT-SWAP|1794441600000": {
    "inst": "XTZ-USDT-SWAP",
@@ -1482,6 +1487,13 @@
    "funding": 0.2902437,
    "close_price": 79.63,
    "fee": -1.4363109
+  },
+  "2026-11-15T16:53:09Z|LPT-USDT-SWAP": {
+   "pnl": 312.3227705409802,
+   "price_pnl": 312.46060000000006,
+   "funding": 2.147345440980111,
+   "close_price": 1.0969982995826248,
+   "fee": -2.2851749
   }
  },
  "largest_close": {
@@ -1489,6 +1501,6 @@
   "inst": "XRP-USDT-SWAP",
   "pnl": 2878.799155673374
  },
- "leader_realized": 370.3550022653192,
+ "leader_realized": 688.6344022653193,
  "leader_upl_start": 518.6979000000003
 }
