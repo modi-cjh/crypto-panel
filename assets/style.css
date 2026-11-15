@@ -186,10 +186,10 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
 
 /* ---- UI refresh: OKX demo account (home overview + detail page) ---- */
 .visually-hidden{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-#home-sim .okx-hero{padding:18px 18px 10px}
+#home-live .okx-hero{padding:18px 18px 10px}
 .okx-hero-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .okx-hero-top h1{margin:0;font-size:13px;font-weight:500;color:var(--muted);display:flex;align-items:center;gap:6px}
-#home-sim .okx-hero .equity-number{margin:6px 0 2px}#home-sim .okx-hero .equity-number strong{font-size:clamp(34px,10vw,46px)}
+#home-live .okx-hero .equity-number{margin:6px 0 2px}#home-live .okx-hero .equity-number strong{font-size:clamp(34px,10vw,46px)}
 .okx-ret{margin:0;font-size:13px;line-height:1.6;color:var(--text)}
 .okx-notes{margin:12px 0 2px}
 .okx-notes>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-radius:10px;background:#f3f5f8;font-size:12px;color:var(--muted);line-height:1.5}
@@ -197,7 +197,7 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
 .okx-notes.warn>summary{background:#fff6e5;color:#7a4e00}
 .okx-notes-body{padding:6px 4px 0}.okx-notes-body p,.okx-notes-body p.trade-profile,.okx-notes-body p.account-data-note,.okx-notes-body p.runtime-health{margin:0;padding:5px 2px;border:0;background:none;color:var(--muted);font-size:12px;line-height:1.6}
 .okx-hero-notes{padding:0 16px 14px}@media(min-width:700px){.okx-hero-notes{padding:0 22px 16px}}
-#home-sim .okx-curve-head{padding:14px 0 4px}
+#home-live .okx-curve-head{padding:14px 0 4px}
 .okx-pos-list{display:flex;flex-direction:column;gap:8px;padding:0 14px 14px}@media(min-width:700px){.okx-pos-list{padding:0 22px 18px}}
 .okx-pos{border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}.okx-pos.manual{border-style:dashed}
 .okx-pos>summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px}
@@ -222,13 +222,13 @@ button.connection{font:inherit;color:inherit;background:none;border:0;padding:0;
 .okx-danger .trade-stop-button{background:transparent;color:var(--red);border:1px solid #efc3c9;font-weight:500;box-shadow:none}
 .sim-primary #pinned-source,.sim-primary #pinned-time{display:none}
 .sim-curve svg text{font-size:13px}@media(max-width:760px){.sim-curve svg text{font-size:21px}}
-@media(max-width:760px){#home-sim,#sim-page{padding-bottom:84px}}
+@media(max-width:760px){#home-live,#sim-page{padding-bottom:84px}}
 @media(min-width:900px){
-  #home-sim .okx-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);column-gap:32px;align-content:start}
-  #home-sim .okx-hero>*{grid-column:1}
-  #home-sim .okx-hero>.okx-curve-head{grid-column:2;grid-row:1}
-  #home-sim .okx-hero>#home-okx-curve{grid-column:2;grid-row:2/span 5}
-  #home-sim .okx-curve-head{padding:0 0 4px}
+  #home-live .okx-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);column-gap:32px;align-content:start}
+  #home-live .okx-hero>*{grid-column:1}
+  #home-live .okx-hero>.okx-curve-head{grid-column:2;grid-row:1}
+  #home-live .okx-hero>#home-okx-curve{grid-column:2;grid-row:2/span 5}
+  #home-live .okx-curve-head{padding:0 0 4px}
   .sim-curve svg{max-height:300px}
 }
 /* ---- Companion at work: trading screen while watching, magnifier while scanning, trade tickets ---- */

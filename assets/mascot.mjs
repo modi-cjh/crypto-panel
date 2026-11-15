@@ -13,7 +13,7 @@ export function mascotState(snapshot) {
   if(!Number.isFinite(at) || !Number.isFinite(now) || !account || snapshot.dataDisconnected || now-at>(snapshot.offlineMinutes??15)*60000)
     return {state:'offline',label:'离线',message:'快照过期或数据中断，我在努力重连'};
   const pause=snapshot.pause ?? account.pause;
-  if(pause?.paused || account.status==='暂停')return {state:'paused',label:'暂停',message:'模拟盘暂停中'};
+  if(pause?.paused || account.status==='暂停')return {state:'paused',label:'暂停',message:'交易暂停中'};
   const recent=t=>Number.isFinite(stamp(t)) && now-stamp(t)>=0 && now-stamp(t)<=15*60000;
   const events=snapshot.events || [];
   // Public fills carry no close reason, so stop-loss detection relies on events only.
@@ -72,8 +72,10 @@ export const reportLine=row=>({text:`${ROLES[row.role] || '团队'}交了报告�
 export function contextTip(c={}){
   if(c.route==='coin')return `你在看 ${coinName(c.coin)}，${c.decision?'会议结论：'+c.decision:'暂无会议结论'}。`;
   if(c.route==='paper')return '这里是账户历史：最大回撤按所选范围从峰值到之后低点计算。';
-  if(c.route==='market')return '点任一币种，可以看均值回归入场条件和 K 线。';
+  if(c.route==='market')return '点任一币种，可以看 K 线、指标和支撑 / 阻力。';
   if(c.route==='sim')return '这里是 OKX 模拟交易账户：跟随策略进化的冠军组合，约每 4 小时检查一次；止损挂在交易所，浮盈按实时价计算。';
+  if(c.live && c.paused)return '实盘已暂停开新仓，已有持仓的止损仍挂在交易所；恢复后我会第一时间播报开平仓。';
+  if(c.live)return `OKX 实盘账户今日 ${signed(c.live.day)} USDT，持仓 ${c.live.positions} 个；止损挂在交易所，有开平仓我会马上告诉你。`;
   if(c.sim)return `OKX 模拟账户累计 ${signed(c.sim.totals.ret)}%，持仓 ${c.sim.totals.positions} 个；有开平仓我会马上告诉你。`;
   if(c.paused)return '模拟盘暂停中，重新开始后我会第一时间播报开平仓。';
   if(c.positions>0)return `当前 ${c.positions} 个持仓，点持仓行可展开 K 线。`;
@@ -90,12 +92,14 @@ const svg=(id)=>`<svg viewBox="0 0 120 120" aria-hidden="true" focusable="false"
 
 const TABS=[['status','状态'],['team','团队'],['decisions','异动 / 决策'],['feed','动态']];
 export class Mascot {
-  constructor(host,panel,{size=72}={}) {
+  constructor(host,panel,{size=72,tabs=null}={}) {
+    // tabs: subset of TABS keys to show (the live dashboard has no team / decisions feeds).
+    this.tabs=tabs?TABS.filter(([k])=>tabs.includes(k)):TABS;
     this.host=host;this.panel=panel;this.size=size;this.value={state:'offline',label:'离线',message:'等待快照'};
     this.queue=[];this.feed=[];this.context={};this.team=null;this.events=[];this.reaction=null;this.speaking=false;this.greeted=false;this.taps=0;this.tab='status';
     host.classList.add('m-host');
     host.innerHTML=`<div id="mascot-ticket" class="m-ticket" aria-hidden="true" hidden><b></b><strong></strong><small></small></div><p id="mascot-bubble" class="companion-bubble" aria-hidden="true" hidden></p><button id="mascot-touch" class="companion-bot" type="button" aria-label="MODI 团队伙伴：点按打开面板，可拖动" aria-haspopup="dialog" aria-expanded="false">${svg('bot')}<span id="mascot-status" class="companion-chip">—</span></button>`;
-    panel.innerHTML=`<header class="companion-head"><div class="companion-face m-host" aria-hidden="true">${svg('panel')}</div><div><h2 id="mascot-drawer-title">MODI 团队伙伴</h2><p id="companion-mood">—</p></div><button data-close type="button" aria-label="关闭面板">关闭</button></header><p id="companion-tip" class="companion-tip"></p><div class="companion-tabs" role="tablist" aria-label="伙伴面板">${TABS.map(([k,n])=>`<button type="button" role="tab" id="companion-tab-${k}" aria-controls="companion-panel-${k}" aria-selected="${k==='status'}" tabindex="${k==='status'?0:-1}">${n}</button>`).join('')}</div><section id="companion-panel-status" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-status"></section><section id="companion-panel-team" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-team" hidden><p id="team-updated" class="muted">等待团队数据</p><div id="mascot-report-list"></div></section><section id="companion-panel-feed" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-feed" hidden><ol id="companion-feed" class="companion-feed"></ol></section><div class="companion-foot"><button id="companion-dock" type="button">收进边缘</button><button id="companion-float" type="button" hidden>桌面悬浮窗</button></div>`;
+    panel.innerHTML=`<header class="companion-head"><div class="companion-face m-host" aria-hidden="true">${svg('panel')}</div><div><h2 id="mascot-drawer-title">MODI 团队伙伴</h2><p id="companion-mood">—</p></div><button data-close type="button" aria-label="关闭面板">关闭</button></header><p id="companion-tip" class="companion-tip"></p><div class="companion-tabs" role="tablist" aria-label="伙伴面板">${this.tabs.map(([k,n])=>`<button type="button" role="tab" id="companion-tab-${k}" aria-controls="companion-panel-${k}" aria-selected="${k==='status'}" tabindex="${k==='status'?0:-1}">${n}</button>`).join('')}</div><section id="companion-panel-status" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-status"></section><section id="companion-panel-team" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-team" hidden><p id="team-updated" class="muted">等待团队数据</p><div id="mascot-report-list"></div></section><section id="companion-panel-feed" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-feed" hidden><ol id="companion-feed" class="companion-feed"></ol></section><div class="companion-foot"><button id="companion-dock" type="button">收进边缘</button><button id="companion-float" type="button" hidden>桌面悬浮窗</button></div>`;
     this.button=host.querySelector('#mascot-touch');this.bubble=host.querySelector('#mascot-bubble');this.face=panel.querySelector('.companion-face');
     panel.querySelector('.companion-foot').insertAdjacentHTML('beforebegin','<section id="companion-panel-decisions" class="companion-section" role="tabpanel" aria-labelledby="companion-tab-decisions" hidden></section>');
     this.eyes=host.querySelector('.m-eyes');
@@ -272,7 +276,7 @@ export class Mascot {
       try{const style=doc.createElement('style');style.textContent=[...sheet.cssRules].map(r=>r.cssText).join('\n');doc.head.append(style);}
       catch{if(sheet.href){const link=doc.createElement('link');link.rel='stylesheet';link.href=sheet.href;doc.head.append(link);}}
     }
-    doc.title='MODI · 模拟盘伙伴';doc.documentElement.lang='zh-CN';doc.body.className='pip-body';
+    doc.title='MODI · 实盘伙伴';doc.documentElement.lang='zh-CN';doc.body.className='pip-body';
     const info=doc.createElement('div');info.className='pip-info';info.innerHTML='<strong data-pip-equity>—</strong><span data-pip-line>—</span>';
     this.floating=win;this.pipInfo=info;
     doc.body.append(this.host,info);this.host.classList.add('in-pip');this.host.style.transform='';
@@ -328,7 +332,7 @@ export class Mascot {
   }
   select(tab){
     this.tab=tab;
-    for(const [k] of TABS){const t=this.panel.querySelector('#companion-tab-'+k),on=k===tab;t.setAttribute('aria-selected',String(on));t.tabIndex=on?0:-1;this.panel.querySelector('#companion-panel-'+k).hidden=!on;}
+    for(const [k] of this.tabs){const t=this.panel.querySelector('#companion-tab-'+k),on=k===tab;t.setAttribute('aria-selected',String(on));t.tabIndex=on?0:-1;this.panel.querySelector('#companion-panel-'+k).hidden=!on;}
     this.render();
     if(tab==='decisions')document.dispatchEvent(new CustomEvent('modi-decisions-open'));
   }
@@ -341,6 +345,11 @@ export class Mascot {
   renderStatus(){
     const c=this.context,metric=(label,value,cls='')=>`<div><span>${label}</span><strong class="${cls}">${value}</strong></div>`;
     const tone=v=>Number.isFinite(v)?v>=0?'up':'down':'';
+    if(c.live){
+      const l=c.live,doing=this.work?`<p class="companion-doing" data-work="${esc(this.work.mode)}"><b>${esc(this.work.label)}</b>${esc(this.work.detail || '')}</p>`:'';
+      this.panel.querySelector('#companion-panel-status').innerHTML=doing+`<div class="companion-metrics">${metric('实盘权益 USDT',fmt(l.equity))}${metric('今日盈亏',Number.isFinite(l.day)?`${signed(l.day)} / ${signed(l.dayPct)}%`:'—',tone(l.day))}${metric('当前持仓',l.positions+' 仓')}${metric('可用 USDT',fmt(l.available))}</div><p class="muted">OKX 实盘 · 真实资金，风险自负</p>`;
+      return;
+    }
     if(c.sim){
       const t=c.sim.totals,doing=this.work?`<p class="companion-doing" data-work="${esc(this.work.mode)}"><b>${esc(this.work.label)}</b>${esc(this.work.detail || '')}</p>`:'';
       this.panel.querySelector('#companion-panel-status').innerHTML=doing+`<div class="companion-metrics">${metric('账户权益 USDT',fmt(t.equity))}${metric('累计收益',`${signed(t.ret)}%`,tone(t.ret))}${metric('当前持仓',t.positions+' 仓')}${metric('已平仓',t.trades+' 笔')}</div>`+

@@ -1,5 +1,5 @@
 // Companion acceptance: PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs
-// Synthetic responses are injected only through route interception; nothing is written to paper/.
+// Synthetic live-data responses are injected only through route interception.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -9,28 +9,23 @@ const BASE = process.env.PANEL_URL || 'http://127.0.0.1:8008/';
 const read = name => JSON.parse(fs.readFileSync(path.join(root, name), 'utf8'));
 const iso = t => new Date(t).toISOString();
 
-function paused() { const a = read('paper/account.json'); a.updated_at = iso(Date.now()); return a; }
-function running(fills = []) {
-  const a = paused(), demo = read('tests/fixtures/home.json'), now = Date.now();
-  delete a.pause;
-  Object.assign(a.accounts[0], { status: '运行中', updated_at: iso(now), balance: 100, equity: 101.4, daily_loss_limit: .08,
-    day: new Date(now + 7 * 3600e3).toISOString().slice(0, 10), day_start: 100.5, daily_pnl: .9, strategy_enabled: true,
-    positions: demo.positions.map(p => ({ ...p, entry_time: iso(now - 3 * 3600e3) })), equity_curve: [], fills });
-  return a;
-}
+const LIVE = { schema_version: 1, source: 'okx-live', trading_mode: 'live', equity: 100, available: 100, day_start: 100, start_equity: 100,
+  halted: false, dry_run: false, positions: [], history: [] };
+function paused() { return { ...LIVE, updated_at: iso(Date.now()), paused: true }; }
+function running() { return { ...LIVE, updated_at: iso(Date.now()), paused: false, equity: 101.4, day_start: 100.5,
+  positions: [{ inst: 'ETH-USDT-SWAP', side: 'long', contracts: 5, lever: 10, mgnMode: 'cross', avgPx: 2400, markPx: 2410, upl: .5, margin: 12, ctVal: .01, ours: true }] }; }
+const fillsDoc = rows => ({ schema_version: 1, source: 'okx-live', updated_at: iso(Date.now()), fills: rows, events: [] });
 const visible = (page, sel) => page.locator(sel).isVisible();
 const wait = (page, ms) => page.waitForTimeout(ms);
 
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
-  let account = paused(), team = { schema_version: 1, status: { updated_at: null, meeting: null, phase: null, roles: {} }, log: [] };
+  let account = paused(), fills = fillsDoc([]);
   await context.route(/okx\.com/, r => r.abort());
-  // Without paper-account data the companion falls back to the bot snapshot, which these checks cover.
-  await context.route('**/paper-data/okx_demo/summary.json*', r => r.abort());
-  await context.route('**/paper/account.json?*', r => r.fulfill({ json: account }));
-  await context.route('**/paper/team.json?*', r => r.fulfill({ json: team }));
-  await context.route('**/paper/events.json?*', r => r.fulfill({ json: { schema_version: 1, generated_at: iso(Date.now()), source_status: 'ok', events: [] } }));
+  await context.routeWebSocket(/okx\.com/, ws => ws.close());
+  await context.route('**/live-data/snapshot.json*', r => r.fulfill({ json: account }));
+  await context.route('**/live-data/fills.json*', r => r.fulfill({ json: fills }));
   // First visit on a phone starts docked at the edge; a returning visitor's choice is kept.
   { const fresh = await context.newPage(); await fresh.goto(BASE); await fresh.waitForSelector('#mascot');
     assert.ok(await fresh.locator('#mascot').evaluate(e => e.classList.contains('docked')), 'phones start docked'); await fresh.close(); }
@@ -57,13 +52,11 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   assert.equal(await page.locator('#mascot-touch').getAttribute('aria-expanded'), 'true');
   assert.match(await page.locator('#companion-tip').innerText(), /暂停/);
   assert.match(await page.locator('#companion-panel-status').innerText(), /100\.00/);
+  // The live dashboard has two tabs: 状态 and 动态 (no team / decisions feeds).
+  assert.equal(await page.locator('#companion-tab-team').count(), 0);
+  assert.equal(await page.locator('#companion-tab-decisions').count(), 0);
   await page.locator('#companion-tab-status').focus(); await page.keyboard.press('ArrowRight');
-  assert.equal(await page.locator('#companion-tab-team').getAttribute('aria-selected'), 'true');
-  assert.equal(await page.locator('#mascot-report-list').innerText(), '暂无报告');
-  await page.keyboard.press('ArrowRight');                          // 异动 / 决策 tab sits between 团队 and 动态
-  assert.equal(await page.locator('#companion-tab-decisions').getAttribute('aria-selected'), 'true');
-  assert.equal(await visible(page, '#companion-panel-decisions'), true);
-  await page.keyboard.press('ArrowRight');
+  assert.equal(await page.locator('#companion-tab-feed').getAttribute('aria-selected'), 'true');
   assert.equal(await visible(page, '#companion-panel-feed'), true);
   await page.keyboard.press('Escape');
   assert.equal(await visible(page, '#mascot-drawer'), false);
@@ -81,10 +74,10 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   await page.keyboard.press('Enter'); await page.waitForSelector('#mascot-drawer[open]');
   await page.locator('[data-close]').click();
 
-  // Double tap greets without opening; triple tap makes it dizzy.
+  // Double tap reads out the live positions (or greets) without opening; triple tap makes it dizzy.
   const box = await page.locator('#mascot-touch').boundingBox(), cx = box.x + box.width / 2, cy = box.y + box.height / 2;
   for (let i = 0; i < 2; i++) { await page.touchscreen.tap(cx, cy); await wait(page, 60); }
-  await page.waitForFunction(() => document.querySelector('#mascot').dataset.reaction === 'wave');
+  await page.waitForFunction(() => ['wave', 'report'].includes(document.querySelector('#mascot').dataset.reaction));
   assert.equal(await visible(page, '#mascot-drawer'), false);
   for (let i = 0; i < 3; i++) { await page.touchscreen.tap(cx, cy); await wait(page, 60); }
   await page.waitForFunction(() => document.querySelector('#mascot').dataset.eyes === 'dizzy');
@@ -128,23 +121,16 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   assert.match(await page.locator('#companion-tip').innerText(), /BTC/);
   await page.keyboard.press('Escape');
 
-  // Live narration: a new fill is spoken in the bubble and logged in the feed.
-  account = running(); await page.goto(BASE); await page.waitForSelector('#mascot[data-state]');
+  // Live narration: a new fill shows a ticket, is spoken and toasted.
+  account = running(); fills = fillsDoc([]); await page.goto(BASE); await page.waitForSelector('#mascot[data-state]');
   await wait(page, 1500);
-  account = running([{ timestamp: iso(Date.now()), symbol: 'ETH-USDT-SWAP', side: 1, kind: 'open', qty: .05, price: 2450.5, notional: .05 * 2450.5, pnl: null }]);
+  fills = fillsDoc([{ ts: iso(Date.now()), action: 'open', inst: 'ETH-USDT-SWAP', side: 'long', contracts: 5, price: 2450.5, stop: 2300, leverage: 10, dry_run: false }]);
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await page.waitForFunction(() => document.querySelector('#mascot').dataset.state === 'excited');
-  await page.waitForFunction(() => [...document.querySelectorAll('#mascot-bubble,#toasts')].some(e => e.textContent.includes('开仓 ETH 多')));
-  assert.match(await page.locator('#toasts').innerText(), /新成交/);
-
-  // Reports are escaped.
-  team = { schema_version: 1, generated_at: iso(Date.now()), status: { updated_at: iso(Date.now()), meeting: null, phase: null,
-    roles: { risk: { status: '工作中', task: '复盘', last_report: { ts: iso(Date.now()), title: '新报告 <script>', summary: '公开摘要', grade: 'A-' } } } }, log: [] };
-  await page.reload(); await page.waitForSelector('#mascot[data-state]');
+  await page.waitForFunction(() => [...document.querySelectorAll('#mascot-bubble,#toasts,#mascot-ticket')].some(e => e.textContent.includes('开多 ETH')));
   await page.locator('#mascot-touch').click(); await page.waitForSelector('#mascot-drawer[open]');
-  await page.locator('#companion-tab-team').click();
-  await page.waitForFunction(() => document.querySelector('#mascot-report-list').textContent.includes('<script>'));
-  assert.equal(await page.locator('#mascot-report-list script').count(), 0);
+  await page.locator('#companion-tab-feed').click();
+  assert.match(await page.locator('#companion-feed').innerText(), /开仓 ETH/);
   await page.keyboard.press('Escape');
 
   // Reduced motion and low-end devices stop every animation.
@@ -160,7 +146,7 @@ const wait = (page, ms) => page.waitForTimeout(ms);
     await low.close();
   }
   // No horizontal overflow on narrow phones, on every route.
-  for (const hash of ['#/', '#/evolve', '#/market']) for (const width of [320, 360, 390]) {
+  for (const hash of ['#/', '#/coin/BTC-USDT-SWAP', '#/market']) for (const width of [320, 360, 390]) {
     await page.setViewportSize({ width, height: 844 }); await page.goto(BASE + hash); await page.waitForSelector('#mascot[data-state]');
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${hash} ${width}`);
   }
