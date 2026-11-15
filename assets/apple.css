@@ -93,11 +93,11 @@ nav>a svg{display:none}
 .history-metrics strong.up{color:var(--green)}.history-metrics strong.down{color:var(--red)}
 
 /* ---------- home: the account card leads, one big number ---------- */
-#home-sim{gap:18px}
-#home-sim .okx-hero,.okx-hero{background:var(--panel);border:0;min-height:0;padding:22px 22px 14px}
-#home-sim .okx-hero::before{content:none}
+#home-live{gap:18px}
+#home-live .okx-hero,.okx-hero{background:var(--panel);border:0;min-height:0;padding:22px 22px 14px}
+#home-live .okx-hero::before{content:none}
 .okx-hero-top h1{font:500 14px var(--font);color:var(--muted);letter-spacing:0}
-.equity-number strong,#home-sim .okx-hero .equity-number strong,#okx-total-equity{font:600 clamp(44px,6vw,64px)/1.05 var(--display);letter-spacing:-1.6px;color:var(--text);text-shadow:none;animation:none}
+.equity-number strong,#home-live .okx-hero .equity-number strong,#okx-total-equity{font:600 clamp(44px,6vw,64px)/1.05 var(--display);letter-spacing:-1.6px;color:var(--text);text-shadow:none;animation:none}
 .equity-number small{font:500 18px var(--display);color:var(--muted);letter-spacing:0}
 .okx-ret{font-size:15px;color:var(--muted)}
 .okx-ret .up,.okx-ret .down{font-weight:600}
@@ -225,8 +225,8 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
   .command-heading,.page-heading{padding:20px 0 12px;flex-direction:column;align-items:flex-start;gap:10px}
   .page-heading>div{max-width:none}
   .command-heading h1,.page-heading h1{font-size:30px}
-  #home-sim{grid-template-columns:1fr}
-  #home-sim .okx-hero{padding:18px 18px 10px}
+  #home-live{grid-template-columns:1fr}
+  #home-live .okx-hero{padding:18px 18px 10px}
   .panel-heading{padding:16px 16px 8px}
   .okx-pos-pnl b{min-width:80px;font-size:14px}
 }

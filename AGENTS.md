@@ -1,6 +1,6 @@
 # AGENTS.md — 给 Codex、Claude 等编码助手的工作说明
 
-本仓库是 **MODI 交易看板**：GitHub Pages 静态网站（`index.html` + `assets/*.mjs`），展示 **OKX 模拟交易**账户、市场行情和 MODI 机器人伙伴；交易程序由 GitHub Actions 定时运行，结果写到 `paper-data` 分支供看板读取。多个助手（Codex、Claude）会先后在这里工作，请先读完本文件再动手。
+本仓库是 **MODI 交易看板**：GitHub Pages 静态网站（`index.html` + `assets/*.mjs`），**只展示 OKX 实盘账户**（真实资金，数据来自 `live-data` 分支，由本地机器运行 `tools/live_sync.py` 从实盘服务器只读同步）、市场行情和 MODI 机器人伙伴。模拟盘跟单与策略进化仍由 GitHub Actions 定时运行，结果写到 `paper-data` 分支（为实盘提供信号），但看板不再显示模拟盘。多个助手（Codex、Claude）会先后在这里工作，请先读完本文件再动手。
 
 ## 1. 安全红线（任何情况下都不能违反）
 
@@ -51,7 +51,12 @@ widgets/                   iPhone 主屏幕小组件（Scriptable）与安装说
 manifest.webmanifest, assets/icons/   手机“添加到主屏幕”App 配置
 ```
 
-看板读取 `https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/okx_demo/summary.json`（约 5 分钟缓存），持仓浮盈用 **OKX 模拟盘自己的标记价**（`wss://wspap.okx.com` 推送，失败时 REST 备用）。
+看板读取 `https://raw.githubusercontent.com/modi-cjh/crypto-panel/live-data/snapshot.json` 与 `fills.json`（约 5 分钟缓存，`?t=` 每分钟换一次），持仓浮盈用 **OKX 公共标记价**（`wss://ws.okx.com` 推送，连不上时用快照值）。`live-data` 分支只由 `tools/live_sync.py` 写入（白名单字段 + 密钥检查，不 force push），不要手动修改；GitHub 凭据只在本地机器，服务器上不放。
+
+```
+tools/live_sync.py         本地机器：ssh 只读服务器 okx_live/{summary,state}.json + actions.jsonl → 白名单 → live-data 分支 {snapshot,fills}.json
+assets/live.mjs            实盘看板纯逻辑：校验、实时浮盈、新鲜度 / 状态、持仓 / 成交渲染、机器人状态
+```
 
 ## 4. 代码约定
 
@@ -69,16 +74,14 @@ npm test                                             # JS 单元测试
 python3 -m unittest discover -s tests -p 'test_*.py' # Python 单元测试
 # runtime 测试需要依赖：python3 -m venv .venv && .venv/bin/pip install -r runtime/requirements-test.txt
 python3 -m http.server 8008 --bind 127.0.0.1 &      # 浏览器验收前启动本地服务（Playwright + Chromium）
-PANEL_URL=http://127.0.0.1:8008/ node tests/okx_browser.cjs       # OKX 账户首页 / 模拟交易页 / 机器人
-PANEL_URL=http://127.0.0.1:8008/ node tests/okx_rest_browser.cjs  # 模拟盘标记价 REST 备用 + 连接诊断
+PANEL_URL=http://127.0.0.1:8008/ node tests/live_browser.cjs      # OKX 实盘账户首页（live-data 夹具）/ 标记价 / 离线 / 机器人
 PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs    # 机器人交互
 PANEL_URL=http://127.0.0.1:8008/ node tests/market_browser.cjs    # 市场行情前 100
 PANEL_URL=http://127.0.0.1:8008/ node tests/float_browser.cjs     # 电脑桌面悬浮窗
 PANEL_URL=http://127.0.0.1:8008/ node tests/app_browser.cjs       # 手机主屏幕 App（manifest / 图标）
-PANEL_URL=http://127.0.0.1:8008/ node tests/evolve_browser.cjs    # 策略进化页（夹具 tests/fixtures/evolve-dashboard.json）
 ```
 
-已知：`tests/team_browser.cjs`、`tests/browser_smoke.cjs` 在基线 `cc25dc5` 上就已失败（仍查找 v3 删除的角色卡），不是新改动造成的。浏览器测试全部失败、报 `ERR_CONNECTION_REFUSED` 时，是本地服务没启动。
+已知：`tests/mascot_browser.cjs` 中“Esc 关闭面板后焦点回到机器人”一项偶发失败（焦点落在 body；基线 `9ffb027` 上用 Playwright 1.65 / Chromium 也出现过），重跑即可通过。浏览器测试全部失败、报 `ERR_CONNECTION_REFUSED` 时，是本地服务没启动。
 
 ## 6. 常见坑（都真实发生过）
 

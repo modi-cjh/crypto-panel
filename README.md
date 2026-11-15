@@ -1,5 +1,33 @@
 # MODI · AI 交易团队
 
+## 看板：只显示 OKX 实盘（2026-11-15 起）
+
+看板（GitHub Pages，`index.html` + `assets/app.mjs` / `assets/live.mjs`）**只显示 OKX 实盘账户（真实资金）**，模拟盘板块已全部移除，不再读取 `paper-data` 或 `paper/*.json`。真实资金，风险自负，不构成投资建议。
+
+链路：
+
+```
+新加坡实盘服务器 (okx-live-sg)                 本地机器（有 GitHub 凭据）                     GitHub                      看板
+/var/lib/modi-okx-live/okx_live/   --ssh 只读-->  tools/live_sync.py  --白名单 + 密钥检查-->  live-data 分支     --raw-->  实盘账户页
+  summary.json / state.json / actions.jsonl                                                snapshot.json / fills.json
+```
+
+- **live-data 分支**：独立孤儿数据分支（和 `master`、`paper-data` 都分开），只有 `snapshot.json`（权益、可用、日内盈亏额与 %、paused / halted / dry_run、每笔持仓含止损止盈、资金曲线）、`fills.json`（最近 50 条开平仓 + 30 条跳过 / 暂停记录）和 `README.md`。看板读取 `https://raw.githubusercontent.com/modi-cjh/crypto-panel/live-data/snapshot.json` 与 `.../fills.json`（每分钟换一次查询参数绕过缓存）。请勿手动修改。
+- **同步脚本** `tools/live_sync.py`（只用标准库）：在本地机器上运行，`ssh` 到服务器用 `sudo -n -u modi-live` 只读三个文件（服务器上不写任何东西），按字段白名单组装，再推送到 `live-data`（只快进，不 force push；数据没变化就不提交）。手动运行：
+
+  ```bash
+  python3 tools/live_sync.py              # 默认 root@139.180.146.42、~/.ssh/okx_live_sg、分支 live-data
+  python3 tools/live_sync.py --dry-run    # 只生成并检查，打印 snapshot.json，不推送
+  ```
+
+  参数：`--host`、`--key`、`--remote-dir`、`--remote-user`、`--branch`、`--repo`、`--workdir`（数据分支专用克隆，默认 `~/.cache/modi-live-sync/repo`，不碰其它 worktree）。退出码：0 已推送或无变化，1 读取 / 数据错误，2 密钥检查未通过，3 git 错误。建议每小时定时运行一次（服务器上的交易程序也是每小时一次）。
+- **安全**：GitHub 凭据只在本地机器；服务器上不放任何 GitHub 凭据，也不需要。输出只含白名单字段（不含订单号、clOrdId、执行档案等），写出前对最终 JSON 文本检查：含 `OKX_API_KEY` / `OKX_API_SECRET` / `OKX_API_PASSPHRASE` 变量名或其值、UUID、长度 ≥ 16 的连续 base64 / hex 串（纯数字时间戳与小写下划线代码词除外）即拒绝发布并以退出码 2 结束；错误信息只给简短原因，不打印服务器文件内容。数据不是 `trading_mode: live` 时拒绝发布。
+- **看板显示**：权益、日内盈亏（额 + %）、累计盈亏、可用、运行状态（实盘运行中 / 空跑 / 已暂停 / 日亏停手 / 数据离线）、每笔持仓（币种、方向、张数、杠杆、全仓、均价、标记价、浮盈、止损、止盈、保证金）、最近成交与运行记录、资金曲线、每日收益；时间按金边时间（UTC+7）；超过 2.5 小时没有新快照显示“可能离线”。持仓浮盈在行情连上时按 OKX 公共标记价（`wss://ws.okx.com`）实时估算。市场行情页和单币 K 线页保留；“策略进化”页已从看板移除（进化引擎仍在 GitHub Actions 后台运行，为实盘提供信号）。
+- 验收：`npm test`、`python3 -m unittest discover -s tests -p 'test_*.py'`（`tests/test_live_sync.py`）、`PANEL_URL=http://127.0.0.1:8008/ node tests/live_browser.cjs`。
+
+> 下面各节是历史说明（模拟盘、旧主力盘、策略引擎）。其中描述看板模拟盘板块的部分已不再适用；后台的模拟盘跟单与策略进化仍按原流程运行。
+
+
 更新记录与本地同步注意事项见 [CHANGELOG.md](CHANGELOG.md)。
 
 常驻调度、管理员登录、心跳、直接停止接口的部署包说明见 [deploy/README.md](deploy/README.md)。服务默认执行关闭，当前 GitHub Pages 继续原流程；服务器就绪并完成执行权迁移后再启用。

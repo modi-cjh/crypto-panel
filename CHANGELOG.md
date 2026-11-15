@@ -554,6 +554,12 @@
 - 为什么：Codex 对 PR #92 的审查（阻塞项）：元数据缺失时以 20× 下单无法证明符合该币真实上限（fail-open）；未来时间戳得到负年龄，绕过 9 小时过期检查。交易参数未改。
 - 测试：`tests/test_okx_demo_trader.py` 夹具 `SPECS` 补上 `lever`（真实接口总会返回；之前的测试实际依赖 20× 兜底），原两条“缺规格按 20×”测试改为“缺 / 空 / 非数字 / 0 / 负数的 `lever` → 不发任何请求、`no_leverage_spec`”，并新增“规格缺失时已有仓位仍能补挂止损、上移止损、平仓”；`tests/test_okx_live_mode.py` 新增未来时间戳（36 秒、1 小时、1 年）被实盘拒绝且不发请求、`signal_age_ms` 边界测试。
 
+### 看板改为只显示实盘 + live-data 回传链路
+- 做了什么：①新增 `tools/live_sync.py`（只用标准库）：在本地机器上运行，`ssh` 到实盘服务器以 `sudo -n -u modi-live` 只读 `okx_live/summary.json`、`state.json`、`actions.jsonl`（末尾 3000 行），按字段白名单组装 `snapshot.json`（权益、可用、日内 / 累计盈亏、paused / halted / dry_run、持仓含 `state.json` 合入的止损 / 止盈 / 策略 / 冠军、资金曲线）和 `fills.json`（最近 50 条开平仓 + 30 条跳过 / 暂停），对最终 JSON 文本做密钥检查（变量名及其值、UUID、≥ 16 位 base64 / hex 串；纯数字时间戳与小写下划线代码词除外），然后在专用克隆里提交并推送到独立孤儿分支 `live-data`（只快进、无变化不提交、推送冲突自动重来一次）。数据不是 `trading_mode: live` 拒绝发布；错误只给简短原因。②看板改为只显示实盘：`index.html` 首页换成“实盘账户”（权益、日内盈亏额 + %、累计、可用、状态、资金曲线、每日收益、持仓含止损止盈保证金、最近成交 / 运行记录、UTC+7 新鲜度与 2.5 小时离线提示），标题 / 页脚改为“MODI · AI 交易团队 · OKX 实盘看板”，明示“真实资金，风险自负，不构成投资建议”；删除模拟盘、纸面对照、旧主力盘、扫描、团队时间线、执行日志、停止模拟交易、策略进化页等全部板块及其 `paper-data` / `paper/*.json` 读取。`assets/app.mjs` 重写为实盘版（保留市场行情页、单币 K 线页、连接诊断、主题、机器人），新增纯逻辑模块 `assets/live.mjs`；浮盈按 OKX 公共标记价实时估算。机器人面板只保留“状态 / 动态”两页（`Mascot` 新增 `tabs` 选项，默认不变），文案改为实盘。单币页移除不再对应实盘策略的“均值回归入场条件”，K 线上标出实盘持仓的开仓价 / 止损 / 止盈。CSS 中 `#home-sim` 改名 `#home-live`；资源版本号 `?v=20261115-live`。
+- 为什么：用户要求看板只显示实盘（okx-live-sg 真实资金），模拟盘板块整个去掉、不并列；之前实盘数据没有回传到仓库。服务器不放 GitHub 凭据，所以由本地机器拉取并推送。
+- 不变：交易代码与参数、`paper-data` 分支、GitHub Actions 定时任务（模拟盘跟单与策略进化继续运行，为实盘提供信号）、数据契约文件。`widgets/`（iPhone 小组件）仍读模拟盘，未在本次改动范围内。
+- 测试：新增 `tests/test_live_sync.py`（白名单、止损止盈合并、拒绝非实盘数据、密钥检查各种形态且报错不含密钥、本地裸仓库模拟推送：首次建孤儿分支、重复运行无提交、新数据快进、master 不动、密钥命中时不推送、ssh 失败信息不泄密）、`tests/live.test.mjs`、`tests/live_browser.cjs`；`mascot_browser.cjs`、`float_browser.cjs` 改用 live-data 夹具；删除针对已移除界面的 `okx_browser.cjs`、`okx_rest_browser.cjs`、`evolve_browser.cjs` 以及基线就失败的 `team_browser.cjs`、`browser_smoke.cjs`。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |
@@ -571,7 +577,7 @@
 ## 测试命令
 
 ```bash
-npm test                                             # JS 单元测试（83 项）
+npm test                                             # JS 单元测试
 python3 -m unittest discover -s tests -p 'test_*.py' # Python 单元测试
 python3 -m http.server 8008 --bind 127.0.0.1 &      # 浏览器验收前启动本地服务
 PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs

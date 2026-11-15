@@ -4,10 +4,9 @@ const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const BASE = process.env.PANEL_URL || 'http://127.0.0.1:8008/';
 const iso = ms => new Date(ms).toISOString(), now = Date.now();
-const feed = { updated_at: iso(now - 60e3), equity: 4900, available: 3000, day_start: 5000, start_equity: 5000, paused: false, halted: false, closed_trades: 0,
+const feed = { schema_version: 1, source: 'okx-live', trading_mode: 'live', updated_at: iso(now - 60e3).replace(/\.\d+Z$/, 'Z'), equity: 4900, available: 3000, day_start: 5000, start_equity: 5000, paused: false, halted: false, dry_run: false, closed_trades: 0,
   history: [[now - 3600e3, 5000], [now - 60e3, 4900]],
-  positions: [{ inst: 'BTC-USDT-SWAP', side: 'long', contracts: '15', avgPx: '77450', markPx: '76900', upl: '-82.5', lever: '10', margin: '1160', ctVal: 0.01, ours: true }],
-  open_mirrors: [], recent_actions: [] };
+  positions: [{ inst: 'BTC-USDT-SWAP', side: 'long', contracts: 15, avgPx: 77450, markPx: 76900, upl: -82.5, lever: 10, margin: 1160, ctVal: 0.01, ours: true, stop: 75000 }] };
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -17,7 +16,8 @@ const feed = { updated_at: iso(now - 60e3), equity: 4900, available: 3000, day_s
   });
   await context.route(/okx\.com/, r => r.abort());
   await context.routeWebSocket(/okx\.com/, ws => ws.close());
-  await context.route('**/okx_demo/summary.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(feed) }));
+  await context.route('**/live-data/snapshot.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(feed) }));
+  await context.route('**/live-data/fills.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ schema_version: 1, fills: [], events: [] }) }));
   const page = await context.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(BASE);
