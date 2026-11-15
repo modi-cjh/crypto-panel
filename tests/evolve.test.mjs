@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { replayGenerations, replayState, replayDelays, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphLayout, graphSVG, detailMarkup, paperMarkup, homeCardMarkup, dataCaption, miniCurve, updateSchedule, nextPaperUpdate, evolveIntroMarkup, entryGateMarkup, entryGateView, currentAccountTrades, PAPER_STALE_MS } from '../assets/evolve.mjs';
+import { replayGenerations, replayState, replayDelays, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphLayout, graphSVG, detailMarkup, paperMarkup, teamMarkup, homeCardMarkup, dataCaption, miniCurve, updateSchedule, nextPaperUpdate, evolveIntroMarkup, entryGateMarkup, entryGateView, currentAccountTrades, PAPER_STALE_MS } from '../assets/evolve.mjs';
 
 const d = JSON.parse(fs.readFileSync(new URL('./fixtures/evolve-dashboard.json', import.meta.url), 'utf8'));
 
@@ -303,3 +303,15 @@ test('each seat card shows its own defense streak from entry_gate', () => {
   assert.match(html, /守擂 2\/5 代/);
 });
 
+
+test('冠军组合 on the evolve page: genes and gates only, no simulated-account numbers', () => {
+  const html = teamMarkup(d);
+  for (const t of d.team) assert.match(html, new RegExp(`data-node="${t.id}"`));
+  assert.match(html, /样本外[\s\S]*终审/); assert.match(html, /训练适应度/); assert.match(html, /同一物种最多 2 个/); assert.match(html, /席位变动/);
+  assert.doesNotMatch(html, /纸面权益|纸面成交|保证金占用|模拟盘|USDT|贡献|evo-mini/);
+  assert.match(teamMarkup({ ...d, paper: null }), new RegExp(`data-node="${d.team[0].id}"`));   // falls back to d.team
+  assert.match(teamMarkup({ ...d, team: [], champion: null, paper: null }), /没有通过上场门槛/);
+  const evil = structuredClone(d); evil.paper.members[0].id = '<img src=x>'; assert.doesNotMatch(teamMarkup(evil), /<img/);
+  assert.doesNotMatch(homeCardMarkup(d), /纸面/);
+  assert.match(homeCardMarkup(null), /策略进化/);
+});

@@ -17,17 +17,17 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="MODI">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="stylesheet" href="./assets/style.css?v=20261115-live">
-  <link rel="stylesheet" href="./assets/apple.css?v=20261115-live">
+  <link rel="stylesheet" href="./assets/style.css?v=20261115-evolve">
+  <link rel="stylesheet" href="./assets/apple.css?v=20261115-evolve">
   <script defer src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="./assets/app.mjs?v=20261115-live"></script>
+  <script type="module" src="./assets/app.mjs?v=20261115-evolve"></script>
 </head>
 <body>
   <div id="toasts" role="status" aria-live="polite"></div>
   <header class="header">
     <a class="brand" href="#/" aria-label="实盘账户首页"><span class="brand-icon" aria-hidden="true">M<span>✦</span></span><span><b>MODI</b> · AI 交易团队<small class="brand-sub">OKX 实盘 · 真实资金</small></span></a>
     <div class="header-status"><span id="day-number" class="day-number">DAY —</span><time id="utc-clock">— UTC+7</time></div>
-    <nav aria-label="主导航"><a href="#/" data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>实盘账户</a><a href="#/market" data-nav="market"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.5 8.5 11l4 4 6.5-8.5 1.8 1.4-8.1 10.6-4-4-4.2 5z"/></svg>市场行情</a><button id="connection" class="connection" type="button" aria-haspopup="dialog" aria-controls="diag" title="点击查看连接诊断"><span id="connection-dot" class="dot"></span><span id="connection-text">正在连接</span></button></nav>
+    <nav aria-label="主导航"><a href="#/" data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>实盘账户</a><a href="#/evolve" data-nav="evolve"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 0 0 0-19m0 3.5a6 6 0 1 1 0 12 6 6 0 0 1 0-12m0 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6"/></svg>策略进化</a><a href="#/market" data-nav="market"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.5 8.5 11l4 4 6.5-8.5 1.8 1.4-8.1 10.6-4-4-4.2 5z"/></svg>市场行情</a><button id="connection" class="connection" type="button" aria-haspopup="dialog" aria-controls="diag" title="点击查看连接诊断"><span id="connection-dot" class="dot"></span><span id="connection-text">正在连接</span></button></nav>
     <aside class="pinned-balance" aria-label="常驻实盘权益"><strong id="pinned-equity">—</strong><span id="pinned-pct">—</span>
       <span class="visually-hidden"><span id="pinned-label-text">OKX 实盘权益</span> <span id="pinned-mode" class="mode-tag">实盘</span><span id="pinned-daily">当日盈亏 · 等待数据</span><small id="pinned-source">OKX 实盘 · 约每小时同步</small><small id="pinned-time">— UTC+7</small></span></aside>
     <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换深色或浅色主题" title="浅色 / 深色">暗</button>
@@ -45,6 +45,7 @@
         <section class="panel okx-daily-panel"><div class="panel-heading"><h2>每日收益</h2><small class="muted">按 UTC+7 每天收盘的账户权益</small></div><div id="live-daily"><p class="skeleton" role="status">数据加载中</p></div></section>
         <section class="panel command-positions"><div class="panel-heading"><div><span class="eyebrow">02 / 仓位监测</span><h2>当前持仓 <span id="live-pos-count" class="pill">0</span></h2></div><small class="muted">点一下看止损 / 止盈与保证金</small></div><div id="live-positions" class="okx-pos-list"><p class="skeleton" role="status">数据加载中</p></div></section>
         <section class="panel command-fills"><div class="panel-heading"><div><span class="eyebrow">03 / 执行轨迹</span><h2>最近成交</h2></div></div><ol id="live-fills" class="okx-acts"><li class="empty">数据加载中</li></ol><details class="okx-log"><summary>运行记录（暂停、恢复、跳过的信号）</summary><ol id="live-events" class="okx-acts"></ol></details></section>
+        <a id="home-evolve" class="panel evo-home" href="#/evolve" hidden></a>
         <p class="panel-caption">OKX 实盘账户（真实资金）。交易程序运行在绑定 IP 的服务器上，约每小时运行一次；每笔开仓都带交易所止损单，止盈由策略决定。看板数据来自 GitHub live-data 分支（本地机器每小时从服务器只读同步，只含白名单字段，不含任何密钥），持仓浮盈在行情连上时按 OKX 实时标记价估算，成交与余额以快照为准。时间均为金边时间（UTC+7）。真实资金，风险自负，不构成投资建议。</p>
       </section>
     </section>
@@ -63,6 +64,16 @@
       <a href="#/market" class="back">← 返回市场行情</a>
       <div class="page-heading"><div><div class="eyebrow">单币分析 / USDT 永续</div><h1 id="coin-title">合约详情</h1><p id="coin-quote">等待行情</p></div><div class="segmented" role="group" aria-label="K 线周期"><button data-timeframe="1H" aria-pressed="false">1 小时</button><button data-timeframe="4H" class="active" aria-pressed="true">4 小时</button></div></div>
       <div id="coin-price-slot"><div id="price-panel"><div class="panel-heading"><h2>K 线与趋势</h2><div class="segmented" role="group" aria-label="持仓 K 线周期"><button data-timeframe="1H" class="active" aria-pressed="true">1H</button><button data-timeframe="4H" aria-pressed="false">4H</button></div><span id="candle-updated" class="muted">加载中</span></div><div class="chart-legend"><span class="color-ema20">EMA20</span><span class="color-ema50">EMA50</span><span class="color-ema200">EMA200</span><span>UTC+7 · 图含未收盘 K 线</span><button id="reset-chart" class="text-button">重置视图</button></div><div id="chart-levels" class="chart-levels" aria-live="polite"></div><div id="price-chart" class="chart price-chart"></div><p id="chart-error" class="chart-error" hidden></p></div></div><div id="coin-analysis-slot"><div id="analysis-content"><div class="subchart-label">成交量 <span>合约张数</span></div><div id="volume-chart" class="chart subchart"></div><div class="subchart-label">相对强弱 RSI14 <span>Wilder 平滑 · 30 / 70</span></div><div id="rsi-chart" class="chart subchart"></div><div class="subchart-label">MACD <span>12 / 26 / 9 · 柱 = DIF − DEA</span></div><div id="macd-chart" class="chart subchart"></div><div class="panel levels-panel"><div class="panel-heading"><h2>附近支撑 / 阻力</h2></div><div id="levels" class="levels"><p class="muted">等待 K 线数据</p></div><p class="panel-caption">取信号 K 线之前的区间高低点。</p></div></div></div>
+    </section>
+    <section id="evolve-page" class="page history-page" hidden aria-labelledby="evolve-title">
+      <div class="page-heading"><div><div class="eyebrow">MODI / 全息 AI 实验室</div><h1 id="evolve-title">策略进化<span class="lab-tag">基因实验室</span></h1><div id="evolve-intro"><p class="skeleton" role="status">数据加载中</p></div></div><span id="evolve-updated" class="pill">等待数据</span></div>
+      <p id="evolve-error" class="alert" hidden></p>
+      <section class="panel evo-top" aria-label="策略进化引擎"><div class="evo-loop-box" id="evolve-loop"><p class="skeleton" role="status">数据加载中</p></div><div class="evo-stats-box" id="evolve-stats"><p class="skeleton" role="status">数据加载中</p></div></section>
+      <section class="panel evo-pool"><div class="panel-heading"><div><span class="eyebrow">02 / 策略谱系网络</span><h2>基因池 · 实时策略谱系</h2></div><small class="muted">每个点是一个策略（颜色 = 物种，大小 = 适应度，带环 = 冠军），连线是父代 → 子代；点击查看基因与回测</small></div>
+        <div class="evo-pool-body"><div class="evo-graph-box" id="evolve-graph"><p class="skeleton" role="status">数据加载中</p></div><aside class="evo-detail" id="evolve-detail" aria-live="polite"><p class="skeleton" role="status">数据加载中</p></aside></div></section>
+      <section class="panel"><div class="panel-heading"><div><span class="eyebrow">03 / 进化表现</span><h2>适应度 · 最佳与种群平均</h2></div></div><div id="evolve-fitness"><p class="skeleton" role="status">数据加载中</p></div></section>
+      <section class="panel"><div class="panel-heading"><div><span class="eyebrow">04 / 冠军组合</span><h2>冠军基因 · 样本外与终审</h2></div><small class="muted">点一下成员查看基因与回测</small></div><div id="evolve-team" class="okx-body"><p class="skeleton" role="status">数据加载中</p></div></section>
+      <p class="panel-caption" id="evolve-caption"></p>
     </section>
     <noscript><p class="note">请启用 JavaScript 以加载行情与实盘数据。</p></noscript>
   </main>

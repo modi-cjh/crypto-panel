@@ -95,7 +95,7 @@ const fills = { schema_version: 1, source: 'okx-live', updated_at: snapshot.upda
   assert.deepEqual(merrors, []);
   await missing.close();
 
-  // Market and coin pages still work; the retired evolve route returns home.
+  // Market, coin and 策略进化 pages work; the retired simulated-account routes return home.
   await page.goto(BASE + '#/market');
   await page.waitForSelector('#market-page:not([hidden])');
   assert.equal(await page.locator('#home-page').isHidden(), true);
@@ -103,6 +103,9 @@ const fills = { schema_version: 1, source: 'okx-live', updated_at: snapshot.upda
   await page.waitForSelector('#coin-page:not([hidden])');
   assert.match(await page.locator('#coin-title').innerText(), /SOL \/ USDT 永续/);
   await page.goto(BASE + '#/evolve');
+  await page.waitForSelector('#evolve-page:not([hidden])');
+  assert.equal(await page.locator('#home-page').isHidden(), true);
+  await page.goto(BASE + '#/sim');
   await page.waitForSelector('#home-page:not([hidden])');
 
   // Companion follows the live account.

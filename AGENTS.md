@@ -42,7 +42,7 @@ deploy/live/               OKX 实盘：systemd 单元 / 定时器 / 环境变�
 .github/workflows/paper-trading.yml   定时运行上面两个程序（cron 每 4 小时，`17 */4 * * *`；为减少账号上的自动运行和提交，不要调高频率）
 runtime/ + deploy/         可选常驻服务（FastAPI）；部署后替代 GitHub 定时任务
 index.html, assets/*.mjs   看板（无构建步骤，原生 ES 模块）
-  assets/evolve.mjs        策略进化页：进化循环、适应度曲线、基因池谱系图、节点详情、纸面交易
+  assets/evolve.mjs        策略进化页（#/evolve，读 paper-data/evolve）：进化循环、适应度曲线、基因池谱系图、节点详情、冠军组合（不显示模拟账户数字）
   assets/okx.mjs           OKX 模拟账户：摘要校验、实时浮盈、持仓/成交渲染、机器人状态
   assets/robot-work.mjs    机器人“在做什么”（盯盘/扫描/等信号）、成交票据、持仓播报
   assets/mascot.mjs        机器人伙伴（表情、动画、面板、桌面悬浮窗）
@@ -75,6 +75,7 @@ python3 -m unittest discover -s tests -p 'test_*.py' # Python 单元测试
 # runtime 测试需要依赖：python3 -m venv .venv && .venv/bin/pip install -r runtime/requirements-test.txt
 python3 -m http.server 8008 --bind 127.0.0.1 &      # 浏览器验收前启动本地服务（Playwright + Chromium）
 PANEL_URL=http://127.0.0.1:8008/ node tests/live_browser.cjs      # OKX 实盘账户首页（live-data 夹具）/ 标记价 / 离线 / 机器人
+PANEL_URL=http://127.0.0.1:8008/ node tests/evolve_browser.cjs    # 策略进化页（paper-data/evolve 夹具）/ 谱系 / 冠军组合 / 导航
 PANEL_URL=http://127.0.0.1:8008/ node tests/mascot_browser.cjs    # 机器人交互
 PANEL_URL=http://127.0.0.1:8008/ node tests/market_browser.cjs    # 市场行情前 100
 PANEL_URL=http://127.0.0.1:8008/ node tests/float_browser.cjs     # 电脑桌面悬浮窗

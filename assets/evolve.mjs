@@ -309,12 +309,38 @@ export function paperMarkup(d) {
     (chal ? `<details class="evo-more"><summary>挑战者（${(d.challengers || []).length}）</summary><ul class="evo-list">${chal}</ul></details>` : '');
 }
 
+// 冠军组合 on the 策略进化 page: who is seated, their genes' gates and backtest — no paper-account numbers
+// (equity, PnL, margin, positions, fills). The dashboard only shows the live account; paperMarkup stays for reference.
+export function teamMarkup(d) {
+  const p = d.paper || {}, r = d.champion_rules, c = d.champion, now = Date.parse(d.updated_at);
+  const byId = Object.fromEntries((d.team || []).map(t => [t.id, t]));
+  const seats = (p.members || []).length ? p.members : (d.team || []).map((t, i) => ({ id: t.id, species: t.species, since: t.since, rank: i + 1, boost: p.leader?.id === t.id }));
+  const members = seats.map(m => { const t = byId[m.id] || {}, since = typeof m.since === 'number' ? m.since : Date.parse(m.since), held = finite(since) ? (now - since) / 3600000 : null;
+    const g = t.genes || {}, dir = g.direction ? ` · <span class="${g.direction === 'long' ? 'up' : g.direction === 'short' ? 'down' : ''}">${DIRECTION[g.direction] || esc(g.direction)}</span>` : '';
+    const gates = t.test ? `样本外 <b class="${tone(t.test.ret)}">${signed(t.test.ret, 1)}%</b>（回撤 ${fmt(t.test.max_dd, 1)}%）${t.final ? ` · 终审 <b class="${tone(t.final.ret)}">${signed(t.final.ret, 1)}%</b>` : ''}${t.qualified === false ? ' · <span class="down">不合格</span>' : ''}` : '';
+    const genes = [finite(t.fitness) ? `训练适应度 ${fmt(t.fitness, 3)}` : null, TF_NAMES[g.tf] ? `${TF_NAMES[g.tf]}周期` : null, finite(g.risk) ? `风险基因 ${fmt(g.risk * 100, 1)}%` : null, finite(g.leverage) ? `杠杆基因 ${g.leverage}×` : null].filter(Boolean).join(' · ');
+    const gateNode = Object.keys(t).length ? t : m;
+    return `<li data-node="${esc(m.id)}" class="evo-member${entryGateView(gateNode).cls === 'fail' ? ' gate-fail' : ''}${m.trading === false ? ' winding' : ''}" tabindex="0" role="button"><div class="evo-member-top"><span class="evo-rank${m.boost ? ' lead' : ''}">${m.rank === 1 ? (m.boost ? '第一名' : '领头') : `#${m.rank}`}</span>` +
+      `<span class="evo-member-name"><i class="evo-dot" style="background:${SPECIES_COLORS[m.species]}"></i>${esc(m.id)} · ${esc(speciesName(d, m.species))}${dir}${m.boost ? ' · <b>第一名（信号优先）</b>' : ''}</span></div>` +
+      entryGateMarkup(gateNode) + `<div class="evo-member-sub">${gates}</div><div class="evo-member-sub">${genes}${genes ? ' · ' : ''}任期 ${held === null ? '—' : held >= 48 ? fmt(held / 24, 1) + ' 天' : fmt(held, 1) + ' 小时'}</div></li>`; }).join('');
+  const rules = r ? `<p class="muted evo-rules">样本外${d.final_gate ? '与终审都' : ''}合格的策略中训练适应度最高的 ${r.team_size || 8} 个组成冠军组合（同一物种最多 ${r.species_cap || 2} 个${r.direction_cap ? `，只做多、只做空各最多 ${r.direction_cap} 个` : ''}）。每个成员最短任期 ${r.min_tenure_hours >= 48 ? `${Math.round(r.min_tenure_hours / 24)} 天` : `${r.min_tenure_hours} 小时`}；期满后，连续 ${r.streak} 次样本外合格、训练适应度高出最弱成员 ${Math.round((r.margin - 1) * 100)}% 的挑战者替换它（每次运行最多换一个）；成员样本外亏损超过 ${-r.retain.min_ret}% 或回撤超过 ${r.retain.max_dd}% 时立即换下。只有通过上场门槛（样本外与终审合格、连续守擂 5 代、回撤 ≤ 30%）的成员才会发出交易信号，第一名信号优先。</p>` : '';
+  const segRows = (p.segments || []).slice(0, 20).map(s => `<li><span>${Number.isInteger(s.slot) ? `席位 ${s.slot + 1} · ` : ''}${esc(s.champion)} · ${esc(speciesName(d, s.species))}${SWITCH_WHY[s.reason] ? ` · ${SWITCH_WHY[s.reason]}` : ''}</span><span>${time(s.from_ts)} 起${s.to_ts ? ` · ${time(s.to_ts)} 止` : ' · 当前'}</span></li>`);
+  const segs = segRows.slice(0, 3).join('') + (segRows.length > 3 ? `</ul><details class="evo-more"><summary>更早的席位变动（还有 ${segRows.length - 3} 条）</summary><ul class="evo-list">${segRows.slice(3).join('')}` : '');
+  const chal = (d.challengers || []).map(x => `<li><span>${esc(x.id)} · ${esc(speciesName(d, x.species))} · 适应度 ${fmt(x.fitness, 2)}</span><span>连续合格 <b>${x.streak}</b> / ${r ? r.streak : 3}</span></li>`).join('');
+  return (members ? `<ul class="evo-team">${members}</ul>` :
+      c ? `<h4>当前冠军 · ${esc(c.id)}</h4><p class="evo-summary">${esc(c.summary)}</p>` : '<p class="empty">当前没有通过上场门槛的策略，等待下一位守擂满 5 代的冠军。</p>') +
+    (rules ? `<details class="evo-more evo-rules-fold"><summary>组合规则（点开看全文）</summary>${rules}</details>` : '') +
+    (segs ? `<h4>席位变动</h4><ul class="evo-list">${segs}</ul>` : '') +
+    (chal ? `<details class="evo-more"><summary>挑战者（${(d.challengers || []).length}）</summary><ul class="evo-list">${chal}</ul></details>` : '');
+}
+
 export function homeCardMarkup(d) {
+  if (!d) return '<span class="module-label">04 / 自主进化引擎 <span class="module-arrow">↗</span></span><span class="evo-orbit" aria-hidden="true"><i></i><i></i><i></i><b>✦</b></span><span class="evo-home-gen">策略进化</span><span class="evo-home-main">实盘信号来自自主进化的冠军组合</span><span class="muted">查看基因池与冠军组合 →</span>';
   const lead = d.paper?.leader?.id && (d.team || []).find(t => t.id === d.paper.leader.id);
   const c = lead || d.champion, last = d.history.at(-1);
   const n = teamIds(d).length;
-  return `<span class="module-label">02 / 自主进化引擎 <span class="module-arrow">↗</span></span><span class="evo-orbit" aria-hidden="true"><i></i><i></i><i></i><b>✦</b></span><span class="evo-home-gen">第 ${d.generation} 代</span><span class="evo-home-main">${c ? `冠军组合 ${n} 个 · ${lead ? '第一名' : '领头'} ${esc(c.id)} ${esc(speciesName(d, c.species))} · 样本外 <b class="${tone(c.test.ret)}">${signed(c.test.ret, 1)}%</b>` : '等待第一个样本外合格的策略'}</span>` +
-    `<span class="muted">本代合格 ${last ? last.qualified : '—'} / ${d.stats.population} · 纸面 ${d.paper ? signed(d.paper.ret, 2) + '%' : '—'} · 查看进化 →</span>`;
+  return `<span class="module-label">04 / 自主进化引擎 <span class="module-arrow">↗</span></span><span class="evo-orbit" aria-hidden="true"><i></i><i></i><i></i><b>✦</b></span><span class="evo-home-gen">第 ${d.generation} 代</span><span class="evo-home-main">${c ? `冠军组合 ${n} 个 · ${lead ? '第一名' : '领头'} ${esc(c.id)} ${esc(speciesName(d, c.species))} · 样本外 <b class="${tone(c.test.ret)}">${signed(c.test.ret, 1)}%</b>` : '等待第一个样本外合格的策略'}</span>` +
+    `<span class="muted">本代合格 ${last ? last.qualified : '—'} / ${d.stats.population} · 查看基因池与冠军组合 →</span>`;
 }
 
 export function dataCaption(d) {

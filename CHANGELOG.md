@@ -572,6 +572,12 @@
 - 影响：不在前 50 的币不再开新仓；程序已经开的仓仍照常管理（`managed` 包含 `mirrored` 中的未平仓位），等下一次进化运行后纸面账户不再含这些币，对应仓位会按“纸面已平”平掉。纸面账户每次从起点整体重放，去掉 36 个币会改写重放历史。其余参数（同向 10 单、同向风险不设上限、日亏 25%、风险 / 杠杆基因、全仓、每笔止损）未改。
 - 测试：`tests/test_evolve.py` 新增“86 个旧列表按原顺序截到前 50、specs 同步、写回后保持 50”；`tests/test_okx_demo_trader.py` 新增“86 个信号币 → `INSTRUMENTS` / `scan_limit` = 前 50”。
 
+### 恢复被误删的策略进化页（实盘看板不变、不恢复模拟盘账户）
+- 做了什么：①`index.html` 恢复导航“策略进化”（`#/evolve`）和 `#evolve-page` 整个区块：进化引擎 / 统计（`evo-top`）、基因池 · 实时策略谱系（`#evolve-graph` + 节点详情 `#evolve-detail`，含回放动画与画布光效）、适应度表现（`#evolve-fitness`）、冠军组合（`#evolve-team`）与数据说明；首页实盘板块之后恢复 `#home-evolve` 入口卡（链接 `#/evolve`）。②`assets/app.mjs` 恢复进化页接线（路由、`refreshEvolve` / `loadEvolveDetails` / `renderEvolve`、谱系回放、点击 / 键盘选节点），数据仍读 `paper-data` 分支 `evolve/dashboard.json`、`nodes.json`（只读）；`dashboard.json` 约 1 MB、每 4 小时才更新，所以只在进化页拉取、最多每 5 分钟一次，实盘首页不下载进化数据（入口卡没数据时显示静态文案，看过进化页后显示代数与第一名）。`#/paper`、`#/sim` 仍回到首页。③第 04 节原为“纸面交易 · 冠军接管 · OKX 模拟盘跟单”，包含纸面权益、收益曲线、保证金、持仓、纸面成交等模拟账户数字；改为新函数 `evolve.mjs` 的 `teamMarkup`：只列冠军组合成员（排名 / 第一名、物种、方向、上场门槛、样本外与终审收益、训练适应度、风险 / 杠杆基因、任期）、组合规则、席位变动、挑战者，不出现任何账户金额。首页卡片去掉“纸面 x%”。资源版本号 `?v=20261115-evolve`。
+- 为什么：PR #95 的要求只是去掉模拟盘账户板块，但把策略进化页也一起删了，用户问“我的进化策略去哪里了”。进化引擎是实盘信号的来源，属于要保留的内容。
+- 不变：实盘首页（只读 live-data 的 snapshot / fills）、市场行情、CSP（`raw.githubusercontent.com` 本来就在 `connect-src`）、交易代码、`paper-data` 分支、数据契约。
+- 测试：恢复 `tests/evolve_browser.cjs` 并改为新结构（冠军组合无账户数字、导航在实盘 / 进化 / 行情之间切换、首页不请求进化数据；原“冠军组合领头 · 纸面交易中”断言与夹具不符——夹具没有 `entry_gate`，单元测试本来就期望“待下次更新”，基线 7ed1f2e 上同样失败——改为两者皆可；详情里父代按钮和手机底栏在平滑滚动中会被判“不稳定”，改用 `dispatchEvent('click')`，与测试里点击谱系节点的做法一致）；`tests/live_browser.cjs` 的 `#/evolve` 改为打开进化页、`#/sim` 回首页；`tests/evolve.test.mjs` 新增 `teamMarkup` / 入口卡测试。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |
