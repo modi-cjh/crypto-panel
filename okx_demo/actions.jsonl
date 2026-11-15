@@ -164,3 +164,14 @@
 {"ts": "2026-11-14T20:51:30Z", "action": "amend_stop", "inst": "BNB-USDT-SWAP", "dry_run": false, "old": 654.3933231865718, "new": 644.0433231865718}
 {"ts": "2026-11-14T20:51:30Z", "action": "amend_stop", "inst": "XRP-USDT-SWAP", "dry_run": false, "old": 1.021748114704671, "new": 1.0003481147046709}
 {"ts": "2026-11-14T20:51:30Z", "action": "amend_stop", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "old": 0.6568089334602194, "new": 0.6317089334602194}
+{"ts": "2026-11-15T01:21:11Z", "action": "amend_stop", "inst": "CRV-USDT-SWAP", "dry_run": false, "old": 0.23312577700713236, "new": 0.22042577700713234}
+{"ts": "2026-11-15T01:21:11Z", "action": "amend_stop", "inst": "LPT-USDT-SWAP", "dry_run": false, "old": 1.1862531924294841, "new": 1.130253192429484}
+{"ts": "2026-11-15T01:21:11Z", "action": "amend_stop", "inst": "INJ-USDT-SWAP", "dry_run": false, "old": 8.819670248207718, "new": 8.426670248209708}
+{"ts": "2026-11-15T01:21:11Z", "action": "amend_stop", "inst": "BNB-USDT-SWAP", "dry_run": false, "old": 644.0433231865718, "new": 629.5533231866403}
+{"ts": "2026-11-15T01:21:11Z", "action": "closed_on_exchange", "inst": "XRP-USDT-SWAP", "dry_run": false, "strategy": "evolved", "pnl": 161.9198118464432, "price_pnl": 170.2845, "funding": -7.0056454035568025, "close_price": 0.8865, "fee": -1.35904275, "outcome": "target"}
+{"ts": "2026-11-15T01:21:11Z", "action": "amend_stop", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "old": 0.6317089334602194, "new": 0.6080089334603817}
+{"ts": "2026-11-15T01:21:11Z", "action": "open", "inst": "SOL-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "18.85", "price": 69.02, "stop": "80.18", "target": "48.09", "leverage": 5, "risk_usdt": 210.51}
+{"ts": "2026-11-15T01:21:11Z", "action": "open", "inst": "AVAX-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "71.9", "price": 6.913, "stop": "8.375", "target": "4.248", "leverage": 4, "risk_usdt": 105.25}
+{"ts": "2026-11-15T01:21:11Z", "action": "open", "inst": "NEAR-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "11.3", "price": 3.006, "stop": "4.066", "target": "1.016", "leverage": 2, "risk_usdt": 120.1}
+{"ts": "2026-11-15T01:21:11Z", "action": "open", "inst": "ADA-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "35.28", "price": 0.1454, "stop": "0.1794", "target": "0.0842", "leverage": 3, "risk_usdt": 120.1}
+{"ts": "2026-11-15T01:21:11Z", "action": "open", "inst": "LTC-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "15", "price": 43.45, "stop": "51.4397", "target": "29.3188", "leverage": 4, "risk_usdt": 120.1}
