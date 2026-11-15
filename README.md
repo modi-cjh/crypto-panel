@@ -137,7 +137,7 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 
 ### OKX 实盘（模式开关，默认 dry-run）
 
-同一个跟单程序 `tools/okx_demo_trader.py` 通过环境变量切换模拟盘 / 实盘：`OKX_TRADING_MODE=demo`（默认，带 `x-simulated-trading: 1`，状态在 `okx_demo/`）或 `live`（不带该请求头，状态在 `okx_live/`）。实盘下 `OKX_DRY_RUN` 默认开，只有精确设为 `0` 才真实下单，新实盘状态还需显式 `resume`；dry-run 时 OKX 客户端拒绝一切非 GET 请求。实盘拒绝在 GitHub Actions 与 `runtime/` 中运行，只能在 API Key 绑定 IP 的新加坡服务器上以 systemd 定时任务运行；交易规则与模拟盘相同。部署、切换与紧急平仓见 [`deploy/live/README.md`](deploy/live/README.md)。
+同一个跟单程序 `tools/okx_demo_trader.py` 通过环境变量切换模拟盘 / 实盘：`OKX_TRADING_MODE=demo`（默认，带 `x-simulated-trading: 1`，状态在 `okx_demo/`）或 `live`（不带该请求头，状态在 `okx_live/`）。实盘下 `OKX_DRY_RUN` 默认开，只有精确设为 `0` 才真实下单，新实盘状态还需显式 `resume`；dry-run 时 OKX 客户端拒绝一切非 GET 请求。实盘拒绝在 GitHub Actions 与 `runtime/` 中运行，只能在 API Key 绑定 IP 的新加坡服务器上以 systemd 定时任务运行；交易规则与模拟盘相同（2026-11-15 起：同方向最多 10 单、同方向合计风险不设上限、当天亏损 25% 全部平仓停手；止损、拥挤降风险、杠杆 1–20×、风险 2–10% 不变）。部署、切换与紧急平仓见 [`deploy/live/README.md`](deploy/live/README.md)。
 
 ## 账户历史
 
