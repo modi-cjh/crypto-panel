@@ -1,0 +1,21 @@
+# 只读检查实盘密钥：是否被接受、权限（拒绝提现权限）、账户模式、USDT 余额。不下单。
+[Unit]
+Description=MODI OKX live key check (read-only)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/modi-okx-live/okx-live.env
+
+[Service]
+Type=oneshot
+User=modi-live
+Group=modi-live
+WorkingDirectory=/opt/modi-okx-live
+EnvironmentFile=/etc/modi-okx-live/okx-live.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 tools/okx_demo_check.py
+TimeoutStartSec=120
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

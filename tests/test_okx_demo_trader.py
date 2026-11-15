@@ -660,30 +660,27 @@ class MirrorTests(unittest.TestCase):
             self.assertEqual(close['mgnMode'], want, (held_mode, saved))
 
     def test_refuses_to_run_or_send_without_the_simulated_trading_flag(self):
-        self.addCleanup(setattr, odt, 'DEMO_ONLY', True)
         self.addCleanup(setattr, odt, 'SIMULATED_VALUE', '1')
         self.addCleanup(setattr, odt, 'SIMULATED_HEADER', 'x-simulated-trading')
-        odt.assert_demo_only()   # normal lock is fine
-        odt.DEMO_ONLY = False
-        with self.assertRaises(SystemExit):
-            odt.assert_demo_only()
-        odt.DEMO_ONLY = True
+        odt.assert_mode('demo')   # normal lock is fine
         odt.SIMULATED_VALUE = '0'
         with self.assertRaises(SystemExit):
-            odt.assert_demo_only()
+            odt.assert_mode('demo')
         odt.SIMULATED_VALUE = '1'
         odt.SIMULATED_HEADER = 'x-other'
         with self.assertRaises(SystemExit):
-            odt.assert_demo_only()
+            odt.assert_mode('demo')
         odt.SIMULATED_HEADER = 'x-simulated-trading'
-        # a request is still forced to carry the header; secrets stay off argv (see the next test)
+        with self.assertRaises(SystemExit):
+            odt.assert_mode('paper')
+        # a demo request is still forced to carry the header; secrets stay off argv (see the next test)
 
     def test_signed_requests_carry_the_demo_header_and_keep_secrets_off_argv(self):
         import tempfile
         fake = Path(tempfile.mkdtemp()) / 'curl'
         fake.write_text('#!/bin/sh\necho "$@" > "$(dirname "$0")/args"\ncat > "$(dirname "$0")/stdin"\necho \'{"code":"0","data":[]}\'\n')
         fake.chmod(0o755)
-        odt.OKX('KEY1', 'SECRET1', 'PASS1', curl=str(fake)).request('POST', '/api/v5/trade/order', {'instId': 'BTC-USDT-SWAP', 'sz': '1'})
+        odt.OKX('KEY1', 'SECRET1', 'PASS1', curl=str(fake), mode='demo', dry_run=False).request('POST', '/api/v5/trade/order', {'instId': 'BTC-USDT-SWAP', 'sz': '1'})
         args, cfg = (fake.parent / 'args').read_text(), (fake.parent / 'stdin').read_text()
         for s in ('KEY1', 'SECRET1', 'PASS1'): self.assertNotIn(s, args)
         self.assertIn('x-simulated-trading: 1', cfg); self.assertIn('request = "POST"', cfg); self.assertIn('\\"instId\\"', cfg)

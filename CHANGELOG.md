@@ -544,6 +544,11 @@
   - 穿仓：现金仍记为 0，差额作为保险补偿单独记账（`simulate*` 返回 `insurance`，共享账户另有 `adjustments`），成交与成员盈亏保留完整亏损；起始资金 + 成交盈亏 + 保险补偿 = 现金。
   - 看板数据：纸面 `view` 增加 `liquidations`（全仓强平次数）、`insurance`、`adjustments`，摘要行显示强平次数和保险补偿。
 
+### OKX 模拟盘 → 实盘接入（模式开关，默认 dry-run）
+- 做了什么：在原模拟盘跟单代码上就地加 demo / live 开关，不新写模块。`tools/okx_demo_trader.py` 新增 `trading_mode()`（`OKX_TRADING_MODE`，默认 `demo`）、`dry_run_forced()`（`OKX_DRY_RUN`：实盘默认开，只有精确 `0` 才下单；模拟盘默认不变）、`signed_headers(…, mode)`（demo 强制 `x-simulated-trading: 1`，live 不带）、`state_dir()` / `load_state()`（实盘状态在 `okx_live/`，带 `mode: live` 标记，与 `okx_demo/` 互相拒绝读取）。`OKX` 客户端带 `mode` / `dry_run`，dry-run 时在发出 curl 前拒绝所有非 GET 请求；`repr` 不含密钥。实盘额外保护：拒绝在 GitHub Actions 与 `runtime/` 中运行、只跟 `evolve/signals.json` 且超过 9 小时视为过期不操作、不比较“模拟盘价格 vs 真实价格”（实盘本身就是真实价格）、dry-run 写 `okx_live/dry_run_preview.json` 供核对、摘要加 `trading_mode: live`。`stop_demo.py`、`okx_demo_check.py` 跟随同一开关（检查只读，可在实盘 dry-run 下运行；停止需 `OKX_DRY_RUN=0`），`okx_demo_smoke.py` 只允许模拟盘。新增 `tools/fetch_signals.py`（服务器下载并校验公开的 `paper-data/evolve/signals.json`）和 `deploy/live/`（systemd 单元、定时器、环境变量模板与部署 / 切换 / 紧急平仓说明）。`.gitignore` 挡住 `*.env`、`okx_live/`、`secrets/`、`credentials*.json`。
+- 为什么：用户要求把 OKX 模拟盘换成实盘接入。实盘 API Key 绑定新加坡服务器 IP，只能在那台机器上运行；为防误下真单，默认 dry-run，必须“live + `OKX_DRY_RUN=0` + `resume`”三步才会开仓。交易参数（全仓、强制止损、TP 由基因决定、杠杆 1–20×、风险 2–10%、同向上限、日亏 10% 停手）未改，测试用同一信号证明模拟盘与实盘发出的订单完全相同。GitHub 定时任务继续只跑模拟盘。
+- 测试：新增 `tests/test_okx_live_mode.py`（假 `curl` 交易所，不连 OKX）：请求头切换、dry-run 不发写请求、凭据只来自环境变量且不出现在输出 / 命令行、两种模式下单相同、状态互斥、过期信号拒绝、停止 / 冒烟 / 检查工具的模式行为。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

@@ -107,6 +107,10 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 首页与模拟交易页提供“全部平仓并停止”。公开静态页面通过需要仓库权限的 GitHub Actions 控制任务执行，浏览器不保存交易密钥或 GitHub token：打开提示框 → 前往 GitHub → 在 `stop-demo.yml` 任务页选择 master 并点击 Run workflow。只有这一步才提交停止请求，任务可能排队。
 `tools/stop_demo.py` 先持久化暂停新开仓，再关闭本程序管理的全部模拟仓位，读取交易所仓位确认后公布成功状态；平仓失败或无法确认时保留暂停和待管理仓位，并在看板标明结果未确认。人工仓位保持由人工管理。任务与交易程序共享并发组，失败也发布暂停状态和回执；添加按钮不会执行停止操作。恢复需显式在 Paper trading 任务中选择 `resume`。
 
+### OKX 实盘（模式开关，默认 dry-run）
+
+同一个跟单程序 `tools/okx_demo_trader.py` 通过环境变量切换模拟盘 / 实盘：`OKX_TRADING_MODE=demo`（默认，带 `x-simulated-trading: 1`，状态在 `okx_demo/`）或 `live`（不带该请求头，状态在 `okx_live/`）。实盘下 `OKX_DRY_RUN` 默认开，只有精确设为 `0` 才真实下单，新实盘状态还需显式 `resume`；dry-run 时 OKX 客户端拒绝一切非 GET 请求。实盘拒绝在 GitHub Actions 与 `runtime/` 中运行，只能在 API Key 绑定 IP 的新加坡服务器上以 systemd 定时任务运行；交易规则与模拟盘相同。部署、切换与紧急平仓见 [`deploy/live/README.md`](deploy/live/README.md)。
+
 ## 账户历史
 
 所有新增内容集中在 `#/paper` 的五个可折叠分区，手机使用卡片列表。

@@ -1,0 +1,27 @@
+# OKX 实盘跟单：一次运行（%i = okx_demo_trader.py 的 --action：run / snapshot / pause / resume / flatten / follow-current）。
+# 只在新加坡服务器 139.180.146.42 使用（实盘 API Key 绑定该机 IP）。默认 dry-run：环境文件里 OKX_DRY_RUN=0 才会真实下单。
+[Unit]
+Description=MODI OKX live mirror (%i; dry-run unless OKX_DRY_RUN=0)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/modi-okx-live/okx-live.env
+
+[Service]
+Type=oneshot
+User=modi-live
+Group=modi-live
+WorkingDirectory=/opt/modi-okx-live
+# 密钥只在这个 root:root 0600 文件里，由 systemd 读入进程环境；不会出现在命令行、日志或仓库里。
+EnvironmentFile=/etc/modi-okx-live/okx-live.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+StateDirectory=modi-okx-live
+StateDirectoryMode=0700
+ExecStartPre=/usr/bin/python3 tools/fetch_signals.py --data /var/lib/modi-okx-live
+ExecStart=/usr/bin/python3 tools/okx_demo_trader.py --data /var/lib/modi-okx-live --action %i
+TimeoutStartSec=300
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/modi-okx-live

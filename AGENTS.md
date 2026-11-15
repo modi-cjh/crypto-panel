@@ -4,7 +4,7 @@
 
 ## 1. 安全红线（任何情况下都不能违反）
 
-- **只做模拟交易。** 所有发往 OKX 的私有请求必须带 `x-simulated-trading: 1`，统一使用 `tools/okx_demo_trader.py` 里的 `OKX` 客户端，不要另写下单代码，不要接入实盘。
+- **默认只做模拟交易；实盘只走已有开关。** 统一使用 `tools/okx_demo_trader.py` 里的 `OKX` 客户端，不要另写下单代码。模拟盘（`OKX_TRADING_MODE` 未设或 `demo`）的私有请求必须带 `x-simulated-trading: 1`。实盘（`OKX_TRADING_MODE=live`）只在 API Key 绑定 IP 的新加坡服务器上用 `deploy/live/` 的 systemd 任务运行，默认 dry-run（`OKX_DRY_RUN` 精确为 `0` 才下单），状态在 `okx_live/`。不要去掉这些保护：live 拒绝在 GitHub Actions / `runtime/` 中运行、dry-run 时客户端拒绝非 GET 请求、demo 与 live 状态互斥、过期信号不操作。不要把 GitHub 工作流改成 live，不要在开发机上调用实盘接口。
 - **密钥只放在 GitHub Secrets**（`OKX_API_KEY` / `OKX_API_SECRET` / `OKX_API_PASSPHRASE`）或服务器环境变量。不要写进代码、日志、提交、PR、测试数据或聊天；curl 通过 stdin（`-K -`）传参，不放在命令行。
 - **拒绝带提现权限的密钥**（`check` / `load` 已实现，不要去掉）。
 - **不要动人工仓位。** 跟单程序只管理自己开的仓（`state.json` 的 `mirrored`）；看板可以显示全部 USDT 永续持仓，但平仓、改止损、“全部平仓并停止”只作用于程序自己的仓位。
@@ -37,6 +37,8 @@ tools/okx_demo_trader.py   OKX 模拟盘跟单：跟随 evolve/signals.json（�
                            → paper-data/okx_demo/{state.json, actions.jsonl, summary.json}
 tools/paper_trader.py, tools/volume_test.py   已退役的旧三策略引擎与限时档位（仅在没有 evolve/signals.json 时作为后备）
 tools/stop_demo.py         全部平仓并暂停（stop-demo.yml）
+tools/fetch_signals.py     实盘服务器下载并校验 paper-data/evolve/signals.json（只读公开文件）
+deploy/live/               OKX 实盘：systemd 单元 / 定时器 / 环境变量模板 / 部署与切换说明（OKX_TRADING_MODE=live，默认 dry-run）
 .github/workflows/paper-trading.yml   定时运行上面两个程序（cron 每 4 小时，`17 */4 * * *`；为减少账号上的自动运行和提交，不要调高频率）
 runtime/ + deploy/         可选常驻服务（FastAPI）；部署后替代 GitHub 定时任务
 index.html, assets/*.mjs   看板（无构建步骤，原生 ES 模块）
