@@ -11,7 +11,7 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
   const context = await browser.newContext({ ...devices['iPhone 13'] });
   let mode = 'ok';
   await context.addInitScript(() => { try { localStorage.setItem('modi-companion-position', JSON.stringify({ side: 'right', bottom: 20, docked: true })); } catch {} });
-  await context.route(/okx\.com/, r => r.abort()); await context.routeWebSocket(/okx\.com/, ws => ws.close());
+  await context.route(/okx\.com/, r => r.abort()); await context.route(/sslip\.io/, r => r.abort()); await context.routeWebSocket(/okx\.com/, ws => ws.close());
   await context.route('**/paper-data/evolve/dashboard.json*', r => mode === 'ok' ? r.fulfill({ contentType: 'application/json', body: JSON.stringify(dash) }) : r.fulfill({ status: 404, body: '404' }));
   const page = await context.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e)));
@@ -82,7 +82,7 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
     const slim = { ...dash, details: 'nodes.json', nodes: dash.nodes.map(n => seated.has(n.id) ? n : Object.fromEntries(Object.entries(n).filter(([k]) => !['summary', 'test_curve', 'train_curve'].includes(k)))) };
     const det = { schema: 1, generation: dash.generation, nodes: Object.fromEntries(dash.nodes.map(n => [n.id, { genes: n.genes, summary: n.summary, test_curve: n.test_curve }])) };
     const ctx = await browser.newContext({ ...devices['iPhone 13'], reducedMotion: 'reduce' }); let detailHits = 0, dashHits = 0;
-    await ctx.route(/okx\.com/, r => r.abort());
+    await ctx.route(/okx\.com/, r => r.abort()); await ctx.route(/sslip\.io/, r => r.abort());
     await ctx.route('**/paper-data/evolve/dashboard.json*', r => { dashHits++; return r.fulfill({ contentType: 'application/json', body: JSON.stringify(slim) }); });
     await ctx.route('**/paper-data/evolve/nodes.json*', async r => { detailHits++; await new Promise(x => setTimeout(x, 400)); r.fulfill({ contentType: 'application/json', body: JSON.stringify(det) }); });
     const sp = await ctx.newPage(); const errs = []; sp.on('pageerror', e => errs.push(String(e)));
@@ -100,7 +100,7 @@ const dash = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'evolve
     assert.equal(detailHits, 1); assert.deepEqual(errs, []); await ctx.close(); }
   // Reduced motion: no automatic replay.
   { const still = await browser.newContext({ ...devices['iPhone 13'], reducedMotion: 'reduce' });
-    await still.route(/okx\.com/, r => r.abort()); await still.route('**/paper-data/evolve/dashboard.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(dash) }));
+    await still.route(/okx\.com/, r => r.abort()); await still.route(/sslip\.io/, r => r.abort()); await still.route('**/paper-data/evolve/dashboard.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(dash) }));
     const sp = await still.newPage(); await sp.goto(BASE + '#/evolve'); await sp.waitForSelector('#evolve-graph svg'); await sp.waitForTimeout(800);
     assert.equal(await sp.locator('#evolve-graph svg.replay').count(), 0); await still.close(); }
   // A missing dashboard (including a transient 404) is a retryable read error, not “never run”.

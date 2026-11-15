@@ -22,7 +22,7 @@ const wait = (page, ms) => page.waitForTimeout(ms);
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   let account = paused(), fills = fillsDoc([]);
-  await context.route(/okx\.com/, r => r.abort());
+  await context.route(/okx\.com/, r => r.abort()); await context.route(/sslip\.io/, r => r.abort());
   await context.routeWebSocket(/okx\.com/, ws => ws.close());
   await context.route('**/live-data/snapshot.json*', r => r.fulfill({ json: account }));
   await context.route('**/live-data/fills.json*', r => r.fulfill({ json: fills }));

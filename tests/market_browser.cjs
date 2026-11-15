@@ -10,7 +10,7 @@ const tickers = Array.from({ length: 120 }, (_, i) => ({ instId: `C${String(i).p
   const context = await browser.newContext({ ...devices['iPhone 13'] });
   const funding = [];
   await context.route(/wss?:\/\//, r => r.abort());
-  await context.route('**/paper-data/**', r => r.abort());
+  await context.route('**/paper-data/**', r => r.abort()); await context.route(/sslip\.io/, r => r.abort());
   await context.route('https://www.okx.com/api/v5/**', r => {
     const url = new URL(r.request().url()), path = url.pathname.replace('/api/v5/', '');
     const data = path === 'market/tickers' ? tickers

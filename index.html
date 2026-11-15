@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <meta name="description" content="MODI AI 交易团队 · OKX 实盘看板：真实资金账户权益、持仓、止损止盈与成交（只读展示）。">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://www.okx.com wss://ws.okx.com:8443 wss://ws.okx.com wss://wspap.okx.com wss://wspap.okx.com:8443 https://raw.githubusercontent.com; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://139-180-146-42.sslip.io https://www.okx.com https://aws.okx.com wss://wsaws.okx.com:8443 wss://ws.okx.com:8443 wss://ws.okx.com wss://wspap.okx.com wss://wspap.okx.com:8443 https://raw.githubusercontent.com; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'none'">
   <title>MODI · AI 交易团队 · OKX 实盘看板</title>
   <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
   <!-- Home-screen app: Safari "添加到主屏幕" / Android "安装应用" opens full screen with the MODI robot icon. -->
@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="./assets/style.css?v=20261116-dash">
   <link rel="stylesheet" href="./assets/apple.css?v=20261116-dash">
   <script defer src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
-  <script type="module" src="./assets/app.mjs?v=20261116-dash"></script>
+  <script type="module" src="./assets/app.mjs?v=20261116-api"></script>
 </head>
 <body>
   <div id="toasts" role="status" aria-live="polite"></div>
@@ -48,7 +48,7 @@
         <section class="panel command-stats"><div class="panel-heading"><div><span class="eyebrow">04 / 交易统计</span><h2>胜率 · 盈亏比 · 回撤</h2></div><small class="muted">按已平仓交易统计，最大回撤按账户权益曲线</small></div><div id="live-stats" class="trade-stats"><p class="skeleton" role="status">数据加载中</p></div></section>
         <section class="panel command-trades"><div class="panel-heading"><div><span class="eyebrow">05 / 交易复盘</span><h2>已平仓记录 <span id="live-trade-count" class="pill">0</span></h2></div><small class="muted">点一行看 K 线、入场与止损 / 止盈</small></div><div id="live-trades"><p class="skeleton" role="status">数据加载中</p></div></section>
         <a id="home-evolve" class="panel evo-home" href="#/evolve" hidden></a>
-        <p class="panel-caption">OKX 实盘账户（真实资金）。交易程序运行在绑定 IP 的服务器上，约每小时运行一次；每笔开仓都带交易所止损单，止盈由策略决定。看板数据来自 GitHub live-data 分支（本地机器每小时从服务器只读同步，只含白名单字段，不含任何密钥），持仓浮盈在行情连上时按 OKX 实时标记价估算，成交与余额以快照为准。时间均为金边时间（UTC+7）。真实资金，风险自负，不构成投资建议。</p>
+        <p class="panel-caption">OKX 实盘账户（真实资金）。交易程序运行在绑定 IP 的服务器上，约每小时运行一次；每笔开仓都带交易所止损单，止盈由策略决定。看板数据优先来自服务器只读接口（约每分钟刷新，只提供读取，只含白名单字段，不含任何密钥），连不上时改用 GitHub live-data 分支（本地机器每小时同步）；持仓浮盈在行情连上时按 OKX 实时标记价估算，连不上 OKX 时用服务器读到的标记价与浮盈。时间均为金边时间（UTC+7）。真实资金，风险自负，不构成投资建议。</p>
       </section>
     </section>
     <section id="market-page" class="page" aria-labelledby="market-title">
@@ -82,6 +82,6 @@
   <dialog id="trade-chart" class="trade-chart" aria-labelledby="trade-chart-title"><div class="trade-chart-head"><h2 id="trade-chart-title">K 线</h2><button id="trade-chart-close" class="pill" type="button">关闭</button></div><p id="trade-chart-meta" class="muted"></p><div id="trade-chart-levels" class="chart-levels"></div><div id="trade-chart-box" class="trade-chart-box"></div><p id="trade-chart-note" class="muted trade-chart-note"></p></dialog>
   <div id="mascot" role="group" aria-label="MODI 团队伙伴"></div>
   <dialog id="mascot-drawer" aria-labelledby="mascot-drawer-title"></dialog>
-  <footer><span class="footer-brand">MODI · AI 交易团队 <span>· OKX 实盘看板</span></span><div><p>数据来源：<a href="https://www.okx.com/docs-v5/zh/" target="_blank" rel="noopener noreferrer">OKX 公共接口</a>（行情与标记价）+ GitHub live-data 分支（OKX 实盘账户快照，约每小时同步）</p><p>真实资金，风险自负，不构成投资建议</p><small>图表由 <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts™</a> 提供</small></div></footer>
+  <footer><span class="footer-brand">MODI · AI 交易团队 <span>· OKX 实盘看板</span></span><div><p>数据来源：<a href="https://www.okx.com/docs-v5/zh/" target="_blank" rel="noopener noreferrer">OKX 公共接口</a>（行情与标记价）+ 服务器只读接口（OKX 实盘账户，约每分钟）/ GitHub live-data 分支（约每小时同步）</p><p>真实资金，风险自负，不构成投资建议</p><small>图表由 <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts™</a> 提供</small></div></footer>
 </body>
 </html>

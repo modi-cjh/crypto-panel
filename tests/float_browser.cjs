@@ -14,7 +14,7 @@ const feed = { schema_version: 1, source: 'okx-live', trading_mode: 'live', upda
     try { localStorage.setItem('modi-companion-position', JSON.stringify({ side: 'right', bottom: 20, docked: false })); } catch {}
     window.documentPictureInPicture = { requestWindow: async ({ width, height }) => window.open('about:blank', 'pip', `width=${width},height=${height}`) };
   });
-  await context.route(/okx\.com/, r => r.abort());
+  await context.route(/okx\.com/, r => r.abort()); await context.route(/sslip\.io/, r => r.abort());
   await context.routeWebSocket(/okx\.com/, ws => ws.close());
   await context.route('**/live-data/snapshot.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(feed) }));
   await context.route('**/live-data/fills.json*', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ schema_version: 1, fills: [], events: [] }) }));

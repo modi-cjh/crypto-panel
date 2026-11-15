@@ -6,7 +6,7 @@ const BASE = process.env.PANEL_URL || 'http://127.0.0.1:8008/';
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  await context.route(/okx\.com/, r => r.abort());
+  await context.route(/okx\.com/, r => r.abort()); await context.route(/sslip\.io/, r => r.abort());
   const page = await context.newPage(), errors = [], blocked = [];
   page.on('pageerror', e => errors.push(String(e)));
   page.on('console', m => { if (/Content Security Policy|manifest/i.test(m.text()) && m.type() === 'error') blocked.push(m.text()); });
