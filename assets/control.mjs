@@ -13,7 +13,7 @@ export function executionProfileText(data, now = Date.now()) {
   const isolated = p.margin_mode === 'isolated' ? ' · 逐仓' : p.margin_mode === 'cross' ? ' · 全仓' : '';
   const levCap = Number.isFinite(p.max_leverage) ? ` · 杠杆最高 ${p.max_leverage}×` : (Number.isFinite(p.leader_leverage) ? ` · 第一名每笔 ${(p.leader_risk*100).toFixed(0)}%、最高 ${p.leader_leverage}×（计入同向上限和日亏停手）` : '');
   const lead = Number.isFinite(p.max_leverage) && Number.isFinite(p.leader_risk) ? ' · 第一名信号优先（计入同向上限和日亏停手）' : '';
-  return `${data.paused ? '已暂停 · ' : ''}${name} · 每笔止损风险 ${(p.risk*100).toFixed(0)}%${p.risk_max > p.risk ? `–${(p.risk_max*100).toFixed(0)}%（按策略）` : ''}${levCap}${isolated} · 同向上限 ${(p.same_side_cap*100).toFixed(0)}%${lead}${p.major_factor > 1 ? ` · 主流币（${(p.majors || []).map(i => i.split('-')[0]).join('/')}）风险 ×${p.major_factor}` : ''}${Number.isFinite(p.daily_halt) ? ` · 日亏 ${(p.daily_halt*100).toFixed(0)}% 停手` : ''} · ${count}${until ? ` · ${until} 到期（UTC+7）` : ''}`;
+  return `${data.paused ? '已暂停 · ' : ''}${name} · 每笔止损风险 ${(p.risk*100).toFixed(0)}%${p.risk_max > p.risk ? `–${(p.risk_max*100).toFixed(0)}%（按策略）` : ''}${levCap}${isolated} · 同向上限 ${(p.same_side_cap*100).toFixed(0)}%${p.max_same_side ? `、${p.max_same_side} 仓` : ''}${lead}${p.major_factor > 1 ? ` · 主流币（${(p.majors || []).map(i => i.split('-')[0]).join('/')}）风险 ×${p.major_factor}` : ''}${Number.isFinite(p.daily_halt) ? ` · 日亏 ${(p.daily_halt*100).toFixed(0)}% 停手` : ''} · ${count}${until ? ` · ${until} 到期（UTC+7）` : ''}`;
 }
 
 export function stopControlText(data) {
