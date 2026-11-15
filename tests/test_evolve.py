@@ -1387,6 +1387,21 @@ class UniverseTests(unittest.TestCase):
             first = D.universe(tmp, now, get)
             self.assertEqual(D.universe(tmp, now, lambda p: []), first)          # chosen once, then fixed
 
+    def test_universe_is_the_top_50_and_a_longer_saved_list_is_cut_in_its_own_order(self):
+        self.assertEqual(D.UNIVERSE_SIZE, 50)
+        coins = [f'C{k}-USDT-SWAP' for k in range(86)]                      # the 86-coin list chosen under the old top-100 rule
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'evolve' / 'universe.json'
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(dict(version=D.UNIVERSE_VERSION, chosen_at=1, rule='top 100', instruments=coins,
+                                            specs={c: [1, 1, 1] for c in coins}, price_off={'C80-USDT-SWAP': [[1, None]]})))
+            got, specs = D.universe(tmp, 5, lambda p: [], with_specs=True)
+            self.assertEqual(got, coins[:50])                                   # same order, first 50, no re-ranking
+            self.assertEqual(set(specs), set(coins[:50]))
+            saved = json.loads(path.read_text())
+            self.assertEqual((saved['instruments'], saved['rule'][:6], saved['chosen_at']), (coins[:50], 'top 50', 1))
+            self.assertEqual(D.universe(tmp, 6, lambda p: []), coins[:50])     # stays at 50 afterwards
+
 
 class DataTests(unittest.TestCase):
     def fake(self, now, hours):

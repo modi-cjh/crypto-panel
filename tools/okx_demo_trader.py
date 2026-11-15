@@ -85,12 +85,14 @@ AMEND_TOLERANCE = .003            # amend the exchange stop when the paper stop 
 UTC7 = timezone(timedelta(hours=7))
 TAG = {'mean_reversion': 'mr', 'breakout_long': 'bl', 'breakout_daily': 'bd', 'evolved': 'ev'}
 EVOLVED_INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
+SCAN_LIMIT = 50           # coins scanned for new entries: the first 50 of the evolution's list (most traded first); same as evolve.data.UNIVERSE_SIZE
 ACTIVE_PROFILE = None
 
 
 def configure_evolved(universe=None):
     """Following the evolution champion (tools/evolve): the old strategy profiles no longer apply. `universe` is the
-    coin list the evolution trades (signals.json 'instruments', the top-100 perpetuals); without it, the five majors."""
+    coin list the evolution trades (signals.json 'instruments', most traded first), cut to its first SCAN_LIMIT coins
+    so a longer list from an older evolution run is never scanned in full; without it, the five majors."""
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT, MARGIN_MODE
     MARGIN_MODE = 'cross'
     # Each order risks its strategy's own risk gene (2–10 %, capped at 10 % after crowding and the major-coin factor)
@@ -101,7 +103,7 @@ def configure_evolved(universe=None):
     INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], None, EVOLVED_DAILY_HALT
     if isinstance(universe, list) and universe and len(set(universe)) == len(universe) and all(
             isinstance(i, str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', i) for i in universe):
-        INSTRUMENTS = list(universe)
+        INSTRUMENTS = list(universe)[:SCAN_LIMIT]
     ACTIVE_PROFILE = dict(mode='evolved', active=False, until=None, instruments=list(INSTRUMENTS), scan_limit=len(INSTRUMENTS), risk=RISK, risk_max=RISK_RANGE[1], same_side_cap=SAME_SIDE_CAP, daily_halt=DAILY_HALT,
                           leader_risk=LEADER_RISK, leader_leverage=LEADER_LEVERAGE, max_risk=MAX_TRADE_RISK, max_leverage=EVOLVED_MAX_LEVERAGE,
                           fallback_leverage=None, margin_mode=MARGIN_MODE, majors=list(MAJORS), major_factor=MAJOR_FACTOR,
