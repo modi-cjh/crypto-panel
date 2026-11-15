@@ -52,7 +52,7 @@ from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, cross_open_
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
 RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # legacy volume-test profiles: 1 % risk, 10× cap; daily halt 10 %
-EVOLVED_DAILY_HALT = .10                         # following the evolution champions: 10 %, counted on the whole account including the leader
+EVOLVED_DAILY_HALT = .25                         # following the evolution champions: 25 % (2026-11-15, was 10 %), counted on the whole account including the leader
 RISK_RANGE = (.02, .10)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
 MAX_TRADE_RISK = .10
 EVOLVED_MAX_LEVERAGE = GENE_MAX_LEVERAGE   # 20×, same cap as the evolve leverage gene
@@ -75,7 +75,7 @@ MAJOR_FACTOR = 2.0   # majors (execution.MAJORS) risk twice as much (execution.A
 PRICE_TOLERANCE = .01             # demo mode: no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
 CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
 SAME_SIDE_CAP = .05
-MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 6 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
+MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 10 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
 OPEN_WINDOW = 5 * 3600_000        # paper entries at most this old are mirrored as they are (runs are 4 h apart, plus delay)
@@ -96,9 +96,9 @@ def configure_evolved(universe=None):
     # Each order risks its strategy's own risk gene (2–10 %, capped at 10 % after crowding and the major-coin factor)
     # and its leverage gene (1–20×, clamped to that coin's OKX max). An order is skipped if its stop would leave
     # account equity at or below total maintenance margin (0.5 % majors / 2.5 % others).
-    # At most 20 % in one direction (the leader included); a 10 % daily loss on the whole account closes every
+    # No total-risk cap per direction (only at most MAX_SAME_SIDE = 10 open per side); a 25 % daily loss on the whole account closes every
     # position until tomorrow. The leader uses the same gene ranges; the title only decides signal priority.
-    INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], .20, EVOLVED_DAILY_HALT
+    INSTRUMENTS, RISK, SAME_SIDE_CAP, DAILY_HALT = list(EVOLVED_INSTRUMENTS), RISK_RANGE[0], None, EVOLVED_DAILY_HALT
     if isinstance(universe, list) and universe and len(set(universe)) == len(universe) and all(
             isinstance(i, str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', i) for i in universe):
         INSTRUMENTS = list(universe)
@@ -521,7 +521,7 @@ class Mirror:
             r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 10 %
         risk = r * self.equity
         same_risk = 0.0
-        for existing_key, m in self.s['mirrored'].items():
+        for existing_key, m in (self.s['mirrored'].items() if SAME_SIDE_CAP is not None else ()):   # only needed for a same-side risk cap
             if m.get('status') != 'open' or m.get('side') != side:
                 continue
             if existing_key in self.new_order_risk:
@@ -534,7 +534,7 @@ class Mirror:
             if avg <= 0 or not m.get('stop'):
                 return self.log('skip', inst, reason='existing_risk_unknown')
             same_risk += max((avg - float(m['stop'])) * side, 0) * abs(float(held['pos'])) * self.spec(m['inst'])['ctVal']
-        if same_risk + risk > SAME_SIDE_CAP * self.equity * (1 + 1e-9):
+        if SAME_SIDE_CAP is not None and same_risk + risk > SAME_SIDE_CAP * self.equity * (1 + 1e-9):   # None = evolved mode: no same-side risk cap
             return self.log('skip', inst, reason='same_side_risk')
         contracts = quantize(risk / (px * dist) / sp['ctVal'], sp['lotSz'])
         if float(contracts) < sp['minSz'] or contracts <= 0:
@@ -862,7 +862,7 @@ def main():
             raise SystemExit(f'evolve/signals.json 已过期、时间戳在未来或缺少 updated_at（超过 {LIVE_SIGNAL_MAX_AGE // 3600_000} 小时），实盘本轮不操作。')
         paper = {'positions': sig.get('positions', {}), 'source': 'evolve'}
         applied = configure_evolved(sig.get('instruments'))
-        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，规格缺失则不开新仓）· 全仓 · 同向 ≤ {SAME_SIDE_CAP:.0%}、≤ {MAX_SAME_SIDE} 仓 · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
+        print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，规格缺失则不开新仓）· 全仓 · 同向风险不设上限、≤ {MAX_SAME_SIDE} 仓 · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
     else:
         if not paper_path.exists():
             print('没有策略信号，跳过跟单。'); return
