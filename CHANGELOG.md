@@ -607,6 +607,12 @@
 - 不变：交易程序 `/opt/modi-okx-live`、`okx-live@` 服务与 timer、交易参数、`OKX_DRY_RUN`、凭据文件；`live-data` 仍每小时同步；CORS、限流参数；`paper-data` 分支与数据契约。
 - 测试：`tests/test_live_readapi.py` 新增 `Candles`（参数白名单与 400、OKX 形状与脏行过滤、4 秒缓存与过期、history-candles、只走公共接口）与 `Push`（没人连不读 OKX、只推持仓、过期价格不推、断开即释放、总数 / 每 IP 上限 503、只 GET 405、限流 429、`/candles` HTTP 的 CORS / 400 / 502 / 405 / 404 / 429）；新增 `tests/push.test.mjs`（K 线三级兜底顺序、OKX 可用时不问服务器、服务器也失败才报错、推送生效 / 出错降级 / 退避重连 / 超时 / 停止、消息校验）；`tests/fallback_browser.cjs` 新增 OKX 全断时单币页与持仓弹窗用服务器 K 线且无报错、推送断开时轮询照常、推送标记价实时重算浮盈与权益（并兜底拦截所有其它服务器地址）。
 
+### 同方向最多持仓 10 → 15（纸面与实盘同步）
+- 做了什么：`tools/evolve/execution.py` 的 `MAX_SAME_SIDE_POSITIONS`（即 `ACCOUNT_RULES['max_same_side']`）10 → 15；`tools/okx_demo_trader.py` 的 `MAX_SAME_SIDE` 跟随为 15（模拟盘与实盘共用，摘要 `execution_profile.max_same_side` 显示 15）。文档 AGENTS.md、README.md、`deploy/live/README.md` 与 `paper.py` 文档字符串同步改为 15。
+- 为什么：用户要求实盘同方向最多开 15 单。实盘只跟随纸面账户的持仓信号，纸面同向上限必须一起放宽，否则实盘到不了 15 单（回测与纸面同源）。纸面账户每次从起点整体重放，新上限会改写重放结果（只对 `side_cap_from` 之后的开仓生效，不变）。
+- 不变：单笔风险 2%–10%（主流币加倍仍 ≤ 10%）、杠杆 1–20×、日亏 25% 停手、同向合计风险不设上限、扫描前 50 币、拥挤降风险（≥3 仓减半 / ≥6 仓四分之一）、每笔交易所止损、全仓。
+- 测试：`tests/test_evolve.py`（上限边界 14/15/16、17 个多头信号取 15、平仓不受影响 15 笔）、`tests/test_okx_demo_trader.py`（默认 15 单、第 16 单起 `same_side_count`）、`tests/test_okx_live_mode.py` 断言改为 15。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |
