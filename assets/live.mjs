@@ -15,6 +15,8 @@ export const LIVE_FILLS_URL = LIVE_BASE + 'fills.json';
 export const LIVE_API_BASE = 'https://139-180-146-42.sslip.io/';
 export const LIVE_API_URL = LIVE_API_BASE + 'live.json';
 export const LIVE_TICKERS_URL = LIVE_API_BASE + 'tickers.json';
+// Server push (SSE): public mark prices of the open positions about once a second; the account base still comes from /live.json.
+export const LIVE_STREAM_URL = LIVE_API_BASE + 'stream';
 export const API_FRESH = 5 * 60000;    // an API document older than this is no better than live-data: say so
 // The trader runs hourly on the server and the box syncs hourly; raw.githubusercontent caches ~5 minutes.
 export const LIVE_STALE = 2.5 * 3600000;
@@ -341,14 +343,26 @@ export function serverTickerRows(doc, now = Date.now()) {
 }
 // Where the account and the prices come from, for the status pill and the connection badge.
 //   source: 'api' | 'github' | null    quotes: 'ws' | 'rest' | 'server' | null
-export function sourceText(source, account) {
-  if (source === 'api') return account === 'okx' ? '实盘账户来自服务器只读接口（约每分钟刷新，只读、白名单字段、无密钥）。' : '实盘账户来自服务器只读接口（服务器暂时读不到 OKX，显示最近一次交易程序快照）。';
+export function sourceText(source, account, push = false) {
+  const live = push ? '持仓价格、浮盈与权益由服务器实时推送（约每秒）；' : '';
+  if (source === 'api') return account === 'okx' ? `${live}实盘账户来自服务器只读接口（约每分钟刷新，只读、白名单字段、无密钥）。` : `${live}实盘账户来自服务器只读接口（服务器暂时读不到 OKX，显示最近一次交易程序快照）。`;
   if (source === 'github') return '服务器接口暂时连不上，实盘账户改用 GitHub live-data 分支（约每小时同步，只读、无密钥）。';
   return '正在读取实盘账户…';
 }
-export function connectionBadge({ ws = false, rest = false, server = false } = {}) {
+export function connectionBadge({ ws = false, rest = false, server = false, push = false } = {}) {
+  if (push) return { text: '实时推送', ok: true };
   if (ws) return { text: '行情实时', ok: true };
   if (rest) return { text: '行情轮询', ok: true };
   if (server) return { text: '服务器行情', ok: true };
   return { text: '行情断开', ok: false };
+}
+
+// One /stream message -> { marks: [[inst, price]], liveAt } for the given positions, or null when malformed / too old.
+// Prices older than 30 s (or from a clock far ahead) are dropped, like the OKX WebSocket marks.
+export function streamUpdate(body, insts, now = Date.now()) {
+  if (!body || typeof body !== 'object' || !body.marks || typeof body.marks !== 'object' || Array.isArray(body.marks)) return null;
+  const liveAt = stamp(body.live_at) ? body.live_at : null, ts = num(body.ts), wanted = new Set(insts);
+  const fresh = finite(ts) && now - ts <= 30000 && ts - now <= 60000;
+  const marks = fresh ? Object.entries(body.marks).filter(([k, v]) => isInst(k) && wanted.has(k) && finite(num(v)) && num(v) > 0).map(([k, v]) => [k, num(v)]) : [];
+  return { marks, liveAt };
 }

@@ -73,3 +73,22 @@ export function positionPnL(position, price, capped = false) {
   const pnl = position.side * position.qty * (price - position.entry);
   return capped && Number.isFinite(position.margin) ? Math.max(-position.margin, pnl) : pnl;
 }
+
+// Candles: OKX (www → aws, via the shared queue), then the server's read-only /candles (same {code,data} shape, short server cache)
+// when both OKX domains are unreachable. Resolves { data, source: 'okx' | 'server' }; rejects only when the server fails too.
+const CANDLE_PATHS = new Set(['market/candles', 'market/history-candles']);
+export async function getCandles(api, path, params, priority, { serverBase, fetchImpl = (...a) => fetch(...a), timeout = 9000 } = {}) {
+  if (!CANDLE_PATHS.has(path)) throw new Error('仅允许 K 线接口');
+  try { return { data: await api.get(path, params, priority), source: 'okx' }; }
+  catch (error) {
+    if (!serverBase) throw error;
+    const q = { instId: params.instId, bar: params.bar, limit: params.limit ?? '300', ...(path === 'market/history-candles' && params.after ? { after: params.after } : {}) };
+    try {
+      const response = await fetchImpl(serverBase + 'candles?' + new URLSearchParams(q), { method: 'GET', credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(timeout) });
+      if (!response.ok) throw new Error(`接口响应异常（${response.status}）`);
+      const body = await response.json();
+      if (body?.code !== '0' || !Array.isArray(body.data)) throw new Error('接口响应异常（服务器 K 线格式错误）');
+      return { data: body.data, source: 'server' };
+    } catch { throw error; }   // the server failing too: report the original OKX error
+  }
+}

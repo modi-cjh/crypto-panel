@@ -53,7 +53,7 @@ manifest.webmanifest, assets/icons/   手机“添加到主屏幕”App 配置
 
 ```
 tools/live_sync.py         本地机器：ssh 只读服务器 okx_live/{summary,state}.json + actions.jsonl → 白名单 → live-data 分支 {snapshot,fills,trades}.json（trades = 已平仓明细 + 胜率 / 盈亏比 / 回撤 / 按种子统计）
-tools/live_readapi.py      实盘服务器（modi-okx-readapi.service，modi-live 身份，代码在 /opt/modi-okx-readapi）：每 60 秒只读 OKX 账户（强制 dry-run 客户端）+ okx_live 文件 → 与 live_sync 同一白名单 + 密钥检查 → 内存缓存；127.0.0.1:8787 只回 GET /live.json /tickers.json /healthz；Caddy 在 443 提供 https://139-180-146-42.sslip.io（只开 443 与 22）
+tools/live_readapi.py      实盘服务器（modi-okx-readapi.service，modi-live 身份，代码在 /opt/modi-okx-readapi）：每 60 秒只读 OKX 账户（强制 dry-run 客户端）+ okx_live 文件 → 与 live_sync 同一白名单 + 密钥检查 → 内存缓存；127.0.0.1:8787 只回 GET /live.json /tickers.json /healthz /candles（K 线备用源，参数白名单）/stream（SSE 推送持仓公共标记价，约每秒，看板断开时退回 60 秒轮询）；Caddy 在 443 提供 https://139-180-146-42.sslip.io（只开 443 与 22）
 tools/live_alert.py        本地机器：live_sync 之后只读检查实盘异常（停跑 / 熔断 / 暂停 / 日亏 >10% / 连续 3 止损 / 报错）→ stdout JSON + 退出码（0 正常 / 1 需通知 / 2 已报过），不发消息
 assets/live.mjs            实盘看板纯逻辑：校验、实时浮盈、新鲜度 / 状态、持仓 / 成交渲染、机器人状态
 ```

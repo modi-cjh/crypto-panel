@@ -71,3 +71,38 @@ export function tradeMarkers(account,symbol,bars){
     return [{time:bar.time,position:f.kind==='open'?'belowBar':'aboveBar',color:f.kind==='open'?'#06727d':'#c53045',shape:f.kind==='open'?'arrowUp':'arrowDown',text:`${f.kind==='open'?'开仓':'平仓'}${f.side===1?'多':f.side===-1?'空':''}`}];
   });
 }
+// Server push (Server-Sent Events from the read-only API's /stream): public mark prices of the live positions about once a second.
+// Any error, or no message for `staleMs`, closes the stream (the page keeps its 60-second polling meanwhile) and reconnects
+// with backoff (3 s, 6 s, … up to 60 s). state: '连接中' | '实时' | '断开'.
+export class ServerPush {
+  constructor({url,onMessage=()=>{},onState=()=>{},EventSourceImpl=globalThis.EventSource,staleMs=20000,now=()=>Date.now(),setTimer=(fn,ms)=>setTimeout(fn,ms),clearTimer=id=>clearTimeout(id)}){
+    Object.assign(this,{url,onMessage,onState,EventSourceImpl,staleMs,now,setTimer,clearTimer});
+    this.state='断开';this.failures=0;this.lastData=0;this.stopped=true;this.source=null;this.timer=null;this.watch=null;
+  }
+  get live(){return this.state==='实时' && this.now()-this.lastData<this.staleMs;}
+  set(state,why){if(this.state!==state){this.state=state;this.onState(state,why);}}
+  start(){if(!this.stopped)return;this.stopped=false;this.failures=0;this.open();}
+  open(){
+    if(this.stopped)return;
+    if(typeof this.EventSourceImpl!=='function'){this.set('断开','浏览器不支持实时推送');return;}
+    this.set('连接中');
+    let es;try{es=new this.EventSourceImpl(this.url);}catch{this.fail('无法建立推送连接');return;}
+    this.source=es;this.lastData=this.now();this.arm();
+    es.onmessage=e=>{
+      if(es!==this.source)return;
+      let body;try{body=JSON.parse(e.data);}catch{return;}
+      this.lastData=this.now();this.arm();
+      if(this.onMessage(body)===false)return;
+      this.failures=0;this.set('实时','服务器实时推送');
+    };
+    es.onerror=()=>{if(es===this.source)this.fail('推送连接中断');};
+  }
+  arm(){this.clearTimer(this.watch);this.watch=this.setTimer(()=>this.fail('推送超时'),this.staleMs);}
+  close(){this.clearTimer(this.watch);this.clearTimer(this.timer);this.watch=this.timer=null;if(this.source){this.source.onmessage=this.source.onerror=null;this.source.close();this.source=null;}}
+  fail(why){
+    if(this.stopped)return;
+    this.close();this.failures++;this.set('断开',why+'，改用每分钟轮询，稍后自动重连');
+    this.timer=this.setTimer(()=>{this.timer=null;this.open();},Math.min(60000,3000*2**(this.failures-1)));
+  }
+  stop(){this.stopped=true;this.close();this.set('断开','已停止');}
+}

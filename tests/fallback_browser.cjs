@@ -1,6 +1,7 @@
 // Phone on a network that blocks OKX (Cambodian 4G): PANEL_URL=http://127.0.0.1:8008/ node tests/fallback_browser.cjs
-// Every OKX request (REST on www / aws, every WebSocket) fails. The server read-only API (/live.json, /tickers.json) is faked by route
-// interception. Expected: account, positions and PnL from the server, the market from the server's tickers, and no red error anywhere.
+// Every OKX request (REST on www / aws, every WebSocket) fails. The server read-only API (/live.json, /tickers.json, /candles, /stream) is
+// faked by route interception (anything else on sslip.io is aborted: never the real account). Expected: account, positions and PnL from the
+// server, the market from the server's tickers, candles from the server's /candles, pushed marks applied, and no red error anywhere.
 const { chromium, devices } = require('playwright');
 const assert = require('node:assert/strict');
 const BASE = process.env.PANEL_URL || 'http://127.0.0.1:8008/';
@@ -18,11 +19,16 @@ const trades = { schema_version: 1, source: 'okx-live', trades: [], stats: { ove
 const apiDoc = () => ({ schema_version: 1, source: 'okx-live-api', updated_at: iso(now - 30e3), api: { account: 'okx', refresh_s: 60 }, snapshot: snapshot(), fills, trades });
 const tickers = () => ({ schema_version: 1, source: 'okx-public', updated_at: iso(Date.now() - 20e3), tickers: Array.from({ length: 120 }, (_, i) => ({
   instId: i === 0 ? 'BTC-USDT-SWAP' : i === 1 ? 'SOL-USDT-SWAP' : `C${i}-USDT-SWAP`, last: i === 0 ? 91000 : 10 + i, open24h: i === 0 ? 90000 : 10, volCcy24h: 1e6 - i * 10, ts: Date.now() })) });
+const candleRows = Array.from({ length: 60 }, (_, i) => { const t = Math.floor(now / 3600e3) * 3600e3 - (59 - i) * 3600e3, o = 72 + Math.sin(i / 5);
+  return [String(t), String(o), String(o + .6), String(o - .6), String(o + .2), '1000', '10', '720', i === 59 ? '0' : '1']; }).reverse();
+const sse = (r, events) => r.fulfill({ status: 200, contentType: 'text/event-stream', headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
+  body: events.map(e => `data: ${JSON.stringify(e)}\n\n`).join('') });
 const json = (r, body, extra = {}) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*', ...extra }, body: JSON.stringify(body) });
 
-async function phone(browser, { api = true, github = true, awsWorks = false } = {}) {
+async function phone(browser, { api = true, github = true, awsWorks = false, push = null } = {}) {
   const context = await browser.newContext({ ...devices['iPhone 13'] });
-  const hits = { api: 0, tickers: 0, github: 0, www: 0, aws: 0 };
+  const hits = { api: 0, tickers: 0, github: 0, www: 0, aws: 0, candles: 0, stream: 0 };
+  await context.route(/sslip\.io/, r => r.abort());   // registered first: the specific routes below take precedence
   // 4G block: OKX REST hangs up, sockets are refused (both domains), unless awsWorks (only www blocked).
   await context.route(/www\.okx\.com/, r => { hits.www++; return r.abort('connectionrefused'); });
   await context.route(/aws\.okx\.com/, r => { hits.aws++; if (!awsWorks) return r.abort('connectionrefused');
@@ -31,6 +37,8 @@ async function phone(browser, { api = true, github = true, awsWorks = false } = 
   await context.routeWebSocket(/okx\.com/, ws => ws.close());
   await context.route(/sslip\.io\/live\.json/, r => { hits.api++; return api ? json(r, apiDoc()) : r.abort('timedout'); });
   await context.route(/sslip\.io\/tickers\.json/, r => { hits.tickers++; return api ? json(r, tickers()) : r.abort('timedout'); });
+  await context.route(/sslip\.io\/candles\?/, r => { hits.candles++; return api ? json(r, { code: '0', msg: '', data: candleRows }) : r.abort('timedout'); });
+  await context.route(/sslip\.io\/stream/, r => { hits.stream++; return push ? sse(r, push()) : r.abort('connectionrefused'); });
   await context.route('**/live-data/snapshot.json*', r => { hits.github++; return github ? json(r, snapshot({ updated_at: iso(now - 40 * 60e3), equity: 127.1 })) : r.fulfill({ status: 404, body: 'x' }); });
   await context.route('**/live-data/fills.json*', r => github ? json(r, fills) : r.fulfill({ status: 404, body: 'x' }));
   await context.route('**/live-data/trades.json*', r => github ? json(r, trades) : r.fulfill({ status: 404, body: 'x' }));
@@ -76,6 +84,35 @@ const noRed = async (page, why) => {
     // Diagnostics name the source.
     await page.locator('#connection').click();
     assert.match(await page.locator('#diag-body').textContent(), /来源 服务器备用[\s\S]*实盘账户来源：服务器只读接口/);
+    assert.match(await page.locator('#diag-body').textContent(), /服务器推送：断开/, 'push down: polling carries on');
+    assert.ok(hits.stream >= 1, 'tried the server push');
+    await page.locator('#diag-close').click();
+    // Coin page: both OKX domains down -> candles from the server's /candles, no 「K线读取失败」.
+    await page.goto(BASE + '#/coin/BTC-USDT-SWAP');
+    await page.waitForFunction(() => /60 根.*服务器 K 线/.test(document.querySelector('#candle-updated')?.textContent || ''), null, { timeout: 20000 });
+    assert.ok(hits.candles >= 1, 'server candles used');
+    assert.equal(await page.locator('#chart-error').isHidden(), true, 'no chart error');
+    await noRed(page, 'coin page from server candles');
+    // Position popup: same fallback.
+    await page.goto(BASE);
+    await page.waitForFunction(() => document.querySelector('#live-equity')?.textContent.includes('131.25'));
+    await page.locator('#live-positions [data-chart-inst="SOL-USDT-SWAP"]').click();
+    await page.waitForFunction(() => /K 线 · \d+ 根 · 服务器备用/.test(document.querySelector('#trade-chart-note')?.textContent || ''), null, { timeout: 15000 });
+    assert.doesNotMatch(await page.locator('#trade-chart-note').textContent(), /读取失败/);
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+
+  // 1b. Server push: pushed marks reprice the position, PnL and equity between the minute reads.
+  {
+    const { context, page, hits, errors } = await phone(browser, { push: () => [{ ts: Date.now(), marks: { 'SOL-USDT-SWAP': 69.1, 'BTC-USDT-SWAP': 1 }, live_at: iso(now - 30e3) }] });
+    await page.goto(BASE);
+    // short 1.58 SOL from 72.43 at 69.1: +5.26 USDT; equity 131.25 - 3.68 + 5.26 = 132.83
+    await page.waitForFunction(() => /浮盈 \+5\.26 USDT（实时标记价）/.test(document.querySelector('#live-meta')?.textContent || ''), null, { timeout: 20000 });
+    await page.waitForFunction(() => document.querySelector('#live-equity')?.textContent.includes('132.8'), null, { timeout: 10000 });
+    assert.match(await page.locator('#live-positions details[data-inst="SOL-USDT-SWAP"] .okx-pos-pnl').innerText(), /\+5\.26/);
+    assert.ok(hits.stream >= 1);
+    await noRed(page, 'server push');
     assert.deepEqual(errors, []);
     await context.close();
   }
