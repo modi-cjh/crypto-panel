@@ -49,10 +49,10 @@ widgets/                   iPhone 主屏幕小组件（Scriptable）与安装说
 manifest.webmanifest, assets/icons/   手机“添加到主屏幕”App 配置
 ```
 
-看板读取 `https://raw.githubusercontent.com/modi-cjh/crypto-panel/live-data/snapshot.json` 与 `fills.json`（约 5 分钟缓存，`?t=` 每分钟换一次），持仓浮盈用 **OKX 公共标记价**（`wss://ws.okx.com` 推送，连不上时用快照值）。`live-data` 分支只由 `tools/live_sync.py` 写入（白名单字段 + 密钥检查，不 force push），不要手动修改；GitHub 凭据只在本地机器，服务器上不放。
+看板读取 `https://raw.githubusercontent.com/modi-cjh/crypto-panel/live-data/snapshot.json`、`fills.json` 与 `trades.json`（可缺，旧同步时显示空状态）（约 5 分钟缓存，`?t=` 每分钟换一次），持仓浮盈用 **OKX 公共标记价**（`wss://ws.okx.com` 推送，连不上时用快照值）。`live-data` 分支只由 `tools/live_sync.py` 写入（白名单字段 + 密钥检查，不 force push），不要手动修改；GitHub 凭据只在本地机器，服务器上不放。
 
 ```
-tools/live_sync.py         本地机器：ssh 只读服务器 okx_live/{summary,state}.json + actions.jsonl → 白名单 → live-data 分支 {snapshot,fills}.json
+tools/live_sync.py         本地机器：ssh 只读服务器 okx_live/{summary,state}.json + actions.jsonl → 白名单 → live-data 分支 {snapshot,fills,trades}.json（trades = 已平仓明细 + 胜率 / 盈亏比 / 回撤 / 按种子统计）
 tools/live_alert.py        本地机器：live_sync 之后只读检查实盘异常（停跑 / 熔断 / 暂停 / 日亏 >10% / 连续 3 止损 / 报错）→ stdout JSON + 退出码（0 正常 / 1 需通知 / 2 已报过），不发消息
 assets/live.mjs            实盘看板纯逻辑：校验、实时浮盈、新鲜度 / 状态、持仓 / 成交渲染、机器人状态
 ```

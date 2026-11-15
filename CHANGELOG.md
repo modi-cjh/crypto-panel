@@ -589,6 +589,12 @@
 - 不变：交易代码、服务器、凭据、`OKX_DRY_RUN`、`live-data` / `paper-data` 分支。
 - 测试：新增 `tests/test_live_alert.py`（每个条件一个 mock 样本 + 边界、正常样本无告警、outcome 由 summary 补全、报错详情疑似密钥时隐藏、去重：持续不重复 / 新条件 / 恢复后再出现 / 新报错事件 / 状态文件损坏、CLI 退出码、ssh 失败转为 read_error）。
 
+### 实盘看板加 5 项：已平仓记录、交易统计、持仓 K 线、顶部状态灯、手机持仓卡片更紧凑
+- 做了什么：①`tools/live_sync.py` 新增 `build_trades()`，同步时多写一个 `live-data/trades.json`（`schema_version: 1`；`snapshot.json` / `fills.json` 格式不变，旧前端不受影响）：每笔平仓（`close` / `closed_on_exchange`，排除 `execution_test` 与空跑）按交易程序 `enrich_closes` 的规则配到 `state.mirrored` 里该币最近一次开在平仓之前的 `done` 仓位和同一轮的 `open` 动作，得出币种、方向、杠杆、入场 / 出场价、开仓时的止损 / 止盈、已实现盈亏（动作本身 → `state.close_results_v3` → `summary.recent_actions`）、价格幅度 `pnl_pct` 与按杠杆的保证金收益率 `roe_pct`、R（盈亏 ÷ 开仓 `risk_usdt`，没有时按价格对开仓止损距离）、持仓时长、出场方式 `exit_type`（tp / sl / liq / other（程序平仓，附 reason）/ unknown；交易所平仓缺 outcome 时按成交价离止损 / 止盈哪个近判断，与交易程序 `outcome()` 相同）、种子 `champion`、第一名；以及统计 `stats`：总体与按种子（`by_strategy`，键为 champion，未知时为 strategy）的笔数、胜负、胜率、已实现盈亏、平均盈利 / 亏损、盈亏比、盈利因子、平均 R、止盈 / 止损次数、按平仓累计盈亏的最大回撤，和按权益曲线（summary.history）的最大回撤 `equity_drawdown`。只取白名单字段，整份文件同样过密钥检查（`checked`），不含订单号 / clOrdId。②看板（`assets/live.mjs` 纯函数 + `app.mjs` 接线，资源版本 `?v=20261116-dash`）：首页新增“04 / 交易统计”（胜率、盈亏比、平均 R、已实现盈亏、最大回撤、各种子表现表）与“05 / 已平仓记录”（每笔币种 / 方向 / 杠杆、入场 → 出场、盈亏 USDT 与 %、出场方式、持仓时长、种子、平仓时间，前 20 笔 + “更早的 N 笔”）；没有 `trades.json`（旧同步）时两块显示空状态，回撤改按快照权益曲线计算。③持仓行右侧加 K 线按钮、已平仓行可点开：弹窗用 OKX 公共 `market/candles`（时间较早的已平仓用 `market/history-candles`，`api.mjs` 白名单加一项；浏览器直接取，与单币页同一来源，CSP 不变）画 K 线，标入场 / 出场箭头和入场、止损、止盈（、出场）价格线；按持仓时长自动选 15m / 1H / 4H / 1D；图表库或行情取不到时退回价位梯子图（入场 / 止损 / 止盈 / 标记价），不报错。④顶部常驻权益上方加状态灯 `#live-light`：运行正常（绿）、暂停 / 空跑（黄）、熔断（红，`halted`）、数据过期（灰带红圈，`updated_at` 超过 2 小时），手机上也显示。⑤手机持仓卡片改为两行：币种 · 方向杠杆 · 种子，下一行“入 · 损 · 盈”三个价位，右侧浮盈与 K 线按钮；展开详情改三列。
+- 为什么：用户（2026-11-15 22:50）要求看板补齐已平仓明细、胜率 / 盈亏比 / 回撤 / 各种子统计、持仓看 K 线、运行状态灯和更紧凑的手机持仓。原来 `closed_trades` 只是一个计数，看不到每笔结果。
+- 不变：交易服务器代码 / 参数 / 凭据、`OKX_DRY_RUN`、`paper-data` 分支、进化页数据源、不显示模拟盘账户；`live-data` 仍只由 `live_sync.py` 写入。
+- 测试：`tests/test_live_sync.py` 新增 `Trades`（配对、止损取开仓时的值、盈亏来自缓存、R 两种算法、出场方式、执行测试与空跑排除、总体 / 按种子统计、权益回撤、白名单 + 密钥检查、空数据），发布测试多一个 `trades.json`；`tests/live.test.mjs` 新增状态灯（含 2 小时边界）、已平仓行（转义、更早折叠）、统计面板与回撤后备、K 线取数窗口 / 标记 / 价位梯子、持仓行按钮与价位行；`tests/live_browser.cjs` 新增状态灯（正常 / 过期 / 熔断）、统计与已平仓、K 线弹窗（行情被拦截时的价位后备、按钮不折叠持仓行、Esc 关闭、桌面上用假 K 线画出画布、没有 trades.json 时空状态）。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

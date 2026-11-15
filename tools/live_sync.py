@@ -8,6 +8,8 @@ Runs on the dev box, never on the live server: the server holds no GitHub creden
 2. Build two public files from a field whitelist only:
      snapshot.json  equity / available / day PnL / paused / halted / positions (+ stop, target, strategy)
      fills.json     recent opens / closes (+ a short list of skips and pauses)
+     trades.json    closed trades (open paired with close: entry / exit / PnL / hold time / exit type / seed)
+                    and statistics (win rate, payoff, average R, max drawdown, per seed)
 3. Refuse to publish anything that looks like a credential (variable names, UUID, long base64 / hex tokens).
 4. Commit and push them to the separate `live-data` branch (orphan data branch, never force-pushed).
 
@@ -42,6 +44,9 @@ ACTIONS_TAIL = 3000          # lines of actions.jsonl read from the server
 MAX_FILLS = 50               # opens / closes in fills.json
 MAX_EVENTS = 30              # skips / pauses / errors in fills.json
 MAX_HISTORY = 720            # equity curve points
+MAX_TRADES = 200             # closed trades in trades.json (statistics use every pair found)
+CLOSE_ACTIONS = ('close', 'closed_on_exchange')
+EXIT_KIND = {'target': 'tp', 'stop': 'sl', 'liquidation': 'liq'}
 TRADE_ACTIONS = {'open', 'close', 'closed_on_exchange', 'restore_stop', 'amend_stop', 'daily_halt', 'flatten'}
 SECRET_NAMES = ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')
 
@@ -234,6 +239,132 @@ def build_fills(actions, summary=None):
     }
 
 
+def ms_of(value):
+    s = stamp(value)
+    return int(dt.datetime.strptime(s[:19], '%Y-%m-%dT%H:%M:%S').replace(tzinfo=dt.timezone.utc).timestamp() * 1000) if s else None
+
+
+def close_result(a, state, recent):
+    """Realised result of one close: the action itself, else the trader's enrich cache, else summary.recent_actions."""
+    cache = (state.get('close_results_v3') or {}).get(f"{a.get('ts')}|{a.get('inst')}") or {}
+    extra = recent.get((a.get('ts'), a.get('action'), a.get('inst'))) or {}
+    pick = lambda k: next((src[k] for src in (a, cache, extra) if isinstance(src, dict) and src.get(k) is not None), None)
+    return {k: pick(k) for k in ('pnl', 'close_price', 'fee', 'funding', 'outcome')}
+
+
+def build_trades(actions, state, summary=None):
+    """Closed trades: each close (or exchange stop / target) paired with the program's mirror of that position
+    (the latest one on the coin opened before the close, as the trader's enrich_closes does) and its open action."""
+    summary, state = summary or {}, state or {}
+    recent = {(a.get('ts'), a.get('action'), a.get('inst')): a for a in summary.get('recent_actions') or [] if isinstance(a, dict)}
+    mirrors = [m for m in (state.get('mirrored') or {}).values()
+               if isinstance(m, dict) and m.get('status') == 'done' and inst(m.get('inst')) and number(m.get('opened_at'), 15)]
+    opens = [a for a in actions if a.get('action') == 'open' and not a.get('dry_run') and inst(a.get('inst')) and ms_of(a.get('ts'))]
+    used, trades = set(), []
+    for a in sorted((a for a in actions if a.get('action') in CLOSE_ACTIONS and not a.get('execution_test') and not a.get('dry_run')),
+                    key=lambda a: a.get('ts') or ''):
+        closed = ms_of(a.get('ts'))
+        coin = inst(a.get('inst'))
+        if not closed or not coin:
+            continue
+        cand = [m for m in mirrors if m['inst'] == coin and id(m) not in used and int(number(m['opened_at'], 15)) <= closed]
+        m = max(cand, key=lambda m: number(m['opened_at'], 15), default=None)
+        if m is not None:
+            used.add(id(m))
+        m = m or {}
+        opened = int(number(m['opened_at'], 15)) if m.get('opened_at') else None
+        # The open action of that run (logged in the same run as the mirror's opened_at, a few seconds apart at most).
+        o = min((x for x in opens if x['inst'] == coin and opened and abs(ms_of(x['ts']) - opened) <= 600000),
+                key=lambda x: abs(ms_of(x['ts']) - opened), default={})
+        side = side_of(m.get('side')) or side_of(o.get('side')) or side_of(a.get('side'))
+        sgn = 1 if side == 'long' else -1 if side == 'short' else 0
+        res = close_result(a, state, recent)
+        entry, exit_ = number(m.get('entry') or o.get('price'), 7), number(res['close_price'], 7)
+        stop0 = number(o.get('stop') if o.get('stop') is not None else m.get('stop'), 7)
+        pnl, risk = money(res['pnl']), number(o.get('risk_usdt'))
+        move = number(sgn * (exit_ / entry - 1) * 100, 6) if sgn and entry and exit_ else None
+        lever = number(m.get('leverage') or o.get('leverage'))
+        if pnl is not None and risk and risk > 0:
+            r = number(pnl / risk, 4)
+        elif sgn and entry and exit_ and stop0 and abs(entry - stop0) > 0:
+            r = number(sgn * (exit_ - entry) / abs(entry - stop0), 4)
+        else:
+            r = None
+        outcome = word(res['outcome'])
+        live_stop, live_target = number(m.get('stop'), 7), number(m.get('target'), 7)
+        if not outcome and a['action'] == 'closed_on_exchange' and exit_ and live_stop and live_target:
+            # Same rule as the trader's outcome(): the resting order nearest the fill price closed it.
+            outcome = 'stop' if abs(exit_ - live_stop) <= abs(exit_ - live_target) else 'target'
+        kind = EXIT_KIND.get(outcome) or ('other' if a['action'] == 'close' else 'unknown')
+        trades.append(clean({
+            'inst': coin, 'side': side, 'contracts': number(m.get('contracts') or o.get('contracts')), 'leverage': lever,
+            'entry': entry, 'exit': exit_, 'stop': stop0, 'target': number(o.get('target') if o.get('target') is not None else m.get('target'), 7),
+            'pnl': pnl, 'pnl_pct': move, 'roe_pct': number(move * lever, 6) if move is not None and lever else None, 'r': r,
+            'fee': money(res['fee']), 'funding': money(res['funding']),
+            'opened_at': stamp(opened) if opened else None, 'closed_at': stamp(a['ts']),
+            'hold_minutes': max(0, round((closed - opened) / 60000)) if opened else None,
+            'exit_type': kind, 'outcome': outcome, 'reason': word(a.get('reason')) or word(m.get('closed_reason')),
+            'strategy': word(m.get('strategy') or o.get('strategy') or a.get('strategy')),
+            'champion': m.get('champion') if isinstance(m.get('champion'), str) and CHAMPION_RE.match(m['champion']) else None,
+            'leader': True if m.get('leader') or o.get('leader') else None,
+        }))
+    trades.reverse()                     # newest first
+    history = [(number(p[0], 15), number(p[1])) for p in summary.get('history') or [] if isinstance(p, (list, tuple)) and len(p) >= 2]
+    stats = {'overall': trade_stats(trades), 'by_strategy': by_strategy(trades),
+             'equity_drawdown': equity_drawdown([(t, e) for t, e in history if t and e is not None and 1e12 < t < 1e14])}
+    return {
+        'schema_version': 1, 'source': 'okx-live', 'updated_at': stamp(summary.get('updated_at')),
+        'trades': trades[:MAX_TRADES], 'stats': stats,
+    }
+
+
+def trade_stats(trades):
+    """Win rate, payoff (average win / average loss), average R, closed-PnL drawdown. Trades without a known PnL only count."""
+    known = [t for t in trades if t.get('pnl') is not None]
+    wins = [t['pnl'] for t in known if t['pnl'] > 0]
+    losses = [t['pnl'] for t in known if t['pnl'] <= 0]
+    rs = [t['r'] for t in known if t.get('r') is not None]
+    avg_win = sum(wins) / len(wins) if wins else None
+    avg_loss = -sum(losses) / len(losses) if losses else None
+    peak = cum = dd = 0.0
+    for t in sorted(known, key=lambda t: t.get('closed_at') or ''):
+        cum += t['pnl']; peak = max(peak, cum); dd = max(dd, peak - cum)
+    return clean({
+        'trades': len(trades), 'with_pnl': len(known), 'wins': len(wins), 'losses': len(losses),
+        'win_rate': number(len(wins) / len(known) * 100, 6) if known else None,
+        'pnl': money(sum(t['pnl'] for t in known)) if known else 0.0,
+        'avg_win': money(avg_win), 'avg_loss': money(avg_loss),
+        'payoff': number(avg_win / avg_loss, 6) if avg_win and avg_loss else None,
+        'profit_factor': number(sum(wins) / -sum(losses), 6) if wins and losses and sum(losses) < 0 else None,
+        'avg_r': number(sum(rs) / len(rs), 6) if rs else None,
+        'best': money(max(t['pnl'] for t in known)) if known else None,
+        'worst': money(min(t['pnl'] for t in known)) if known else None,
+        'tp': sum(t.get('exit_type') == 'tp' for t in trades), 'sl': sum(t.get('exit_type') == 'sl' for t in trades),
+        'max_drawdown_closed': money(dd),
+    })
+
+
+def by_strategy(trades):
+    """Per seed (champion id; the strategy code when the seed is unknown), most trades first."""
+    groups = {}
+    for t in trades:
+        groups.setdefault(t.get('champion') or t.get('strategy') or 'unknown', []).append(t)
+    rows = [dict(key=k, **trade_stats(v)) for k, v in groups.items()]
+    return sorted(rows, key=lambda r: (-r['trades'], r['key']))
+
+
+def equity_drawdown(points):
+    """Largest peak-to-trough fall of the equity curve (USDT and % of the peak)."""
+    best = {'usdt': 0.0, 'pct': 0.0}
+    peak = peak_t = None
+    for t, e in sorted(points):
+        if peak is None or e > peak:
+            peak, peak_t = e, t
+        elif peak > 0 and (peak - e) / peak * 100 > best['pct']:
+            best = {'usdt': money(peak - e), 'pct': number((peak - e) / peak * 100, 6), 'peak_at': stamp(int(peak_t)), 'trough_at': stamp(int(t))}
+    return best if points else None
+
+
 # ---- secret check -----------------------------------------------------------------------------
 def secret_problems(text, env=os.environ):
     """Reasons the text must not be published (never includes the matching text itself)."""
@@ -363,15 +494,19 @@ def main(argv=None):
     try:
         summary, state, actions_text = read_server(args.host, args.key, args.remote_dir, args.remote_user)
         snapshot = build_snapshot(summary, state)
-        fills = build_fills(parse_actions(actions_text), summary)
-        files = {'snapshot.json': checked(snapshot, 'snapshot.json'), 'fills.json': checked(fills, 'fills.json')}
+        actions = parse_actions(actions_text)
+        fills = build_fills(actions, summary)
+        trades = build_trades(actions, state, summary)
+        files = {'snapshot.json': checked(snapshot, 'snapshot.json'), 'fills.json': checked(fills, 'fills.json'),
+                 'trades.json': checked(trades, 'trades.json')}
         if args.dry_run:
             sys.stdout.write(files['snapshot.json'])
-            print(f'dry-run：{len(snapshot["positions"])} 个持仓，{len(fills["fills"])} 条成交，未推送')
+            sys.stdout.write(files['trades.json'])
+            print(f'dry-run：{len(snapshot["positions"])} 个持仓，{len(fills["fills"])} 条成交，{len(trades["trades"])} 笔已平仓，未推送')
             return 0
         status = publish(files, args.workdir, args.repo, args.branch)
         print(f'{status}: {args.branch} · updated_at {snapshot["updated_at"]} · 权益 {snapshot["equity"]} · '
-              f'{len(snapshot["positions"])} 个持仓 · {len(fills["fills"])} 条成交')
+              f'{len(snapshot["positions"])} 个持仓 · {len(fills["fills"])} 条成交 · {len(trades["trades"])} 笔已平仓')
         return 0
     except SyncError as e:
         print(f'live_sync 失败：{e}', file=sys.stderr)

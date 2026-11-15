@@ -279,3 +279,97 @@ html,body{font-variant-numeric:tabular-nums}
 #mascot.docked[data-side=right] .companion-bot{transform:translateX(28px) rotate(-14deg)}
 #mascot.docked[data-side=left] .companion-bot{transform:translateX(-28px) rotate(14deg)}
 .companion-bubble{max-width:min(180px,calc(100vw - 72px));font-size:12px}
+
+/* ---------- header status light: 正常 green / 暂停 amber / 熔断 red / 数据过期 grey with a red ring ---------- */
+.pinned-balance .live-light{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;font:600 11px var(--font);line-height:1.3;color:var(--muted);white-space:nowrap}
+.live-light b{font-weight:600}
+.live-light-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--faint);flex:none}
+.live-light[data-state=ok] .live-light-dot{background:var(--green-fill);box-shadow:0 0 0 3px var(--tint-green);animation:light-pulse 2.4s ease-in-out infinite}
+.live-light[data-state=ok]{color:var(--green)}
+.live-light[data-state=paused] .live-light-dot{background:#ffb300;box-shadow:0 0 0 3px var(--tint-amber)}
+.live-light[data-state=paused]{color:var(--amber,#a05a00)}
+.live-light[data-state=halted] .live-light-dot{background:var(--red-fill);box-shadow:0 0 0 3px var(--tint-red)}
+.live-light[data-state=halted]{color:var(--red)}
+.live-light[data-state=stale] .live-light-dot{background:var(--faint);box-shadow:0 0 0 2px var(--red-fill)}
+.live-light[data-state=stale]{color:var(--red)}
+@keyframes light-pulse{50%{box-shadow:0 0 0 5px transparent}}
+@media(max-width:760px){.pinned-balance .live-light{font-size:11px}}
+
+/* ---------- 交易统计 ---------- */
+.trade-stats{padding:0 20px 18px}
+.stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.stat-grid>div{background:var(--fill-2);border-radius:12px;padding:12px 14px;min-width:0}
+.stat-grid span{display:block;font-size:12px;color:var(--faint)}
+.stat-grid strong{display:block;font:600 20px var(--display);font-variant-numeric:tabular-nums;margin-top:2px}
+.stat-grid small{display:block;font-size:11px;color:var(--faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seed-title{font-size:14px;margin:16px 0 6px}
+.seed-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.seed-table th,.seed-table td{padding:8px 10px;text-align:right;font-size:13px;border-top:.5px solid var(--sep);white-space:nowrap}
+.seed-table th:first-child,.seed-table td:first-child{text-align:left}
+.seed-table th{font-size:12px;color:var(--faint);font-weight:500;border-top:0}
+
+/* ---------- 已平仓记录 ---------- */
+#live-trades{padding:0 12px 14px}
+.trade-list{list-style:none;margin:0;padding:0}
+.trade-row{display:grid;grid-template-columns:minmax(120px,1.1fr) minmax(0,1.3fr) minmax(90px,auto) minmax(0,2fr);align-items:center;gap:10px;padding:10px 8px;border-top:.5px solid var(--sep);cursor:pointer;border-radius:10px;font-variant-numeric:tabular-nums}
+.trade-list>.trade-row:first-child{border-top:0}
+.trade-row:hover,.trade-row:focus-visible{background:var(--fill-2)}
+.trade-coin{display:flex;align-items:center;gap:6px;min-width:0}.trade-coin b{font:600 15px var(--display)}.trade-coin .coin-icon{width:26px;height:26px}
+.trade-px{display:flex;flex-direction:column;font-size:13px;min-width:0}.trade-px small{font-size:11px;color:var(--faint)}
+.trade-pnl{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}.trade-pnl b{font:600 15px var(--display)}.trade-pnl small{font-size:11px}
+.trade-meta{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px 10px;font-size:12px;color:var(--faint)}
+.trade-exit{font-style:normal;font-weight:600;font-size:11px;padding:2px 7px;border-radius:6px;background:var(--fill)}
+.trade-exit.up{background:var(--tint-green);color:var(--green)}.trade-exit.down{background:var(--tint-red);color:var(--red)}
+.trade-seed b{color:var(--accent);font-weight:600}
+.trade-more>summary{cursor:pointer;padding:10px 8px;font-size:13px;color:var(--accent)}
+.trade-note{font-size:11px;margin:10px 8px 0}
+
+/* ---------- K-line popup ---------- */
+.trade-chart{width:min(900px,96vw);max-height:92vh;border:0;border-radius:16px;padding:14px 16px 12px;background:var(--panel);color:var(--text);box-shadow:0 20px 60px rgb(0 0 0 / .35)}
+.trade-chart::backdrop{background:rgb(0 0 0 / .45)}
+.trade-chart-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.trade-chart-head h2{margin:0;font-size:17px}
+#trade-chart-meta{font-size:12px;margin:4px 0}
+.trade-chart-box{height:min(440px,58vh);border-radius:10px;overflow:hidden;background:#fff}
+.trade-chart-box.fallback{height:auto;background:var(--fill-2);padding:8px}
+.levels-ladder{display:block;width:100%;height:auto}.levels-ladder text{font:12px var(--mono,monospace)}
+.trade-chart-note{font-size:11px;margin:8px 0 0}
+
+/* ---------- position rows: chart button + one dense line of entry / stop / target ---------- */
+.okx-pos>summary{grid-template-columns:auto minmax(0,1fr) auto auto}
+.okx-pos-tag{display:flex;flex-direction:column;min-width:0;line-height:1.3}
+.okx-pos-tag>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.okx-pos-line{font-size:11px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.okx-pos-chart{display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:9px;background:var(--fill);color:var(--accent);cursor:pointer}
+.okx-pos-chart svg{width:18px;height:18px;fill:currentColor}
+.okx-pos-chart:hover{background:var(--tint-blue)}
+
+@media(max-width:760px){
+  .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .stat-grid strong{font-size:17px}
+  .trade-stats{padding:0 14px 14px}
+  #live-trades{padding:0 6px 10px}
+  .trade-row{grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:9px 8px}
+  .trade-px{grid-column:1;grid-row:2;flex-direction:row;gap:6px;font-size:12px}.trade-px small{display:none}
+  .trade-pnl{grid-column:2;grid-row:1/3}
+  .trade-meta{grid-column:1/-1;grid-row:3;justify-content:flex-start;font-size:11px}
+  .trade-chart{padding:12px 10px 10px;width:100vw;max-width:100vw;border-radius:16px 16px 0 0;margin:auto 0 0}
+  .trade-chart-box{height:56vh}
+  /* compact position cards: smaller icon, tighter padding, the entry / stop / target line instead of a tap */
+  /* two lines per position: coin · side · seed, then entry / stop / target across the full width; PnL and the chart button on the right */
+  .okx-pos>summary{grid-template-columns:minmax(0,1fr) auto auto;gap:3px 8px;padding:8px 6px}
+  .okx-pos-coin{grid-column:1;grid-row:1;gap:6px;min-width:0}
+  .okx-pos-coin .coin-icon{width:20px;height:20px;font-size:9px}
+  .okx-pos-coin b{font-size:15px;line-height:1.2}
+  .okx-pos-tag{display:contents}
+  .okx-pos-tag>span{grid-column:1;grid-row:1;justify-self:end;align-self:center;font-size:11px;color:var(--faint);max-width:40vw}
+  .okx-pos-line{grid-column:1;grid-row:2;font-size:12px}
+  .okx-pos-pnl{grid-column:2;grid-row:1/3}
+  .okx-pos-chart{grid-column:3;grid-row:1/3}
+  .seed-table th,.seed-table td{padding:7px 6px;font-size:12px}
+  .okx-pos-pnl b{min-width:72px;font-size:13px;padding:4px 7px}
+  .okx-pos-pnl small{font-size:11px}
+  .okx-pos-chart{width:30px;height:30px}
+  .okx-pos-body.history-metrics{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:8px 10px;margin:0 4px 8px}
+  .okx-pos-body.history-metrics strong{font-size:12px;line-height:1.4}
+  .okx-pos-body.history-metrics span{font-size:10px}
+}
