@@ -1,4 +1,4 @@
-// MODI dashboard: OKX live account only (real money). The account comes from the live-data branch
+// MODI dashboard: OKX live account (real money) + the 策略进化 page (paper-data/evolve, the strategy engine that feeds the signals). The account comes from the live-data branch
 // (tools/live_sync.py, hourly); prices, marks and candles come from OKX public endpoints.
 import { coinIcon } from './coins.mjs';
 import { Mascot } from './mascot.mjs';
@@ -12,6 +12,8 @@ import config from '../config.js';
 import { PublicAPI, normalizeTickers, number } from './api.mjs';
 import { parseCandles, analyze } from './indicators.mjs';
 import { chartAvailable, createCandleCharts } from './charts.mjs';
+import { EVOLVE_URL, EVOLVE_NODES_URL, validNodeDetails, needsDetails, validEvolve, loopSVG, statsMarkup, fitnessSVG, graphSVG, detailMarkup, teamMarkup, homeCardMarkup, dataCaption, replayGenerations, replayState, replayDelays, updateSchedule, evolveIntroMarkup } from './evolve.mjs?v=20261115-evolve';
+import { GeneFx } from './evolve-fx.mjs';
 
 const $ = id => document.getElementById(id);
 configureMotion();
@@ -358,20 +360,98 @@ $('diag-test').addEventListener('click', async () => {
   $('diag-body').textContent = diagText();
 });
 
+// ---- 策略进化 (tools/evolve → paper-data/evolve/dashboard.json; engine data only, no simulated account) ----
+// dashboard.json is ~1 MB and changes every 4 h: fetched only on the evolve page, at most every 5 minutes.
+let evolveData = null, evolveBusy = false, evolveSel = null, evolveAt = 0;
+async function refreshEvolve(force = false) {
+  if (evolveBusy || route !== 'evolve' || (!force && evolveData && Date.now() - evolveAt < 300000)) return; evolveBusy = true;
+  try {
+    const r = await fetch(`${EVOLVE_URL}?t=${Math.floor(Date.now() / 300000)}`, { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(20000) });
+    if (!r.ok) throw new Error('读取失败'); const d = await r.json(); if (!validEvolve(d)) throw new Error('格式不对');
+    evolveData = d; evolveAt = Date.now(); $('evolve-error').hidden = true; setError('evolve', null); renderEvolve();
+  } catch {
+    const msg = '进化数据暂时读取失败，稍后自动重试。'; setError('evolve', msg);
+    if (!evolveData) { const intro = $('evolve-intro'); if (intro) intro.innerHTML = `<p class="alert" role="alert">${msg}</p>`; if (route === 'evolve') { $('evolve-error').hidden = false; $('evolve-error').textContent = msg; } }
+  } finally { evolveBusy = false; }
+}
+// Per-node genes and curves (nodes.json), fetched only when a node without them is opened; once per generation.
+const evolveDetails = { data: null, tried: null, busy: false, failed: false };
+async function loadEvolveDetails() {
+  const gen = evolveData?.generation; if (evolveDetails.busy || evolveDetails.tried === gen) return;
+  evolveDetails.busy = true; evolveDetails.tried = gen;
+  try {
+    const r = await fetch(`${EVOLVE_NODES_URL}?t=${Math.floor(Date.now() / 300000)}`, { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(20000) });
+    const x = r.ok ? await r.json() : null; if (!validNodeDetails(x)) throw new Error('bad'); evolveDetails.data = x; evolveDetails.failed = false;
+  } catch { evolveDetails.failed = true; setTimeout(() => { if (evolveDetails.tried === gen) evolveDetails.tried = null; renderEvolve(); }, 60000); }
+  finally { evolveDetails.busy = false; renderEvolve(); }
+}
+function renderEvolve() {
+  const d = evolveData;
+  $('home-evolve').hidden = false; setHTML($('home-evolve'), homeCardMarkup(d));
+  if (route !== 'evolve' || !d) return;
+  if (!evolveSel || !d.nodes.some(n => n.id === evolveSel)) evolveSel = d.champion?.id || d.nodes[0]?.id || null;
+  { const u = updateSchedule(d.updated_at); setText($('evolve-updated'), `第 ${d.generation} 代 · ${u.line}`); $('evolve-updated').classList.toggle('stale', u.stale); setHTML($('evolve-intro'), evolveIntroMarkup(d)); }
+  setHTML($('evolve-loop'), loopSVG(d)); setHTML($('evolve-stats'), statsMarkup(d)); setHTML($('evolve-fitness'), fitnessSVG(d.history));
+  setHTML($('evolve-graph'), graphSVG(d, evolveSel)); geneFx.refresh(); setHTML($('evolve-detail'), detailMarkup(d, evolveSel, evolveDetails.data, evolveDetails.failed));
+  if (needsDetails(d, evolveSel, evolveDetails.data)) loadEvolveDetails();
+  // On narrow screens the gene pool scrolls sideways: start at the newest generation unless the viewer has scrolled.
+  { const box = $('evolve-graph'); if (!box.dataset.userScrolled && box.scrollWidth > box.clientWidth) { box.dataset.auto = '1'; box.scrollLeft = box.scrollWidth; } }
+  setHTML($('evolve-team'), teamMarkup(d)); setText($('evolve-caption'), dataCaption(d));
+  // Replay: the whole history on first view, only the new generations when fresh data arrives.
+  const gens = replayGenerations(d);
+  if (evoReplay.timer) evoApply(gens[evoReplay.i - 1] ?? gens[0]);
+  else if (evoReplay.seen === null) { evoReplay.seen = d.generation; if (!evoStill()) evoPlay(gens[0]); else evoShowAll(); }
+  else if (d.generation > evoReplay.seen) { const from = evoReplay.seen + 1; evoReplay.seen = d.generation; if (!evoStill()) evoPlay(from); }
+  else if (!evoReplay.timer) evoShowAll();
+}
+// ---- gene pool replay (generation by generation) ----
+const evoReplay = { timer: 0, gens: [], i: 0, seen: null };
+const evoStill = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('reduced-motion');
+const geneFx = new GeneFx($('evolve-graph'), { still: evoStill, active: () => route === 'evolve' });
+function evoApply(g) {
+  const svg = $('evolve-graph').querySelector('svg'); if (!svg || g === undefined) return;
+  svg.classList.add('replay');
+  svg.querySelectorAll('[data-born]').forEach(el => { const st = replayState(el.dataset, g); el.classList.toggle('future', st.future); el.classList.toggle('gone', st.gone); el.classList.toggle('newborn', st.newborn); });
+  const label = svg.querySelector('.evo-gen-label'); if (label) label.textContent = `第 ${g} 代`;
+}
+function evoShowAll() {
+  const svg = $('evolve-graph').querySelector('svg'); if (svg) { svg.classList.remove('replay'); svg.querySelectorAll('.future,.gone,.newborn').forEach(el => el.classList.remove('future', 'gone', 'newborn')); }
+}
+function evoStop(showAll = true) { clearTimeout(evoReplay.timer); evoReplay.timer = 0; if (showAll) evoShowAll(); }
+function evoPlay(fromGen) {
+  if (!evolveData) return;
+  clearTimeout(evoReplay.timer);
+  evoReplay.gens = replayGenerations(evolveData);
+  evoReplay.i = Math.max(0, evoReplay.gens.findIndex(g => g >= fromGen));
+  const delays = replayDelays(evolveData, evoReplay.gens, fromGen > evoReplay.gens[0] ? 5000 : 12000);   // full history ≈ 12 s, new generations ≈ 5 s
+  const tick = () => {
+    if (route !== 'evolve' || document.hidden || evoReplay.i >= evoReplay.gens.length) { evoStop(); return; }
+    const k = evoReplay.i; evoApply(evoReplay.gens[k]); evoReplay.i++; evoReplay.timer = setTimeout(tick, delays[k]);
+  };
+  evoReplay.timer = 1; tick();
+}
+function selectEvolveNode(id, focus = false) {
+  if (!evolveData || !id) return; evolveSel = id; renderEvolve();
+  if (focus) $('evolve-detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+$('evolve-graph').addEventListener('scroll', e => { const box = e.currentTarget; if (box.dataset.auto) { delete box.dataset.auto; return; } box.dataset.userScrolled = '1'; }, { passive: true });
+$('evolve-page').addEventListener('click', e => { const n = e.target.closest('[data-node]'); if (n && evoReplay.timer) evoStop(); if (n) selectEvolveNode(n.dataset.node, n.closest('#evolve-detail') === null && innerWidth < 900); });
+$('evolve-page').addEventListener('keydown', e => { const n = e.target.closest('[data-node]'); if (n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectEvolveNode(n.dataset.node, true); } });
+
 // ---- routing ----
 function navigate() {
   routeVersion++;
-  if (['#/paper', '#/sim', '#/evolve'].includes(location.hash)) { location.replace('#/'); return; }   // retired pages
+  if (['#/paper', '#/sim'].includes(location.hash)) { location.replace('#/'); return; }   // retired pages (simulated account)
   const hash = location.hash || '#/';
   const match = /^#\/coin\/([A-Z0-9]+-USDT-SWAP)$/.exec(hash);
-  route = match ? 'coin' : hash === '#/market' ? 'market' : 'home';
+  route = match ? 'coin' : hash === '#/market' ? 'market' : hash === '#/evolve' ? 'evolve' : 'home';
   if (match) coin = match[1];
   candleCharts?.destroy(); candleCharts = null; $('chart-levels').replaceChildren();
-  for (const page of ['home', 'market', 'coin']) $(`${page}-page`).hidden = route !== page;
+  for (const page of ['home', 'market', 'coin', 'evolve']) $(`${page}-page`).hidden = route !== page;
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === (route === 'coin' ? 'market' : route); a.classList.toggle('active', active); if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   document.querySelectorAll('[data-timeframe]').forEach(b => { const active = b.dataset.timeframe === timeframe; b.classList.toggle('active', active); b.setAttribute('aria-pressed', String(active)); });
   setError('candles', null);
-  document.title = route === 'coin' ? `${coin.split('-')[0]} · MODI 实盘看板` : route === 'market' ? '市场行情 · MODI 实盘看板' : 'MODI · AI 交易团队 · OKX 实盘看板';
+  document.title = route === 'coin' ? `${coin.split('-')[0]} · MODI 实盘看板` : route === 'market' ? '市场行情 · MODI 实盘看板' : route === 'evolve' ? '策略进化 · MODI 交易团队' : 'MODI · AI 交易团队 · OKX 实盘看板';
   document.documentElement.dataset.route = route;
   if (route === 'coin') {
     $('coin-title').textContent = coin.replace('-USDT-SWAP', '') + ' / USDT 永续'; renderQuote();
@@ -379,7 +459,8 @@ function navigate() {
     const cached = candleCache.get(coin + '/' + timeframe); if (cached) showCandles(cached.bars, cached.at);
     refreshCandles(); refreshSlow();
   } else if (route === 'market') { renderMarket(); refreshSlow(); }
-  renderLive(); syncStreams();
+  if (route === 'evolve') { refreshEvolve(); queueMicrotask(() => geneFx.kick()); }   // resume the gene-pool motion
+  renderEvolve(); renderLive(); syncStreams();
 }
 $('search').addEventListener('input', renderMarket);
 $('market-table').addEventListener('click', event => {
@@ -416,7 +497,7 @@ document.addEventListener('visibilitychange', () => {
 navigate();
 refreshPrices(); refreshLive();
 setInterval(() => { if (!document.hidden) { refreshPrices(); renderLive(); updateStreamStatus(); } }, 8000);
-setInterval(() => { if (!document.hidden) { if (route === 'coin') refreshCandles(); refreshLive(); refreshSlow();
+setInterval(() => { if (!document.hidden) { if (route === 'coin') refreshCandles(); refreshLive(); refreshSlow(); refreshEvolve();
   for (const stream of [quoteStream, candleStream]) if (stream?.state === '实时' && Date.now() - stream.lastData > 45000) stream.socket?.close(); } }, 60000);
 const updateClock = () => { $('utc-clock').textContent = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(Date.now()) + ' UTC+7'; $('day-number').textContent = 'DAY ' + dayNumber(config.startDate); };
 updateClock(); setInterval(updateClock, 1000);
