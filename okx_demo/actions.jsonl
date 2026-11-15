@@ -175,3 +175,9 @@
 {"ts": "2026-11-15T01:21:11Z", "action": "open", "inst": "NEAR-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "11.3", "price": 3.006, "stop": "4.066", "target": "1.016", "leverage": 2, "risk_usdt": 120.1}
 {"ts": "2026-11-15T01:21:11Z", "action": "open", "inst": "ADA-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "35.28", "price": 0.1454, "stop": "0.1794", "target": "0.0842", "leverage": 3, "risk_usdt": 120.1}
 {"ts": "2026-11-15T01:21:11Z", "action": "open", "inst": "LTC-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "15", "price": 43.45, "stop": "51.4397", "target": "29.3188", "leverage": 4, "risk_usdt": 120.1}
+{"ts": "2026-11-15T05:05:28Z", "action": "closed_on_exchange", "inst": "CRV-USDT-SWAP", "dry_run": false, "strategy": "evolved", "pnl": 370.3550022653192, "price_pnl": 473.76110000000034, "funding": -101.92177238468115, "close_price": 0.1752029213483146, "fee": -1.48432535, "outcome": "target"}
+{"ts": "2026-11-15T05:05:28Z", "action": "amend_stop", "inst": "INJ-USDT-SWAP", "dry_run": false, "old": 8.426670248209708, "new": 8.33567024820971}
+{"ts": "2026-11-15T05:05:28Z", "action": "amend_stop", "inst": "BNB-USDT-SWAP", "dry_run": false, "old": 629.5533231866403, "new": 626.8433231866404}
+{"ts": "2026-11-15T05:05:28Z", "action": "amend_stop", "inst": "NEAR-USDT-SWAP", "dry_run": false, "old": 4.065896198163237, "new": 3.9758961981632375}
+{"ts": "2026-11-15T05:05:28Z", "action": "amend_stop", "inst": "ADA-USDT-SWAP", "dry_run": false, "old": 0.1794350872360656, "new": 0.17563508723606563}
+{"ts": "2026-11-15T05:05:28Z", "action": "amend_stop", "inst": "LTC-USDT-SWAP", "dry_run": false, "old": 51.439659154222824, "new": 50.599659154222834}

@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-15T01:20:07Z",
+ "updated_at": "2026-11-15T05:04:39Z",
  "champion": "s15653",
  "team": [
   "s18771",
@@ -9,7 +9,7 @@
   "s19566",
   "s14155",
   "s18637",
-  "s14402"
+  "s19112"
  ],
  "instruments": [
   "BTC-USDT-SWAP",
@@ -154,12 +154,12 @@
   "INJ-USDT-SWAP": {
    "side": -1,
    "entry": 7.518496,
-   "stop": 8.426670248209708,
+   "stop": 8.33567024820971,
    "tp": 3.879808693652193,
    "opened": 1794441600000,
    "strategy": "evolved",
    "champion": "s14155",
-   "rank": 4,
+   "rank": 5,
    "risk": 0.0235,
    "leverage": 10
   },
@@ -190,25 +190,13 @@
   "BNB-USDT-SWAP": {
    "side": -1,
    "entry": 656.408692,
-   "stop": 629.5533231866403,
+   "stop": 626.8433231866404,
    "tp": 531.4723126992535,
    "opened": 1794528000000,
    "strategy": "evolved",
    "champion": "s14155",
-   "rank": 4,
+   "rank": 5,
    "risk": 0.0235,
-   "leverage": 10
-  },
-  "XRP-USDT-SWAP": {
-   "side": -1,
-   "entry": 1.0052989,
-   "stop": 0.9476481147046709,
-   "tp": 0.8860854533849577,
-   "opened": 1794542400000,
-   "strategy": "evolved",
-   "champion": "s13604",
-   "rank": 100,
-   "risk": 0.02,
    "leverage": 10
   },
   "ETHFI-USDT-SWAP": {
@@ -219,7 +207,7 @@
    "opened": 1794614400000,
    "strategy": "evolved",
    "champion": "s14155",
-   "rank": 4,
+   "rank": 5,
    "risk": 0.0235,
    "leverage": 10
   },
@@ -262,7 +250,7 @@
   "NEAR-USDT-SWAP": {
    "side": -1,
    "entry": 3.0263946,
-   "stop": 4.065896198163237,
+   "stop": 3.9758961981632375,
    "tp": 1.0163918234898492,
    "opened": 1794700800000,
    "strategy": "evolved",
@@ -274,7 +262,7 @@
   "ADA-USDT-SWAP": {
    "side": -1,
    "entry": 0.1474705,
-   "stop": 0.1794350872360656,
+   "stop": 0.17563508723606563,
    "tp": 0.08413383425147535,
    "opened": 1794700800000,
    "strategy": "evolved",
@@ -286,7 +274,7 @@
   "LTC-USDT-SWAP": {
    "side": -1,
    "entry": 44.461106,
-   "stop": 51.439659154222824,
+   "stop": 50.599659154222834,
    "tp": 29.318753606976628,
    "opened": 1794700800000,
    "strategy": "evolved",
