@@ -578,6 +578,11 @@
 - 不变：实盘首页（只读 live-data 的 snapshot / fills）、市场行情、CSP（`raw.githubusercontent.com` 本来就在 `connect-src`）、交易代码、`paper-data` 分支、数据契约。
 - 测试：恢复 `tests/evolve_browser.cjs` 并改为新结构（冠军组合无账户数字、导航在实盘 / 进化 / 行情之间切换、首页不请求进化数据；原“冠军组合领头 · 纸面交易中”断言与夹具不符——夹具没有 `entry_gate`，单元测试本来就期望“待下次更新”，基线 7ed1f2e 上同样失败——改为两者皆可；详情里父代按钮和手机底栏在平滑滚动中会被判“不稳定”，改用 `dispatchEvent('click')`，与测试里点击谱系节点的做法一致）；`tests/live_browser.cjs` 的 `#/evolve` 改为打开进化页、`#/sim` 回首页；`tests/evolve.test.mjs` 新增 `teamMarkup` / 入口卡测试。
 
+### 文档与代码对齐：风控数值以代码为准
+- 做了什么：逐条核对 `tools/okx_demo_trader.py` 与 `tools/evolve/execution.py` 的实际常量，改正 AGENTS.md、README.md、`deploy/live/README.md` 与看板一处写死的文案：单笔风险 1%–5% → 2%–10%（`RISK_RANGE = (.02, .10)`，主流币加倍仍 ≤ 10%，`MAX_TRADE_RISK`）；第一名“每单 5%、杠杆 50×、不计入同向上限和日亏停手” → 只是信号优先，按自己的基因 2%–10% / 1–20×，计入同向 10 单和日亏停手（`LEADER_RISK = 10%` / `LEADER_LEVERAGE = 20×` 只是上限）；实盘说明“同向上限、日亏 10% 停手” → 同向最多 10 仓、同向合计风险不设上限、日亏 25% 停手、扫描前 50 币；AGENTS 数据切分 70/30 → 60/20/20；README K 线缓存位置 → GitHub Actions cache；README“策略进化页已移除” → 已在 PR #97 恢复；`assets/okx.mjs` 日亏停手记录“停手线（10%）” → “停手线（跟随冠军 25%）”（测试同步）。README 新增一条“当前风控”汇总，并说明代码里的 `DAILY_HALT = .10` / `RISK = .01` / 10× 只属于已退役的 legacy volume-test 旧档。删掉 AGENTS 目录树里重复且过时的 `execution.py` / `paper.py`（5 个席位）两行。
+- 为什么：用户要求文档 = 代码；之前的文档仍是旧值，会让接手的助手误判实盘风险。
+- 不变：没有改任何交易代码或参数（只改文档与一条显示文案）。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

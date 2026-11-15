@@ -23,17 +23,15 @@
 
 ```
 tools/evolve/              自我进化策略引擎（当前唯一信号来源）
-  data.py                  数据层：币池 = 成交额前 50 的 USDT 永续（`UNIVERSE_SIZE`；上市满一年，首次选定后固定在 paper-data/evolve/universe.json，旧的更长列表按原顺序截到前 50；实盘跟单同样只扫信号列表前 50，`okx_demo_trader.SCAN_LIMIT`，两边要一起改）；OKX 1H K 线缓存在 GitHub Actions cache（`candles/`，不进 paper-data 分支）；共享时间轴、70/30 切分、波动观察
-  paper.py                 纸面账户：冠军组合共用一个全仓账户（`execution.simulate_account`），每次运行从账户起点带着席位 / 第一名历史整体重算；旧的 5 席位代码只用于一次性转换
-  execution.py             同源执行引擎（合约模式：整张、全仓、杠杆基因 1–20× 再受单币上限、可用保证金 95%、账户层强平、资金费，规则与 okx_demo_trader 一致，改一边要同步另一边）；`entries()` 一次算出某基因在所有币上的全部入场信号（与逐根调用 `signal()` 结果完全相同，快约 100 倍，100 个币靠它才跑得动）
+  data.py                  数据层：币池 = 成交额前 50 的 USDT 永续（`UNIVERSE_SIZE`；上市满一年，首次选定后固定在 paper-data/evolve/universe.json，旧的更长列表按原顺序截到前 50；实盘跟单同样只扫信号列表前 50，`okx_demo_trader.SCAN_LIMIT`，两边要一起改）；OKX 1H K 线缓存在 GitHub Actions cache（`candles/`，不进 paper-data 分支）；共享时间轴、约 60% 训练 / 20% 样本外 / 20% 终审切分（`TRAIN_SHARE` / `TEST_SHARE`）、波动观察
+  paper.py                 纸面账户：冠军组合共用一个全仓账户（`execution.simulate_account`），每次运行从账户起点带着席位 / 第一名历史整体重算，导出 OKX 跟单信号（同币种取排名高者）；旧的 5 席位代码只用于一次性转换
+  execution.py             同源执行引擎（合约模式：整张、全仓、杠杆基因 1–20× 再受单币上限、可用保证金 95%、账户层强平、资金费，规则与 okx_demo_trader 一致，改一边要同步另一边）；`entries()` 一次算出某基因在所有币上的全部入场信号（与逐根调用 `signal()` 结果完全相同，快约 100 倍，几十个币的币池靠它才跑得动）
   genome.py                基因：物种（动量/均值回归/波动突破/均线趋势）与参数、交叉、突变
-  execution.py             同源执行：回测与纸面交易共用的唯一撮合引擎 simulate()
   evolution.py             每代：观察 → 繁殖 → 训练集适应度（训练期分 4 段检验，近期权重大）→ 样本外闸门 → 选择；冠军选择、谱系修剪、旧系统策略一次性迁入
   convert_old.py, migrants.json   旧系统（trading-evo）策略转换与迁入名单
-  paper.py                 冠军组合纸面交易（5 个席位、每席按段重放 simulate），导出 OKX 跟单信号（同币种取排名高者）
   run.py                   一次运行 = 更新数据 + 进化 5 代 + 换冠军 + 纸面交易
                            → paper-data/evolve/{state.json, dashboard.json（精简谱系）, nodes.json（每个节点的基因与曲线，点开时加载）, signals.json}
-tools/okx_demo_trader.py   OKX 模拟盘跟单：跟随 evolve/signals.json（冠军持仓），交易所止损/止盈、每单风险 = 开仓策略的风险基因（1%–5%，`RISK_RANGE`）、同方向最多 10 单（`execution.MAX_SAME_SIDE_POSITIONS` / `MAX_SAME_SIDE`，含第一名，按冠军组合排名优先）、同方向合计风险不设上限（进化模式 `SAME_SIDE_CAP = None`，纸面 `ACCOUNT_RULES['same_side_cap'] = None`；2026-11-15 用户要求去掉原 20% 上限）、当天亏损达 25% 全部平仓停手到次日（`EVOLVED_DAILY_HALT` / `ACCOUNT_RULES['daily_halt']`，含第一名；原 10%）；同方向 ≥3 仓风险减半、≥6 仓减到四分之一的拥挤降风险保留；**第一名**（信号 `leader: true`；`state['leader']`，必须样本外和终审都合格）每单 = 整个账户的 5%、杠杆上限 50×、不计入同向上限和日亏停手（`LEADER_RISK` / `LEADER_LEVERAGE`，纸面在 `paper.py` 同名常量，两边要一起改）；每个策略最多同时 3 个持仓（`execution.MAX_POSITIONS`，回测与纸面同源）
+tools/okx_demo_trader.py   OKX 模拟盘跟单：跟随 evolve/signals.json（冠军持仓），交易所止损/止盈、每单风险 = 开仓策略的风险基因（2%–10%，`RISK_RANGE = (.02, .10)`；主流币 BTC/ETH/SOL/BNB/XRP/DOGE 风险 ×2（`MAJOR_FACTOR`），拥挤降风险和加倍之后仍 ≤ 10%（`MAX_TRADE_RISK`））、杠杆 = 杠杆基因 1–20×（`EVOLVED_MAX_LEVERAGE`）再受该币 OKX 最高档限制（取不到上限时不开该币新仓）、全仓（`MARGIN_MODE = 'cross'`）、每笔都挂交易所止损、同方向最多 10 单（`execution.MAX_SAME_SIDE_POSITIONS` / `MAX_SAME_SIDE`，含第一名，按冠军组合排名优先）、同方向合计风险不设上限（进化模式 `SAME_SIDE_CAP = None`，纸面 `ACCOUNT_RULES['same_side_cap'] = None`；2026-11-15 用户要求去掉原 20% 上限）、当天亏损达 25% 全部平仓停手到次日（跟随进化冠军时 `EVOLVED_DAILY_HALT = .25` / `ACCOUNT_RULES['daily_halt'] = .25`，含第一名；原 10%。代码里 `RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10` 只属于已退役的旧档 legacy volume-test，不是实盘现状）；同方向 ≥3 仓风险减半、≥6 仓减到四分之一的拥挤降风险保留；**第一名**（信号 `leader: true`；`state['leader']`，必须样本外和终审都合格）只是信号优先，不再加大仓位：和其他席位一样按自己的风险基因（2%–10%）与杠杆基因（1–20×）开仓，计入同向 10 单上限和日亏停手（`LEADER_RISK = MAX_TRADE_RISK = 10%` / `LEADER_LEVERAGE = 20×` 只是上限，纸面在 `paper.py` 同名常量取自 `ACCOUNT_RULES`，两边要一起改）；每个策略最多同时 3 个持仓（`execution.MAX_POSITIONS`，回测与纸面同源）
                            → paper-data/okx_demo/{state.json, actions.jsonl, summary.json}
 tools/paper_trader.py, tools/volume_test.py   已退役的旧三策略引擎与限时档位（仅在没有 evolve/signals.json 时作为后备）
 tools/stop_demo.py         全部平仓并暂停（stop-demo.yml）
@@ -86,7 +84,7 @@ PANEL_URL=http://127.0.0.1:8008/ node tests/app_browser.cjs       # 手机主屏
 
 ## 6. 常见坑（都真实发生过）
 
-- **进化系统的硬规则不要破坏**：回测与纸面交易必须都走 `execution.simulate()`（同源执行）；信号只用已收盘数据、下一根开盘成交；样本外 20% 和终审 20% 都不参与适应度（终审连繁殖筛选也不参与）；纸面交易由**冠军组合**（“合格” = 样本外 20% 与终审 20% 两段都过；合格者中训练适应度前 8（`TEAM_SIZE`）、同物种最多 2 个、只做多 / 只做空各最多 5 个（`TEAM_DIRECTION_CAP`，超额时任期满后每次运行换下一个，理由 `balance`）、共用一个全仓账户、走 `simulate_account()`（规则与 `simulate()` 相同，单策略时结果一致；同向最多 10 单 / 同向风险不设上限 / 日亏 25% 停手 / 拥挤降风险与 okx_demo_trader 相同，改一边要同步另一边））执行，成员只能从样本外合格者中选；稳定规则（每席最短任期 7 天、被换下的成员不强平而是持仓走完（`paper.py` winding）、挑战者连续 3 次合格且高出最弱成员 2%、每次运行最多换一席、保留线：样本外或终审亏损 > 5% 或回撤 > 30% 才提前换下）在 `evolution.choose_team`，不要去掉，否则样本外窗口每小时滚动会让冠军来回切换。改执行规则时同时更新 `tests/test_evolve.py` 并重新生成夹具。训练集适应度会随代数上升，样本外合格数下降是过拟合的正常信号，不是 bug。多样性保护（每个物种的最佳者必定保留、选父母用适应度共享、每物种至少 `MIN_PER_SPECIES` 个）不要去掉：没有它时种群曾收敛到 36/40 同一物种、样本外合格数降到 0。
+- **进化系统的硬规则不要破坏**：回测与纸面交易必须都走 `execution.simulate()`（同源执行）；信号只用已收盘数据、下一根开盘成交；样本外 20% 和终审 20% 都不参与适应度（终审连繁殖筛选也不参与）；纸面交易由**冠军组合**（“合格” = 样本外 20% 与终审 20% 两段都过；合格者中训练适应度前 8（`TEAM_SIZE`）、同物种最多 2 个、只做多 / 只做空各最多 5 个（`TEAM_DIRECTION_CAP`，超额时任期满后每次运行换下一个，理由 `balance`）、共用一个全仓账户、走 `simulate_account()`（规则与 `simulate()` 相同，单策略时结果一致；单笔风险 2%–10%（主流币加倍仍 ≤ 10%）/ 杠杆 1–20× / 同向最多 10 单 / 同向风险不设上限 / 日亏 25% 停手 / 拥挤降风险（同向 ≥3 仓减半、≥6 仓四分之一）/ 维持保证金主流币 0.5%、其他 2.5% 与 okx_demo_trader 相同，改一边要同步另一边））执行，成员只能从样本外合格者中选；稳定规则（每席最短任期 7 天、被换下的成员不强平而是持仓走完（`paper.py` winding）、挑战者连续 3 次合格且高出最弱成员 2%、每次运行最多换一席、保留线：样本外或终审亏损 > 5% 或回撤 > 30% 才提前换下）在 `evolution.choose_team`，不要去掉，否则样本外窗口每小时滚动会让冠军来回切换。改执行规则时同时更新 `tests/test_evolve.py` 并重新生成夹具。训练集适应度会随代数上升，样本外合格数下降是过拟合的正常信号，不是 bug。多样性保护（每个物种的最佳者必定保留、选父母用适应度共享、每物种至少 `MIN_PER_SPECIES` 个）不要去掉：没有它时种群曾收敛到 36/40 同一物种、样本外合格数降到 0。
 
 - **OKX 模拟盘是独立市场，价格与真实盘不同**（例：XRP 模拟盘 1.2686 vs 真实盘 1.2811）。模拟仓位的浮盈必须用模拟盘标记价，不能用真实盘行情。
 - **部分 4G 网络屏蔽 OKX**（请求一直挂起直到超时），Wi‑Fi / VPN 正常。看板必须在连不上 OKX 时退回账户快照，不能空白或报错。

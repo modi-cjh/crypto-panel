@@ -210,7 +210,7 @@ function actionDetail(a) {
   if (a.action === 'close') return a.execution_test ? `${CLOSES.execution_test} · ${a.contracts} 张 @ ${a.price} · 净损益 ${signed(num(a.net_pnl), 4)} USDT（含手续费）` : [CLOSES[a.reason] || a.reason || '', finite(num(a.close_price)) ? `平仓价 ${px(num(a.close_price))}` : '', realised(a)].filter(Boolean).join(' · ');
   if (a.action === 'closed_on_exchange') return [finite(num(a.close_price)) ? `成交价 ${px(num(a.close_price))}` : '', realised(a) || '金额待下次运行从交易所补全'].filter(Boolean).join(' · ');
   if (a.action === 'daily_halt') { const loss = num(a.day_start) > 0 ? (1 - num(a.equity) / num(a.day_start)) * 100 : null;
-    return `当日亏损${finite(loss) ? ` ${fmt(loss, 1)}%` : ''}达到停手线（10%），全部平仓，次日恢复`; }
+    return `当日亏损${finite(loss) ? ` ${fmt(loss, 1)}%` : ''}达到停手线（跟随冠军 25%），全部平仓，次日恢复`; }
   if (a.action === 'error') return a.detail || a.step || '';
   return '';
 }
