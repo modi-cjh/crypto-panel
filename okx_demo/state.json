@@ -1,6 +1,6 @@
 {
- "day": "2026-11-15",
- "day_start": 8317.089868908066,
+ "day": "2026-11-16",
+ "day_start": 8411.045058400452,
  "halted": false,
  "history": [
   [
@@ -522,6 +522,10 @@
   [
    1794761589704,
    8479.67
+  ],
+  [
+   1794775875415,
+   8411.05
   ]
  ],
  "mirrored": {
@@ -1399,6 +1403,13 @@
    "mgnMode": "isolated",
    "champion": "s18637",
    "ordId": "4100461573197774848"
+  },
+  "ENA-USDT-SWAP|1794470400000": {
+   "inst": "ENA-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
   }
  },
  "paused": false,
@@ -1501,6 +1512,6 @@
   "inst": "XRP-USDT-SWAP",
   "pnl": 2878.799155673374
  },
- "leader_realized": 688.6344022653193,
- "leader_upl_start": 518.6979000000003
+ "leader_realized": 0.0,
+ "leader_upl_start": 0.0
 }
