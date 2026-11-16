@@ -1,7 +1,7 @@
 {
- "updated_at": "2026-11-15T20:51:15Z",
- "equity": 8411.045058400452,
- "available": 6797.43245976351,
+ "updated_at": "2026-11-16T01:36:41Z",
+ "equity": 8481.852406992486,
+ "available": 6798.79357130536,
  "day_start": 8411.045058400452,
  "paused": false,
  "halted": false,
@@ -12,11 +12,11 @@
    "side": "short",
    "contracts": "15",
    "avgPx": "43.4319586666666667",
-   "markPx": "45.4044",
-   "upl": "-29.58662000000004",
-   "uplRatio": "-0.181658059538278",
+   "markPx": "44.7155",
+   "upl": "-19.25311999999998",
+   "uplRatio": "-0.1182116922871757",
    "lever": "4",
-   "margin": "163.00407805",
+   "margin": "162.2865154666624527",
    "mgnMode": "isolated",
    "ctVal": 1.0,
    "ours": true
@@ -26,11 +26,11 @@
    "side": "short",
    "contracts": "35.28",
    "avgPx": "0.1452",
-   "markPx": "0.1546",
-   "upl": "-33.163199999999975",
-   "uplRatio": "-0.194214876033058",
+   "markPx": "0.1516",
+   "upl": "-22.57920000000006",
+   "uplRatio": "-0.1322314049586784",
    "lever": "3",
-   "margin": "170.861922",
+   "margin": "170.8713625138724068",
    "mgnMode": "isolated",
    "ctVal": 100.0,
    "ours": true
@@ -40,11 +40,11 @@
    "side": "short",
    "contracts": "11.3",
    "avgPx": "3.0018141592920356",
-   "markPx": "3.194",
-   "upl": "-21.71699999999998",
-   "uplRatio": "-0.1280464615792809",
+   "markPx": "3.133",
+   "upl": "-14.823999999999986",
+   "uplRatio": "-0.0874043719874411",
    "lever": "2",
-   "margin": "168.5285201582187814",
+   "margin": "167.6233617807281009",
    "mgnMode": "isolated",
    "ctVal": 10.0,
    "ours": true
@@ -54,11 +54,11 @@
    "side": "short",
    "contracts": "71.9",
    "avgPx": "6.913",
-   "markPx": "7.277",
-   "upl": "-26.171599999999994",
-   "uplRatio": "-0.2106176768407346",
+   "markPx": "7.152",
+   "upl": "-17.184099999999994",
+   "uplRatio": "-0.1382901779256471",
    "lever": "4",
-   "margin": "125.1800631528994751",
+   "margin": "125.2063210328994751",
    "mgnMode": "isolated",
    "ctVal": 1.0,
    "ours": true
@@ -68,11 +68,11 @@
    "side": "short",
    "contracts": "18.85",
    "avgPx": "68.97",
-   "markPx": "71.93",
-   "upl": "-55.796000000000156",
-   "uplRatio": "-0.2145860519066267",
+   "markPx": "71.17",
+   "upl": "-41.470000000000056",
+   "uplRatio": "-0.1594896331738438",
    "lever": "5",
-   "margin": "260.28289235",
+   "margin": "260.4199507",
    "mgnMode": "isolated",
    "ctVal": 1.0,
    "ours": true
@@ -82,11 +82,11 @@
    "side": "short",
    "contracts": "303",
    "avgPx": "0.5589",
-   "markPx": "0.4984",
-   "upl": "18.331499999999984",
-   "uplRatio": "0.3247450348899621",
+   "markPx": "0.4833",
+   "upl": "22.906799999999983",
+   "uplRatio": "0.4057971014492752",
    "lever": "3",
-   "margin": "56.5120807620274564",
+   "margin": "56.5195845570274564",
    "mgnMode": "isolated",
    "ctVal": 1.0,
    "ours": true
@@ -96,11 +96,11 @@
    "side": "short",
    "contracts": "3439",
    "avgPx": "0.1042809828438503",
-   "markPx": "0.0979",
-   "upl": "21.94420000000119",
-   "uplRatio": "0.1835708487732173",
+   "markPx": "0.0965",
+   "upl": "26.758800000001184",
+   "uplRatio": "0.2238466486886156",
    "lever": "3",
-   "margin": "119.7283125316666666",
+   "margin": "119.7453871666666666",
    "mgnMode": "isolated",
    "ctVal": 1.0,
    "ours": true
@@ -110,11 +110,11 @@
    "side": "short",
    "contracts": "142",
    "avgPx": "655.1",
-   "markPx": "593.9",
-   "upl": "86.90400000000007",
-   "uplRatio": "0.9342085177835446",
+   "markPx": "591.2",
+   "upl": "90.73799999999997",
+   "uplRatio": "0.9754235994504656",
    "lever": "10",
-   "margin": "87.0917713159252514",
+   "margin": "88.509163848435964",
    "mgnMode": "isolated",
    "ctVal": 0.01,
    "ours": true
@@ -124,11 +124,11 @@
    "side": "short",
    "contracts": "13.66",
    "avgPx": "0.0656244219619329",
-   "markPx": "0.0579621",
-   "upl": "104.66731800000335",
-   "uplRatio": "1.1676022024815114",
+   "markPx": "0.0575779",
+   "upl": "109.91549000000336",
+   "uplRatio": "1.2261474800647365",
    "lever": "10",
-   "margin": "70.8172298227324517",
+   "margin": "64.8096437827324517",
    "mgnMode": "isolated",
    "ctVal": 1000.0,
    "ours": true
@@ -138,11 +138,11 @@
    "side": "short",
    "contracts": "1.99",
    "avgPx": "71693.407035175879397",
-   "markPx": "65012.36",
-   "upl": "132.9528360000001",
-   "uplRatio": "0.9318914125392141",
+   "markPx": "64724.85",
+   "upl": "138.67428500000014",
+   "uplRatio": "0.9719941237772134",
    "lever": "10",
-   "margin": "143.6294324934666167",
+   "margin": "143.7466268380961459",
    "mgnMode": "isolated",
    "ctVal": 0.01,
    "ours": true
@@ -159,7 +159,7 @@
    "margin": "49.6096",
    "mgnMode": "cross",
    "ctVal": 0.1,
-   "ours": true
+   "ours": false
   }
  ],
  "stop_control": null,
@@ -239,27 +239,9 @@
    "DOGE-USDT-SWAP"
   ],
   "major_factor": 2.0,
-  "max_same_side": 10
+  "max_same_side": 15
  },
  "open_mirrors": [
-  {
-   "inst": "INJ-USDT-SWAP",
-   "side": -1,
-   "posSide": "short",
-   "strategy": "evolved",
-   "contracts": "222",
-   "stop": 8.33567024820971,
-   "target": 3.8823126936479917,
-   "leverage": 3,
-   "entry": 7.476,
-   "clOrdId": "evinj1794441600",
-   "opened_at": 1794443627032,
-   "status": "open",
-   "leader": false,
-   "mgnMode": "cross",
-   "ordId": "4091668897728024576",
-   "key": "INJ-USDT-SWAP|1794441600000"
-  },
   {
    "inst": "BTC-USDT-SWAP",
    "side": -1,
@@ -976,9 +958,13 @@
   [
    1794775875415,
    8411.05
+  ],
+  [
+   1794793001280,
+   8481.85
   ]
  ],
- "closed_trades": 30,
+ "closed_trades": 31,
  "strategy_updated_at": "2026-11-04T19:29:04Z",
  "strategy_decisions": [
   {
@@ -1384,6 +1370,14 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-16T01:36:41Z",
+   "action": "close",
+   "inst": "INJ-USDT-SWAP",
+   "dry_run": false,
+   "strategy": "evolved",
+   "reason": "paper_closed"
+  },
+  {
    "ts": "2026-11-15T20:51:15Z",
    "action": "skip",
    "inst": "ENA-USDT-SWAP",
@@ -1661,14 +1655,6 @@
    "dry_run": false,
    "old": 0.6568089334602194,
    "new": 0.6317089334602194
-  },
-  {
-   "ts": "2026-11-14T16:53:03Z",
-   "action": "amend_stop",
-   "inst": "XRP-USDT-SWAP",
-   "dry_run": false,
-   "old": 1.034148114704671,
-   "new": 1.021748114704671
   },
   {
    "ts": "2026-11-14T16:53:03Z",

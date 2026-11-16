@@ -526,6 +526,10 @@
   [
    1794775875415,
    8411.05
+  ],
+  [
+   1794793001280,
+   8481.85
   ]
  ],
  "mirrored": {
@@ -1042,10 +1046,11 @@
    "entry": 7.476,
    "clOrdId": "evinj1794441600",
    "opened_at": 1794443627032,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
-   "ordId": "4091668897728024576"
+   "ordId": "4091668897728024576",
+   "closed_reason": "paper_closed"
   },
   "NOT-USDT-SWAP|1794441600000": {
    "inst": "NOT-USDT-SWAP",
