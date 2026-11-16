@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-16T17:24:20Z",
+ "updated_at": "2026-11-16T20:59:14Z",
  "champion": "s20822",
  "team": [
   "s18771",
@@ -243,19 +243,19 @@
    "opened": 1794801600000,
    "strategy": "evolved",
    "champion": "s20554",
-   "rank": 8,
+   "rank": 7,
    "risk": 0.0214,
    "leverage": 1
   },
   "ICP-USDT-SWAP": {
    "side": 1,
    "entry": 2.4584916000000003,
-   "stop": 2.219769465764745,
+   "stop": 2.255769465764745,
    "tp": null,
    "opened": 1794844800000,
    "strategy": "evolved",
    "champion": "s20554",
-   "rank": 8,
+   "rank": 7,
    "risk": 0.0214,
    "leverage": 1
   }
