@@ -534,6 +534,10 @@
   [
    1794807679087,
    8464.31
+  ],
+  [
+   1794824397539,
+   8492.34
   ]
  ],
  "mirrored": {
@@ -1432,11 +1436,12 @@
    "entry": 0.0431,
    "clOrdId": "evxpl1794801600",
    "opened_at": 1794807679087,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
    "champion": "s20554",
-   "ordId": "4103884324306665472"
+   "ordId": "4103884324306665472",
+   "closed_reason": "exchange_stop_or_target"
   }
  },
  "paused": false,
