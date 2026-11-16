@@ -1,8 +1,14 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-16T20:50:04Z",
+ "updated_at": "2026-11-16T21:50:04Z",
  "fills": [
+  {
+   "ts": "2026-11-16T21:50:04Z",
+   "action": "amend_stop",
+   "inst": "ICP-USDT-SWAP",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-16T17:50:01Z",
    "action": "open",
