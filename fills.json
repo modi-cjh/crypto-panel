@@ -1,8 +1,20 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-16T04:50:02Z",
+ "updated_at": "2026-11-16T05:50:03Z",
  "fills": [
+  {
+   "ts": "2026-11-16T05:50:03Z",
+   "action": "open",
+   "inst": "XPL-USDT-SWAP",
+   "side": "short",
+   "contracts": 11.0,
+   "price": 0.04317,
+   "stop": 0.04928,
+   "leverage": 1.0,
+   "strategy": "evolved",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-15T17:50:04Z",
    "action": "open",
