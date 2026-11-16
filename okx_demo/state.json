@@ -530,6 +530,10 @@
   [
    1794793001280,
    8481.85
+  ],
+  [
+   1794807679087,
+   8464.31
   ]
  ],
  "mirrored": {
@@ -1415,6 +1419,24 @@
    "side": -1,
    "posSide": "net",
    "reason": "too_old"
+  },
+  "XPL-USDT-SWAP|1794801600000": {
+   "inst": "XPL-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "733",
+   "stop": 0.049275669159962995,
+   "target": null,
+   "leverage": 1,
+   "entry": 0.0431,
+   "clOrdId": "evxpl1794801600",
+   "opened_at": 1794807679087,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "cross",
+   "champion": "s20554",
+   "ordId": "4103884324306665472"
   }
  },
  "paused": false,

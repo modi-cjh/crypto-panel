@@ -185,3 +185,4 @@
 {"ts": "2026-11-15T16:53:09Z", "action": "skip", "inst": "ENA-USDT-SWAP", "dry_run": false, "reason": "same_side_count", "open_same_side": 11, "max_same_side": 10}
 {"ts": "2026-11-15T20:51:15Z", "action": "skip", "inst": "ENA-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-16T01:36:41Z", "action": "close", "inst": "INJ-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-16T05:41:19Z", "action": "open", "inst": "XPL-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "733", "price": 0.0431, "stop": "0.0493", "target": null, "leverage": 1, "risk_usdt": 45.28}

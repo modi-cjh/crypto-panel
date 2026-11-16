@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-16T01:35:44Z",
+ "updated_at": "2026-11-16T05:40:13Z",
  "champion": "s20822",
  "team": [
   "s18771",
@@ -234,6 +234,18 @@
    "rank": 100,
    "risk": 0.055,
    "leverage": 20
+  },
+  "XPL-USDT-SWAP": {
+   "side": -1,
+   "entry": 0.043541289999999996,
+   "stop": 0.049275669159962995,
+   "tp": null,
+   "opened": 1794801600000,
+   "strategy": "evolved",
+   "champion": "s20554",
+   "rank": 6,
+   "risk": 0.0214,
+   "leverage": 1
   }
  }
 }
