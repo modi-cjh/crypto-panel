@@ -187,3 +187,4 @@
 {"ts": "2026-11-16T01:36:41Z", "action": "close", "inst": "INJ-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
 {"ts": "2026-11-16T05:41:19Z", "action": "open", "inst": "XPL-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "733", "price": 0.0431, "stop": "0.0493", "target": null, "leverage": 1, "risk_usdt": 45.28}
 {"ts": "2026-11-16T10:19:57Z", "action": "closed_on_exchange", "inst": "XPL-USDT-SWAP", "dry_run": false, "strategy": "evolved"}
+{"ts": "2026-11-16T17:25:18Z", "action": "open", "inst": "ICP-USDT-SWAP", "dry_run": false, "side": 1, "strategy": "evolved", "contracts": "64527.3", "price": 2.499, "stop": "2.22", "target": null, "leverage": 1, "risk_usdt": 180.18}

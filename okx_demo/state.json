@@ -1,6 +1,6 @@
 {
- "day": "2026-11-16",
- "day_start": 8411.045058400452,
+ "day": "2026-11-17",
+ "day_start": 8419.635582637191,
  "halted": false,
  "history": [
   [
@@ -542,6 +542,10 @@
   [
    1794842302391,
    8523.19
+  ],
+  [
+   1794849918344,
+   8419.61
   ]
  ],
  "mirrored": {
@@ -1446,6 +1450,24 @@
    "champion": "s20554",
    "ordId": "4103884324306665472",
    "closed_reason": "exchange_stop_or_target"
+  },
+  "ICP-USDT-SWAP|1794844800000": {
+   "inst": "ICP-USDT-SWAP",
+   "side": 1,
+   "posSide": "long",
+   "strategy": "evolved",
+   "contracts": "64527.3",
+   "stop": 2.219769465764745,
+   "target": null,
+   "leverage": 1,
+   "entry": 2.499,
+   "clOrdId": "evicp1794844800",
+   "opened_at": 1794849918344,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "cross",
+   "champion": "s20554",
+   "ordId": "4105301648280633344"
   }
  },
  "paused": false,
