@@ -1,8 +1,20 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-17T16:50:04Z",
+ "updated_at": "2026-11-17T17:50:04Z",
  "fills": [
+  {
+   "ts": "2026-11-17T17:50:04Z",
+   "action": "open",
+   "inst": "ICP-USDT-SWAP",
+   "side": "short",
+   "contracts": 242.0,
+   "price": 2.254,
+   "stop": 2.53,
+   "leverage": 1.0,
+   "strategy": "evolved",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-17T15:50:04Z",
    "action": "closed_on_exchange",
