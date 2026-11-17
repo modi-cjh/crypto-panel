@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-17T11:50:03Z",
+ "updated_at": "2026-11-17T12:50:04Z",
  "trades": [
   {
    "inst": "BNB-USDT-SWAP",
@@ -62,10 +62,10 @@
    }
   ],
   "equity_drawdown": {
-   "usdt": 9.52,
-   "pct": 7.20503,
+   "usdt": 10.72,
+   "pct": 8.11322,
    "peak_at": "2026-11-16T12:50:03Z",
-   "trough_at": "2026-11-17T11:50:03Z"
+   "trough_at": "2026-11-17T12:50:04Z"
   }
  }
 }
