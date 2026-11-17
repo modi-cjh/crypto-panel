@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-17T01:25:15Z",
+ "updated_at": "2026-11-17T05:09:48Z",
  "champion": "s20822",
  "team": [
   "s18771",
@@ -231,7 +231,7 @@
    "opened": 1794801600000,
    "strategy": "evolved",
    "champion": "s20554",
-   "rank": 6,
+   "rank": 8,
    "risk": 0.0214,
    "leverage": 1
   },
@@ -243,7 +243,7 @@
    "opened": 1794844800000,
    "strategy": "evolved",
    "champion": "s20554",
-   "rank": 6,
+   "rank": 8,
    "risk": 0.0214,
    "leverage": 1
   }
