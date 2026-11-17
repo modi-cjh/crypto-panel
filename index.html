@@ -18,19 +18,22 @@
   <meta name="apple-mobile-web-app-title" content="MODI">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="./assets/style.css?v=20261116-dash">
-  <link rel="stylesheet" href="./assets/apple.css?v=20261116-dash">
+  <link rel="stylesheet" href="./assets/apple.css?v=20261118-nav">
   <script defer src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
   <script type="module" src="./assets/app.mjs?v=20261116-push"></script>
 </head>
 <body>
   <div id="toasts" role="status" aria-live="polite"></div>
   <header class="header">
-    <a class="brand" href="#/" aria-label="实盘账户首页"><span class="brand-icon" aria-hidden="true">M<span>✦</span></span><span><b>MODI</b> · AI 交易团队<small class="brand-sub">OKX 实盘 · 真实资金</small></span></a>
-    <div class="header-status"><span id="day-number" class="day-number">DAY —</span><time id="utc-clock">— UTC+7</time></div>
+    <!-- 手机上 .header 是 display:contents，.header-bar 才是吸顶条；底部导航不能有吸顶（sticky）祖先，否则 iOS Safari 会把 position:fixed 的导航摆到屏幕中间 -->
+    <div class="header-bar">
+      <a class="brand" href="#/" aria-label="实盘账户首页"><span class="brand-icon" aria-hidden="true">M<span>✦</span></span><span><b>MODI</b> · AI 交易团队<small class="brand-sub">OKX 实盘 · 真实资金</small></span></a>
+      <div class="header-status"><span id="day-number" class="day-number">DAY —</span><time id="utc-clock">— UTC+7</time></div>
+      <aside class="pinned-balance" aria-label="常驻实盘权益"><span id="live-light" class="live-light" data-state="wait" role="status" title="正在读取实盘快照"><i class="live-light-dot" aria-hidden="true"></i><b>等待数据</b></span><strong id="pinned-equity">—</strong><span id="pinned-pct">—</span>
+        <span class="visually-hidden"><span id="pinned-label-text">OKX 实盘权益</span> <span id="pinned-mode" class="mode-tag">实盘</span><span id="pinned-daily">当日盈亏 · 等待数据</span><small id="pinned-source">OKX 实盘 · 约每小时同步</small><small id="pinned-time">— UTC+7</small></span></aside>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换深色或浅色主题" title="浅色 / 深色">暗</button>
+    </div>
     <nav aria-label="主导航"><a href="#/" data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>实盘账户</a><a href="#/evolve" data-nav="evolve"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5a9.5 9.5 0 1 0 0 19 9.5 9.5 0 0 0 0-19m0 3.5a6 6 0 1 1 0 12 6 6 0 0 1 0-12m0 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6"/></svg>策略进化</a><a href="#/market" data-nav="market"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.5 8.5 11l4 4 6.5-8.5 1.8 1.4-8.1 10.6-4-4-4.2 5z"/></svg>市场行情</a><button id="connection" class="connection" type="button" aria-haspopup="dialog" aria-controls="diag" title="点击查看连接诊断"><span id="connection-dot" class="dot"></span><span id="connection-text">正在连接</span></button></nav>
-    <aside class="pinned-balance" aria-label="常驻实盘权益"><span id="live-light" class="live-light" data-state="wait" role="status" title="正在读取实盘快照"><i class="live-light-dot" aria-hidden="true"></i><b>等待数据</b></span><strong id="pinned-equity">—</strong><span id="pinned-pct">—</span>
-      <span class="visually-hidden"><span id="pinned-label-text">OKX 实盘权益</span> <span id="pinned-mode" class="mode-tag">实盘</span><span id="pinned-daily">当日盈亏 · 等待数据</span><small id="pinned-source">OKX 实盘 · 约每小时同步</small><small id="pinned-time">— UTC+7</small></span></aside>
-    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换深色或浅色主题" title="浅色 / 深色">暗</button>
   </header>
   <main id="main">
     <details id="status-pill" class="status-pill"><summary id="status-pill-label">● 等待更新</summary><div id="status-pill-body">正在读取实盘快照…</div></details>
