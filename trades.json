@@ -1,20 +1,66 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-17T00:50:01Z",
- "trades": [],
+ "updated_at": "2026-11-17T01:50:04Z",
+ "trades": [
+  {
+   "inst": "BNB-USDT-SWAP",
+   "side": "short",
+   "contracts": 8.0,
+   "leverage": 10.0,
+   "entry": 590.19,
+   "exit": 592.12,
+   "stop": 626.84,
+   "target": 531.47,
+   "pnl": -0.198222,
+   "pnl_pct": -0.327013,
+   "roe_pct": -3.27013,
+   "r": -0.0652,
+   "fee": -0.047292,
+   "funding": 0.00347,
+   "opened_at": "2026-11-15T15:50:04Z",
+   "closed_at": "2026-11-17T01:50:04Z",
+   "hold_minutes": 2040,
+   "exit_type": "other",
+   "reason": "paper_closed",
+   "strategy": "evolved",
+   "champion": "s14155"
+  }
+ ],
  "stats": {
   "overall": {
-   "trades": 0,
-   "with_pnl": 0,
+   "trades": 1,
+   "with_pnl": 1,
    "wins": 0,
-   "losses": 0,
-   "pnl": 0.0,
+   "losses": 1,
+   "win_rate": 0.0,
+   "pnl": -0.198222,
+   "avg_loss": 0.198222,
+   "avg_r": -0.0652,
+   "best": -0.198222,
+   "worst": -0.198222,
    "tp": 0,
    "sl": 0,
-   "max_drawdown_closed": 0.0
+   "max_drawdown_closed": 0.198222
   },
-  "by_strategy": [],
+  "by_strategy": [
+   {
+    "key": "s14155",
+    "trades": 1,
+    "with_pnl": 1,
+    "wins": 0,
+    "losses": 1,
+    "win_rate": 0.0,
+    "pnl": -0.198222,
+    "avg_loss": 0.198222,
+    "avg_r": -0.0652,
+    "best": -0.198222,
+    "worst": -0.198222,
+    "tp": 0,
+    "sl": 0,
+    "max_drawdown_closed": 0.198222
+   }
+  ],
   "equity_drawdown": {
    "usdt": 6.63,
    "pct": 5.01779,

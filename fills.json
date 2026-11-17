@@ -1,8 +1,24 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-17T00:50:01Z",
+ "updated_at": "2026-11-17T01:50:04Z",
  "fills": [
+  {
+   "ts": "2026-11-17T01:50:04Z",
+   "action": "amend_stop",
+   "inst": "ICP-USDT-SWAP",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-17T01:50:04Z",
+   "action": "close",
+   "inst": "BNB-USDT-SWAP",
+   "reason": "paper_closed",
+   "strategy": "evolved",
+   "close_price": 592.12,
+   "pnl": -0.198222,
+   "dry_run": false
+  },
   {
    "ts": "2026-11-16T21:50:04Z",
    "action": "amend_stop",
