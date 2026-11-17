@@ -191,6 +191,10 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 /* ---------- desktop ---------- */
+/* .header-bar only groups the top-bar items so the phone tab bar can live outside the sticky box (see the phone block);
+   on wider screens it adds no box and the items stay in the .header grid exactly as before */
+.header-bar{display:contents}
+@media(min-width:1201px){.header nav{grid-column:3;grid-row:1}}
 @media(min-width:761px){
   .header{grid-template-columns:auto auto 1fr auto auto}
   .theme-toggle{grid-column:5;grid-row:1;align-self:center;margin-left:4px}
@@ -199,8 +203,13 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
 /* ---------- phone: compact large-title bar, tab bar at the bottom ---------- */
 @media(max-width:760px){
   html{scroll-padding-top:90px}
-  /* no blur on the header here: a backdrop-filter would make it the containing block of the fixed tab bar below */
-  .header{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--bg);grid-template-columns:minmax(0,1fr) auto;min-height:0;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));gap:4px 10px;align-items:center}
+  /* the fixed tab bar below must not sit inside a sticky (or filtered / transformed) box: iOS Safari then places the
+     position:fixed bar relative to the sticky header while scrolling and it lands mid-screen over the positions list.
+     So on a phone .header adds no box (display:contents) and only .header-bar, which does not contain the nav, sticks. */
+  .header{display:contents;position:static;backdrop-filter:none;-webkit-backdrop-filter:none}
+  .header-bar{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:4px 10px;align-items:center;min-height:0;
+    padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));background:var(--bg);border-bottom:.5px solid var(--sep)}
+  .low-power .header-bar{background-color:var(--panel)}
   .header-status{display:none}
   .brand{flex:none}.brand>span:not(.brand-icon){font-size:0;line-height:1;white-space:nowrap}.brand>span:not(.brand-icon) b{font-size:19px}   /* just “MODI” on a phone */
   .brand{font-size:11px}.brand-icon{width:30px;height:30px;min-width:30px;font-size:17px;border-radius:8px}.brand-sub{display:none}
@@ -209,7 +218,6 @@ a.panel:active,.okx-pos>summary:active{transform:scale(.985)}
   .pinned-balance small,.pinned-label{display:none}
   #pinned-daily{font-size:11px;line-height:1.35;text-align:right;white-space:normal}
   .pinned-balance{min-width:0;max-width:58vw}
-  .header{grid-template-columns:auto auto minmax(0,1fr)}
   .theme-toggle{grid-column:2;grid-row:1;width:auto;margin:0;padding:4px 8px;justify-self:start;font-size:11px}
   /* the navigation becomes a tab bar fixed to the bottom of the screen */
   .header nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:auto repeat(3,1fr);gap:0;padding:6px max(10px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));

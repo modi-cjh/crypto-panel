@@ -613,6 +613,13 @@
 - 不变：单笔风险 2%–10%（主流币加倍仍 ≤ 10%）、杠杆 1–20×、日亏 25% 停手、同向合计风险不设上限、扫描前 50 币、拥挤降风险（≥3 仓减半 / ≥6 仓四分之一）、每笔交易所止损、全仓。
 - 测试：`tests/test_evolve.py`（上限边界 14/15/16、17 个多头信号取 15、平仓不受影响 15 笔）、`tests/test_okx_demo_trader.py`（默认 15 单、第 16 单起 `same_side_count`）、`tests/test_okx_live_mode.py` 断言改为 15。
 
+### 手机底部导航跑到屏幕中间、挡住展开的持仓卡片
+- 问题：iPhone Safari 上滚到「当前持仓」时，底部导航（实盘账户 / 策略进化 / 市场行情）浮在屏幕中间，压住已展开持仓卡片的币种行。
+- 根因：手机上导航是 `position:fixed; bottom:0`，但它仍是吸顶（`position:sticky`）`<header class="header">` 的子元素。祖先链里只有这一个特殊祖先（无 transform / filter / backdrop-filter / contain / will-change，浏览器计算样式已核对）；之前只去掉了 header 的 backdrop-filter，sticky 祖先还在。iOS WebKit 滚动时会把 sticky 盒子里的 fixed 元素按 sticky 层定位，导航就不再贴视口底部。桌面 Chromium 不复现，只能从结构上去掉这个祖先。
+- 做了什么：`index.html` 把品牌、状态、常驻权益、主题按钮包进新的 `.header-bar`，`<nav>` 留在 `<header>` 里但不在 `.header-bar` 里。手机（≤760px）上 `.header` 改成 `display:contents`（不生成盒子，并显式去掉 sticky / backdrop-filter），吸顶、网格、背景、边线挪到 `.header-bar`；导航的祖先链里不再有任何会接管 fixed 的盒子。桌面（>760px）上 `.header-bar` 是 `display:contents`，内容仍排在 `.header` 网格里；>1200px 给导航写明 `grid-column:3`，保持原来的位置。`apple.css` 缓存戳改为 `20261118-nav`。
+- 不变：390 / 473 / 800 / 1000 / 1440 宽下顶栏的尺寸、背景、边线、网格，以及每个子元素（品牌、权益、主题按钮、导航、连接诊断按钮、main）的位置，前后逐项一致；`main` / `footer` 原有底部留白（84 / 90px + safe-area，导航高 64px）实测足够，最后一张卡片和页脚都能滚到导航上方。
+- 测试：`tests/live_browser.cjs`（iPhone 13）新增：导航祖先链里没有 sticky / transform / filter / backdrop-filter / contain / will-change 盒子、滚到展开的持仓卡片后导航仍贴视口底部且卡片完整露在导航上方、`.header-bar` 仍吸顶。在修复前的代码（45a219f）上这条断言失败，修复后通过。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

@@ -57,6 +57,23 @@ const candles = Array.from({ length: 60 }, (_, i) => { const t = Math.floor((now
   await page.locator('#live-positions details[data-inst="SOL-USDT-SWAP"] summary').click();
   const body = await page.locator('#live-positions details[data-inst="SOL-USDT-SWAP"] .okx-pos-body').innerText();
   for (const s of ['止损', '80.18', '止盈', '48.087', '保证金', '11.43', '全仓', '72.43']) assert.ok(body.includes(s), s);
+  // Phone tab bar: no ancestor box may be sticky / transformed / filtered (iOS Safari then drew the fixed bar mid-screen
+  // over the open position card), and after scrolling to the open card it is still pinned to the bottom, not covering it.
+  const tabBar = await page.evaluate(() => {
+    const nav = document.querySelector('nav[aria-label="主导航"]'), bad = [];
+    for (let e = nav.parentElement; e && e !== document.documentElement; e = e.parentElement) { const c = getComputedStyle(e);
+      if (c.display !== 'contents' && (c.position === 'sticky' || c.transform !== 'none' || c.filter !== 'none' || c.backdropFilter !== 'none' || c.contain !== 'none' || c.willChange !== 'auto')) bad.push(e.tagName + '.' + e.className); }
+    const card = document.querySelector('#live-positions details[data-inst="SOL-USDT-SWAP"]');
+    scrollBy(0, card.getBoundingClientRect().bottom - (innerHeight - nav.offsetHeight) + 8);
+    const n = nav.getBoundingClientRect(), r = card.getBoundingClientRect();
+    return { bad, position: getComputedStyle(nav).position, bottomGap: Math.abs(innerHeight - n.bottom), cardBottom: r.bottom, navTop: n.top, scrolled: scrollY > 0 };
+  });
+  assert.equal(tabBar.position, 'fixed');
+  assert.deepEqual(tabBar.bad, [], 'tab bar has no sticky / transformed / filtered ancestor');
+  assert.ok(tabBar.scrolled && tabBar.bottomGap < 1, `tab bar pinned to the viewport bottom after scrolling (${JSON.stringify(tabBar)})`);
+  assert.ok(tabBar.cardBottom <= tabBar.navTop, `open position card scrolls fully above the tab bar (${JSON.stringify(tabBar)})`);
+  assert.equal(await page.locator('.header-bar').evaluate(e => getComputedStyle(e).position), 'sticky', 'top bar still sticks on a phone');
+  await page.evaluate(() => scrollTo(0, 0));
   assert.match(await page.locator('#live-fills').innerText(), /开仓 · SOL[\s\S]*空 1.58 张 @ 72.46 · 止损 80.18 · 止盈 48.09/);
   assert.match(await page.locator('#live-events').innerHTML(), /同向风险上限/);
   assert.match(await page.locator('#live-curve').innerHTML(), /<svg/);
