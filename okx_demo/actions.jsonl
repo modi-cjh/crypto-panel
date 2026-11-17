@@ -189,3 +189,6 @@
 {"ts": "2026-11-16T10:19:57Z", "action": "closed_on_exchange", "inst": "XPL-USDT-SWAP", "dry_run": false, "strategy": "evolved"}
 {"ts": "2026-11-16T17:25:18Z", "action": "open", "inst": "ICP-USDT-SWAP", "dry_run": false, "side": 1, "strategy": "evolved", "contracts": "64527.3", "price": 2.499, "stop": "2.22", "target": null, "leverage": 1, "risk_usdt": 180.18}
 {"ts": "2026-11-16T21:00:00Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.219769465764745, "new": 2.255769465764745}
+{"ts": "2026-11-17T01:26:05Z", "action": "close", "inst": "BNB-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-17T01:26:05Z", "action": "amend_stop", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "old": 0.6080089334603817, "new": 0.6026089334604324}
+{"ts": "2026-11-17T01:26:05Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.255769465764745, "new": 2.2657694657647447}

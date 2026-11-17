@@ -550,6 +550,10 @@
   [
    1794862800996,
    8464.37
+  ],
+  [
+   1794878765864,
+   8454.42
   ]
  ],
  "mirrored": {
@@ -1218,11 +1222,12 @@
    "entry": 655.0,
    "clOrdId": "evbnb1794528000",
    "opened_at": 1794532978251,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s14155",
-   "ordId": "4094666957907279872"
+   "ordId": "4094666957907279872",
+   "closed_reason": "paper_closed"
   },
   "SOL-USDT-SWAP|1794542400000": {
    "inst": "SOL-USDT-SWAP",
@@ -1327,7 +1332,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "303",
-   "stop": 0.6080089334603817,
+   "stop": 0.6026089334604324,
    "target": 0.28456367574115243,
    "leverage": 3,
    "entry": 0.5592,
@@ -1461,7 +1466,7 @@
    "posSide": "long",
    "strategy": "evolved",
    "contracts": "64527.3",
-   "stop": 2.255769465764745,
+   "stop": 2.2657694657647447,
    "target": null,
    "leverage": 1,
    "entry": 2.499,
@@ -1567,6 +1572,13 @@
    "funding": 2.147345440980111,
    "close_price": 1.0969982995826248,
    "fee": -2.2851749
+  },
+  "2026-11-17T01:26:05Z|BNB-USDT-SWAP": {
+   "pnl": 79.61824275290527,
+   "price_pnl": 91.306,
+   "funding": -10.803168247094728,
+   "close_price": 590.8,
+   "fee": -0.884589
   }
  },
  "largest_close": {
