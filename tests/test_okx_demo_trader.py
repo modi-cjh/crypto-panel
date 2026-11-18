@@ -325,10 +325,10 @@ class MirrorTests(unittest.TestCase):
     def test_same_side_count_caps_new_entries_but_not_the_other_side_or_closes(self):
         self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0
         self.addCleanup(setattr, odt, 'MAX_SAME_SIDE', odt.MAX_SAME_SIDE)
-        self.assertEqual(odt.MAX_SAME_SIDE, 15)                                                 # same default as the paper account
+        self.assertEqual(odt.MAX_SAME_SIDE, 20)                                                 # same default as the paper account
         try:
             prof = odt.configure_evolved()
-            self.assertEqual(prof['max_same_side'], 15)
+            self.assertEqual(prof['max_same_side'], 20)
             self.assertEqual(prof['daily_halt'], .25)
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
             sig = lambda side, v, rank: dict(strategy='evolved', side=side, entry=v, stop=v * (1 + .04 * -side), tp=v * (1 + .1 * side), leverage=10,
@@ -370,8 +370,8 @@ class MirrorTests(unittest.TestCase):
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
-    def test_default_same_side_count_is_fifteen_with_no_risk_cap(self):
-        coins = [f'C{i}-USDT-SWAP' for i in range(17)]
+    def test_default_same_side_count_is_twenty_with_no_risk_cap(self):
+        coins = [f'C{i}-USDT-SWAP' for i in range(22)]
         specs = {c: dict(ctVal='1', lotSz='0.01', minSz='0.01', tickSz='0.0001', lever='50') for c in coins}
         px = {c: 10.0 for c in coins}
         try:
@@ -380,12 +380,12 @@ class MirrorTests(unittest.TestCase):
                    for r, c in enumerate(coins)}
             fake = FakeOKX(prices=px, instruments=specs); m, state = run(fake, paper(**sig))
             orders = [b['instId'] for p, b in fake.posts if p == '/api/v5/trade/order']
-            self.assertEqual(orders, coins[:15])                                                  # fifteen shorts open, well over 20 % of risk
-            self.assertEqual([a['inst'] for a in m.actions if a.get('reason') == 'same_side_count'], coins[15:])
+            self.assertEqual(orders, coins[:20])                                                  # twenty shorts open, well over 20 % of risk
+            self.assertEqual([a['inst'] for a in m.actions if a.get('reason') == 'same_side_count'], coins[20:])
             self.assertFalse([a for a in m.actions if a.get('reason') == 'same_side_risk'])
             self.assertGreater(sum(a['risk_usdt'] for a in m.actions if a['action'] == 'open') / m.equity, .20)
             prof = m.summary()['execution_profile']
-            self.assertEqual((prof['max_same_side'], prof['daily_halt'], prof['same_side_cap']), (15, .25, None))
+            self.assertEqual((prof['max_same_side'], prof['daily_halt'], prof['same_side_cap']), (20, .25, None))
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 

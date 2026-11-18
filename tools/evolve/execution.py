@@ -734,7 +734,7 @@ MIN_TRADE_RISK = .02
 # most about half of the book on one side (13 open, 12 short was the situation that asked for this) while three
 # 3-position seats still fit on one side. With the default 6 the quarter step of CROWD_STEPS is no longer reached;
 # it applies again if the cap is raised.
-MAX_SAME_SIDE_POSITIONS = 15   # 2026-11-15 user: at most 15 per side (was 10, before that 6); above 6 the quarter step of CROWD_STEPS applies again
+MAX_SAME_SIDE_POSITIONS = 20   # 2026-11-18 user: at most 20 per side (was 15, before that 10, before that 6); above 6 the quarter step of CROWD_STEPS applies again
 ACCOUNT_RULES = dict(leader_risk=MAX_TRADE_RISK, leader_lever=LEVERAGE, lever=LEVERAGE, same_side_cap=None, daily_halt=.25,   # 2026-11-15 user: no same-side total-risk cap, daily halt 25 %
                     
                      day_shift=7 * HOUR, majors=MAJORS, major_factor=2.0, max_risk=MAX_TRADE_RISK, min_risk=MIN_TRADE_RISK,
