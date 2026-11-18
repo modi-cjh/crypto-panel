@@ -1,22 +1,36 @@
 {
- "updated_at": "2026-11-18T13:28:05Z",
- "equity": 8102.542942944718,
- "available": 6645.241388677846,
- "day_start": 8189.28828638482,
+ "updated_at": "2026-11-18T17:18:26Z",
+ "equity": 8206.539540042693,
+ "available": 6162.375709728346,
+ "day_start": 8207.588171542693,
  "paused": false,
  "halted": false,
  "dry_run": false,
  "positions": [
   {
+   "inst": "KAITO-USDT-SWAP",
+   "side": "short",
+   "contracts": "2793",
+   "avgPx": "0.177",
+   "markPx": "0.177",
+   "upl": "0",
+   "uplRatio": "0",
+   "lever": "1",
+   "margin": "494.361",
+   "mgnMode": "cross",
+   "ctVal": 1.0,
+   "ours": true
+  },
+  {
    "inst": "ICP-USDT-SWAP",
    "side": "short",
    "contracts": "15844.5",
    "avgPx": "2.253",
-   "markPx": "2.235",
-   "upl": "2.852010000000038",
-   "uplRatio": "0.007989347536618",
+   "markPx": "2.198",
+   "upl": "8.714475000000027",
+   "uplRatio": "0.0244118952507768",
    "lever": "1",
-   "margin": "354.124575",
+   "margin": "348.26210999999995",
    "mgnMode": "cross",
    "ctVal": 0.01,
    "ours": true
@@ -26,11 +40,11 @@
    "side": "short",
    "contracts": "15",
    "avgPx": "43.4319586666666667",
-   "markPx": "44.2717",
-   "upl": "-12.596120000000042",
-   "uplRatio": "-0.0773385644224076",
+   "markPx": "43.6146",
+   "upl": "-2.739620000000045",
+   "uplRatio": "-0.0168209161124953",
    "lever": "4",
-   "margin": "159.5853564472132537",
+   "margin": "159.6509632972132537",
    "mgnMode": "isolated",
    "ctVal": 1.0,
    "ours": true
@@ -40,11 +54,11 @@
    "side": "short",
    "contracts": "35.28",
    "avgPx": "0.1452",
-   "markPx": "0.1537",
-   "upl": "-29.988000000000028",
-   "uplRatio": "-0.1756198347107438",
+   "markPx": "0.1511",
+   "upl": "-20.815200000000058",
+   "uplRatio": "-0.1219008264462813",
    "lever": "3",
-   "margin": "171.188019521578557",
+   "margin": "171.241151201578557",
    "mgnMode": "isolated",
    "ctVal": 100.0,
    "ours": true
@@ -54,11 +68,11 @@
    "side": "short",
    "contracts": "11.3",
    "avgPx": "3.0018141592920356",
-   "markPx": "3.353",
-   "upl": "-39.68400000000001",
-   "uplRatio": "-0.2339824000235846",
+   "markPx": "3.242",
+   "upl": "-27.140999999999984",
+   "uplRatio": "-0.1600271222417122",
    "lever": "2",
-   "margin": "167.027041877109005",
+   "margin": "167.063314877109005",
    "mgnMode": "isolated",
    "ctVal": 10.0,
    "ours": true
@@ -68,11 +82,11 @@
    "side": "short",
    "contracts": "71.9",
    "avgPx": "6.913",
-   "markPx": "7.123",
-   "upl": "-15.098999999999998",
-   "uplRatio": "-0.1215101981773472",
+   "markPx": "6.967",
+   "upl": "-3.8825999999999556",
+   "uplRatio": "-0.0312454795313171",
    "lever": "4",
-   "margin": "128.9172241389920213",
+   "margin": "128.9025625670689264",
    "mgnMode": "isolated",
    "ctVal": 1.0,
    "ours": true
@@ -82,11 +96,11 @@
    "side": "short",
    "contracts": "18.85",
    "avgPx": "68.97",
-   "markPx": "74.22",
-   "upl": "-98.9625",
-   "uplRatio": "-0.3806002609830361",
+   "markPx": "73.09",
+   "upl": "-77.66200000000009",
+   "uplRatio": "-0.2986805857619257",
    "lever": "5",
-   "margin": "261.37966075",
+   "margin": "261.5180763",
    "mgnMode": "isolated",
    "ctVal": 1.0,
    "ours": true
@@ -96,11 +110,11 @@
    "side": "short",
    "contracts": "13.66",
    "avgPx": "0.0656244219619329",
-   "markPx": "0.0593127",
-   "upl": "86.21812200000333",
-   "uplRatio": "0.9617946754021189",
+   "markPx": "0.0585977",
+   "upl": "95.98502200000334",
+   "uplRatio": "1.0707480160372185",
    "lever": "10",
-   "margin": "29.1359180463324517",
+   "margin": "29.2161430897324517",
    "mgnMode": "isolated",
    "ctVal": 1000.0,
    "ours": true
@@ -110,11 +124,11 @@
    "side": "short",
    "contracts": "1.99",
    "avgPx": "71693.407035175879397",
-   "markPx": "64036.8",
-   "upl": "152.36648000000005",
-   "uplRatio": "1.067965291622871",
+   "markPx": "62832.1",
+   "upl": "176.34001000000018",
+   "uplRatio": "1.2360002685920823",
    "lever": "10",
-   "margin": "143.7053024856428455",
+   "margin": "143.8309319816428455",
    "mgnMode": "isolated",
    "ctVal": 0.01,
    "ours": true
@@ -197,7 +211,7 @@
    "DOGE-USDT-SWAP"
   ],
   "major_factor": 2.0,
-  "max_same_side": 15
+  "max_same_side": 20
  },
  "open_mirrors": [
   {
@@ -339,7 +353,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "15844.5",
-   "stop": 2.5175153000160355,
+   "stop": 2.4815153000160355,
    "target": null,
    "leverage": 1,
    "entry": 2.253,
@@ -351,6 +365,25 @@
    "champion": "s20554",
    "ordId": "4108185302442950656",
    "key": "ICP-USDT-SWAP|1794931200000"
+  },
+  {
+   "inst": "KAITO-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "2793",
+   "stop": 0.19292142307902546,
+   "target": null,
+   "leverage": 1,
+   "entry": 0.1772,
+   "clOrdId": "evkaito1794816000",
+   "opened_at": 1795022306136,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "cross",
+   "champion": "s20554",
+   "ordId": "4111085982593826816",
+   "key": "KAITO-USDT-SWAP|1794816000000"
   }
  ],
  "start_equity": 5000.0,
@@ -942,6 +975,10 @@
   [
    1795008485591,
    8102.54
+  ],
+  [
+   1795022306136,
+   8206.54
   ]
  ],
  "closed_trades": 36,
@@ -1350,6 +1387,28 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-18T17:18:26Z",
+   "action": "amend_stop",
+   "inst": "ICP-USDT-SWAP",
+   "dry_run": false,
+   "old": 2.5175153000160355,
+   "new": 2.4815153000160355
+  },
+  {
+   "ts": "2026-11-18T17:18:26Z",
+   "action": "open",
+   "inst": "KAITO-USDT-SWAP",
+   "dry_run": false,
+   "side": -1,
+   "strategy": "evolved",
+   "contracts": "2793",
+   "price": 0.1772,
+   "stop": "0.1929",
+   "target": null,
+   "leverage": 1,
+   "risk_usdt": 43.91
+  },
+  {
    "ts": "2026-11-18T01:30:08Z",
    "action": "close",
    "inst": "IMX-USDT-SWAP",
@@ -1571,27 +1630,6 @@
    "dry_run": false,
    "old": 51.439659154222824,
    "new": 50.599659154222834
-  },
-  {
-   "ts": "2026-11-15T01:21:11Z",
-   "action": "amend_stop",
-   "inst": "BNB-USDT-SWAP",
-   "dry_run": false,
-   "old": 644.0433231865718,
-   "new": 629.5533231866403
-  },
-  {
-   "ts": "2026-11-15T01:21:11Z",
-   "action": "closed_on_exchange",
-   "inst": "XRP-USDT-SWAP",
-   "dry_run": false,
-   "strategy": "evolved",
-   "pnl": 161.9198118464432,
-   "price_pnl": 170.2845,
-   "funding": -7.0056454035568025,
-   "close_price": 0.8865,
-   "fee": -1.35904275,
-   "outcome": "target"
   },
   {
    "ts": "2026-11-15T01:21:11Z",

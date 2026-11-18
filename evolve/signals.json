@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-18T13:27:11Z",
+ "updated_at": "2026-11-18T17:17:26Z",
  "champion": "s22730",
  "team": [
   "s18771",
@@ -105,7 +105,7 @@
   "ENA-USDT-SWAP": {
    "side": -1,
    "entry": 0.142051584,
-   "stop": 0.12757533570031498,
+   "stop": 0.12510533570031498,
    "tp": 0.09432817760914952,
    "opened": 1794470400000,
    "strategy": "evolved",
@@ -211,10 +211,22 @@
    "risk": 0.0214,
    "leverage": 1
   },
+  "KAITO-USDT-SWAP": {
+   "side": -1,
+   "entry": 0.17436512,
+   "stop": 0.19292142307902546,
+   "tp": null,
+   "opened": 1794816000000,
+   "strategy": "evolved",
+   "champion": "s20554",
+   "rank": 100,
+   "risk": 0.0214,
+   "leverage": 1
+  },
   "ICP-USDT-SWAP": {
    "side": -1,
    "entry": 2.2835432,
-   "stop": 2.5175153000160355,
+   "stop": 2.4815153000160355,
    "tp": null,
    "opened": 1794931200000,
    "strategy": "evolved",

@@ -1,6 +1,6 @@
 {
- "day": "2026-11-18",
- "day_start": 8189.28828638482,
+ "day": "2026-11-19",
+ "day_start": 8207.588171542693,
  "halted": false,
  "history": [
   [
@@ -590,6 +590,10 @@
   [
    1795008485591,
    8102.54
+  ],
+  [
+   1795022306136,
+   8206.54
   ]
  ],
  "mirrored": {
@@ -1524,7 +1528,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "15844.5",
-   "stop": 2.5175153000160355,
+   "stop": 2.4815153000160355,
    "target": null,
    "leverage": 1,
    "entry": 2.253,
@@ -1535,6 +1539,24 @@
    "mgnMode": "cross",
    "champion": "s20554",
    "ordId": "4108185302442950656"
+  },
+  "KAITO-USDT-SWAP|1794816000000": {
+   "inst": "KAITO-USDT-SWAP",
+   "side": -1,
+   "posSide": "short",
+   "strategy": "evolved",
+   "contracts": "2793",
+   "stop": 0.19292142307902546,
+   "target": null,
+   "leverage": 1,
+   "entry": 0.1772,
+   "clOrdId": "evkaito1794816000",
+   "opened_at": 1795022306136,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "cross",
+   "champion": "s20554",
+   "ordId": "4111085982593826816"
   }
  },
  "paused": false,
