@@ -124,7 +124,7 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 - **界面层**：看板“策略进化”页（`#/evolve`）显示进化循环、每代适应度、基因池谱系图（点击节点看基因与训练 / 样本外 / 终审回测）和冠军组合的纸面交易（每个席位展示各自的守擂 N/5）；首页有进化卡片。
 - **运行**：`paper-trading.yml` 约每 4 小时运行一次（cron `17 */4 * * *` UTC），每次进化 5 代，然后 OKX 模拟盘跟随通过门槛的持仓（`evolve/signals.json`）。手动运行时勾选 `reset` 会从新的随机种群重新开始（保留 K 线缓存）。本地：`python3 tools/evolve/run.py --data <目录> --generations 5`。
 
-- **当前风控（实盘 / 模拟盘跟随进化冠军，代码为准）**：每笔止损风险 = 开仓策略的风险基因 2%–10%（`okx_demo_trader.RISK_RANGE = (.02, .10)`；纸面 `execution.MIN_TRADE_RISK` / `MAX_TRADE_RISK`）；主流币（BTC/ETH/SOL/BNB/XRP/DOGE）风险 ×2，但加倍后仍 ≤ 10%（`MAX_TRADE_RISK = .10`）；同方向已有 ≥3 仓时新仓风险减半、≥6 仓减到四分之一（`CROWD_STEPS`）；同方向最多 15 仓（`MAX_SAME_SIDE_POSITIONS = 15`，含第一名）；同方向合计风险不设上限（`same_side_cap = None`）；当天（UTC+7）亏损达 25% 全部平仓停手到次日（`EVOLVED_DAILY_HALT = .25` / `ACCOUNT_RULES['daily_halt'] = .25`，含第一名）；杠杆 = 杠杆基因 1–20×，再受该币 OKX 最高档限制（实盘取不到上限不开新仓）；全仓（`cross`）；每笔都挂交易所止损；维持保证金率主流币 0.5%、其他 2.5%；保证金最多用可用的 95%；第一名只是信号优先，风险 / 杠杆同样按自己的基因、受同样上限；每个策略同时最多 3 仓；实盘只扫描信号列表前 50 个币（`SCAN_LIMIT = 50`，与币池 `UNIVERSE_SIZE = 50` 一致）。代码里 `DAILY_HALT = .10`、`RISK = .01`、10× 只属于已退役的旧档（legacy volume-test），不是实盘现状。
+- **当前风控（实盘 / 模拟盘跟随进化冠军，代码为准）**：每笔止损风险 = 开仓策略的风险基因 2%–10%（`okx_demo_trader.RISK_RANGE = (.02, .10)`；纸面 `execution.MIN_TRADE_RISK` / `MAX_TRADE_RISK`）；主流币（BTC/ETH/SOL/BNB/XRP/DOGE）风险 ×2，但加倍后仍 ≤ 10%（`MAX_TRADE_RISK = .10`）；同方向已有 ≥3 仓时新仓风险减半、≥6 仓减到四分之一（`CROWD_STEPS`）；同方向最多 20 仓（`MAX_SAME_SIDE_POSITIONS = 20`，含第一名）；同方向合计风险不设上限（`same_side_cap = None`）；当天（UTC+7）亏损达 25% 全部平仓停手到次日（`EVOLVED_DAILY_HALT = .25` / `ACCOUNT_RULES['daily_halt'] = .25`，含第一名）；杠杆 = 杠杆基因 1–20×，再受该币 OKX 最高档限制（实盘取不到上限不开新仓）；全仓（`cross`）；每笔都挂交易所止损；维持保证金率主流币 0.5%、其他 2.5%；保证金最多用可用的 95%；第一名只是信号优先，风险 / 杠杆同样按自己的基因、受同样上限；每个策略同时最多 3 仓；实盘只扫描信号列表前 50 个币（`SCAN_LIMIT = 50`，与币池 `UNIVERSE_SIZE = 50` 一致）。代码里 `DAILY_HALT = .10`、`RISK = .01`、10× 只属于已退役的旧档（legacy volume-test），不是实盘现状。
 
 旧的三套固定策略（`tools/paper_trader.py`）已退役，以下章节保留作历史参考（其中的 1% / 2% / 3% 风险、5% / 6% 同向上限、8% 日亏停手、10× 杠杆、5 币 / 100 币等数字只属于旧引擎，不是当前规则）。
 
@@ -167,7 +167,7 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 
 ### OKX 实盘（模式开关，默认 dry-run）
 
-同一个跟单程序 `tools/okx_demo_trader.py` 通过环境变量切换模拟盘 / 实盘：`OKX_TRADING_MODE=demo`（默认，带 `x-simulated-trading: 1`，状态在 `okx_demo/`）或 `live`（不带该请求头，状态在 `okx_live/`）。实盘下 `OKX_DRY_RUN` 默认开，只有精确设为 `0` 才真实下单，新实盘状态还需显式 `resume`；dry-run 时 OKX 客户端拒绝一切非 GET 请求。实盘拒绝在 GitHub Actions 与 `runtime/` 中运行，只能在 API Key 绑定 IP 的新加坡服务器上以 systemd 定时任务运行；交易规则与模拟盘相同（2026-11-15 起：同方向最多 15 单、同方向合计风险不设上限、当天亏损 25% 全部平仓停手；止损、拥挤降风险、杠杆 1–20×、风险 2–10% 不变）。部署、切换与紧急平仓见 [`deploy/live/README.md`](deploy/live/README.md)。
+同一个跟单程序 `tools/okx_demo_trader.py` 通过环境变量切换模拟盘 / 实盘：`OKX_TRADING_MODE=demo`（默认，带 `x-simulated-trading: 1`，状态在 `okx_demo/`）或 `live`（不带该请求头，状态在 `okx_live/`）。实盘下 `OKX_DRY_RUN` 默认开，只有精确设为 `0` 才真实下单，新实盘状态还需显式 `resume`；dry-run 时 OKX 客户端拒绝一切非 GET 请求。实盘拒绝在 GitHub Actions 与 `runtime/` 中运行，只能在 API Key 绑定 IP 的新加坡服务器上以 systemd 定时任务运行；交易规则与模拟盘相同（2026-11-15 起：同方向最多 20 单、同方向合计风险不设上限、当天亏损 25% 全部平仓停手；止损、拥挤降风险、杠杆 1–20×、风险 2–10% 不变）。部署、切换与紧急平仓见 [`deploy/live/README.md`](deploy/live/README.md)。
 
 ## 账户历史
 

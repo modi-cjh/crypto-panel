@@ -613,6 +613,12 @@
 - 不变：单笔风险 2%–10%（主流币加倍仍 ≤ 10%）、杠杆 1–20×、日亏 25% 停手、同向合计风险不设上限、扫描前 50 币、拥挤降风险（≥3 仓减半 / ≥6 仓四分之一）、每笔交易所止损、全仓。
 - 测试：`tests/test_evolve.py`（上限边界 14/15/16、17 个多头信号取 15、平仓不受影响 15 笔）、`tests/test_okx_demo_trader.py`（默认 15 单、第 16 单起 `same_side_count`）、`tests/test_okx_live_mode.py` 断言改为 15。
 
+### 同方向最多持仓 15 → 20（纸面与实盘同步，2026-11-18）
+- 做了什么：`tools/evolve/execution.py` 的 `MAX_SAME_SIDE_POSITIONS`（即 `ACCOUNT_RULES['max_same_side']`）15 → 20；`tools/okx_demo_trader.py` 的 `MAX_SAME_SIDE` 跟随为 20（模拟盘与实盘共用，摘要 `execution_profile.max_same_side` 显示 20）。文档 AGENTS.md、README.md、`deploy/live/README.md` 与 `paper.py` 文档字符串同步改为 20。
+- 为什么：用户要求实盘同方向最多开 20 单。实盘只跟随纸面账户的持仓信号，纸面同向上限必须一起放宽，否则实盘到不了 20 单（回测与纸面同源）。纸面账户每次从起点整体重放，新上限会改写重放结果（只对 `side_cap_from` 之后的开仓生效，不变）。
+- 不变：单笔风险 2%–10%（主流币加倍仍 ≤ 10%）、杠杆 1–20×、日亏 25% 停手、同向合计风险不设上限、扫描前 50 币、拥挤降风险（≥3 仓减半 / ≥6 仓四分之一）、每笔交易所止损、全仓。
+- 测试：`tests/test_evolve.py`（上限边界 19/20/21、22 个多头信号取 20（策略数增至 8 个 = 24 个空位，只让同向上限起作用）、平仓不受影响 20 笔）、`tests/test_okx_demo_trader.py`（默认 20 单、第 21 单起 `same_side_count`）、`tests/test_okx_live_mode.py` 断言改为 20。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

@@ -550,8 +550,8 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(X.simulate_account([seg(1, wind_i=40)], sr, 30, 71, equity=10000.0)['positions'], [])   # wound before the signal bar
 
     def test_same_side_full_boundaries(self):
-        self.assertEqual(X.MAX_SAME_SIDE_POSITIONS, 15); self.assertEqual(X.ACCOUNT_RULES['max_same_side'], 15)
-        self.assertEqual([X.same_side_full(n) for n in (0, 14, 15, 16)], [False, False, True, True])   # 14 open: one more fits; 15: full
+        self.assertEqual(X.MAX_SAME_SIDE_POSITIONS, 20); self.assertEqual(X.ACCOUNT_RULES['max_same_side'], 20)
+        self.assertEqual([X.same_side_full(n) for n in (0, 19, 20, 21)], [False, False, True, True])   # 19 open: one more fits; 20: full
         self.assertEqual([X.same_side_full(n, 1) for n in (0, 1)], [False, True])
         self.assertFalse(X.same_side_full(50, None)); self.assertFalse(X.same_side_full(50, 0))       # None / 0 = off
 
@@ -563,30 +563,30 @@ class EvolutionTests(unittest.TestCase):
         return sr
 
     def test_same_side_count_blocks_new_entries_on_a_full_side_only(self):
-        sr = self._two_sided_market(ups=17)
+        sr = self._two_sided_market(ups=22)
         g = base_genes(risk=.02)
-        segs = [dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]) for i in range(7)]   # 21 free slots: only the cap binds
+        segs = [dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]) for i in range(8)]   # 24 free slots: only the cap binds
         side = lambda r, d: sum(1 for p in r['positions'] if p['side'] == d)
         r = X.simulate_account(segs, sr, 30, 71, equity=10000.0)
-        self.assertEqual((side(r, 1), side(r, -1)), (15, 2))         # 17 long signals: 15 taken; the 2 shorts are not affected
-        # boundaries: cap 16 → 16 longs, cap 17 (= the signals) → all 17, off → all 17; a cap of 2 also fills the short side exactly
-        for cap, want in ((16, (16, 2)), (17, (17, 2)), (None, (17, 2)), (2, (2, 2))):
+        self.assertEqual((side(r, 1), side(r, -1)), (20, 2))         # 22 long signals: 20 taken; the 2 shorts are not affected
+        # boundaries: cap 21 → 21 longs, cap 22 (= the signals) → all 22, off → all 22; a cap of 2 also fills the short side exactly
+        for cap, want in ((21, (21, 2)), (22, (22, 2)), (None, (22, 2)), (2, (2, 2))):
             rc = X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=dict(X.ACCOUNT_RULES, max_same_side=cap))
             self.assertEqual((side(rc, 1), side(rc, -1)), want, cap)
-        # the leader counts too: with the leader seated the long side still stops at 15
+        # the leader counts too: with the leader seated the long side still stops at 20
         lead = X.simulate_account([dict(segs[0], boosts=[(0, None)])] + segs[1:], sr, 30, 71, equity=10000.0)
-        self.assertEqual(side(lead, 1), 15)
+        self.assertEqual(side(lead, 1), 20)
         # side_cap_from: fills happen on bar 41 (signal on bar 40's close); the cap applies to fills after that bar
-        self.assertEqual(side(X.simulate_account(segs, sr, 30, 71, equity=10000.0, side_cap_from=40), 1), 15)
-        self.assertEqual(side(X.simulate_account(segs, sr, 30, 71, equity=10000.0, side_cap_from=41), 1), 17)
+        self.assertEqual(side(X.simulate_account(segs, sr, 30, 71, equity=10000.0, side_cap_from=40), 1), 20)
+        self.assertEqual(side(X.simulate_account(segs, sr, 30, 71, equity=10000.0, side_cap_from=41), 1), 22)
 
     def test_same_side_count_never_blocks_exits(self):
-        sr = self._two_sided_market(ups=17, downs=0)
+        sr = self._two_sided_market(ups=22, downs=0)
         g = base_genes(risk=.02, max_hold=5)
-        segs = [dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]) for i in range(6)]
+        segs = [dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]) for i in range(8)]
         r = X.simulate_account(segs, sr, 30, 71, equity=10000.0)
         self.assertEqual(r['positions'], [])                         # the full long side still runs every position to its exit
-        self.assertEqual([t['reason'] for t in r['trades']], ['time'] * 15)
+        self.assertEqual([t['reason'] for t in r['trades']], ['time'] * 20)
 
     def test_paper_account_records_when_the_same_side_count_started(self):
         acc = dict(from_ts=T0, start_equity=10000.0, segs=[], next=0)
