@@ -195,3 +195,5 @@
 {"ts": "2026-11-17T17:17:37Z", "action": "closed_on_exchange", "inst": "ICP-USDT-SWAP", "dry_run": false, "strategy": "evolved", "pnl": -141.79611890775814, "price_pnl": -151.639155, "funding": 11.380399014741869, "close_price": 2.265, "fee": -1.5373629225, "outcome": "stop"}
 {"ts": "2026-11-17T17:17:37Z", "action": "open", "inst": "ICP-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "15844.5", "price": 2.253, "stop": "2.53", "target": null, "leverage": 1, "risk_usdt": 43.81}
 {"ts": "2026-11-17T21:02:49Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.5295153000160355, "new": 2.5175153000160355}
+{"ts": "2026-11-18T01:30:08Z", "action": "close", "inst": "IMX-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-18T01:30:08Z", "action": "close", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}

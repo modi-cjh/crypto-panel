@@ -574,6 +574,10 @@
   [
    1794949369601,
    8138.76
+  ],
+  [
+   1794965408752,
+   8069.71
   ]
  ],
  "mirrored": {
@@ -1340,11 +1344,12 @@
    "entry": 0.1049,
    "clOrdId": "evimx1794614400",
    "opened_at": 1794618931445,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s15653",
-   "ordId": "4097551032842174464"
+   "ordId": "4097551032842174464",
+   "closed_reason": "paper_closed"
   },
   "ETHFI-USDT-SWAP|1794614400000": {
    "inst": "ETHFI-USDT-SWAP",
@@ -1358,11 +1363,12 @@
    "entry": 0.5592,
    "clOrdId": "evethfi1794614400",
    "opened_at": 1794618931445,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s14155",
-   "ordId": "4097551068174991360"
+   "ordId": "4097551068174991360",
+   "closed_reason": "paper_closed"
   },
   "SOL-USDT-SWAP|1794700800000": {
    "inst": "SOL-USDT-SWAP",
@@ -1619,6 +1625,20 @@
    "funding": -10.803168247094728,
    "close_price": 590.8,
    "fee": -0.884589
+  },
+  "2026-11-18T01:30:08Z|IMX-USDT-SWAP": {
+   "pnl": 20.818170955001133,
+   "price_pnl": 20.760800000001133,
+   "funding": 0.405612855,
+   "close_price": 0.0982441116603664,
+   "fee": -0.3482419
+  },
+  "2026-11-18T01:30:08Z|ETHFI-USDT-SWAP": {
+   "pnl": 24.73870371911503,
+   "price_pnl": 24.414500000000007,
+   "funding": 0.4813431691150222,
+   "close_price": 0.4783240924092409,
+   "fee": -0.15713945
   }
  },
  "largest_close": {

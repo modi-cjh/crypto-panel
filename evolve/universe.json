@@ -414,7 +414,7 @@
    ],
    [
     1794754800000,
-    null
+    1794960000000
    ]
   ],
   "JUP-USDT-SWAP": [
@@ -478,7 +478,7 @@
    ],
    [
     1794744000000,
-    null
+    1794960000000
    ]
   ],
   "H-USDT-SWAP": [
@@ -596,7 +596,7 @@
    ],
    [
     1794888000000,
-    null
+    1794960000000
    ]
   ],
   "OP-USDT-SWAP": [
@@ -614,13 +614,13 @@
    ],
    [
     1794888000000,
-    null
+    1794960000000
    ]
   ],
   "XLM-USDT-SWAP": [
    [
     1794571200000,
-    null
+    1794960000000
    ]
   ],
   "GRASS-USDT-SWAP": [
@@ -658,7 +658,7 @@
    ],
    [
     1794801600000,
-    null
+    1794960000000
    ]
   ],
   "CFX-USDT-SWAP": [
@@ -680,7 +680,7 @@
    ],
    [
     1794819600000,
-    null
+    1794960000000
    ]
   ],
   "SYRUP-USDT-SWAP": [
@@ -756,7 +756,7 @@
    ],
    [
     1794682800000,
-    null
+    1794960000000
    ]
   ],
   "HBAR-USDT-SWAP": [
@@ -778,7 +778,7 @@
    ],
    [
     1794931200000,
-    null
+    1794960000000
    ]
   ],
   "ATOM-USDT-SWAP": [
@@ -788,7 +788,7 @@
    ],
    [
     1794700800000,
-    null
+    1794960000000
    ]
   ],
   "ALGO-USDT-SWAP": [
@@ -798,7 +798,7 @@
    ],
    [
     1794628800000,
-    null
+    1794960000000
    ]
   ],
   "NOT-USDT-SWAP": [
@@ -854,7 +854,7 @@
    ],
    [
     1794682800000,
-    null
+    1794960000000
    ]
   ],
   "COMP-USDT-SWAP": [
@@ -894,7 +894,7 @@
    ],
    [
     1794888000000,
-    null
+    1794960000000
    ]
   ],
   "DOT-USDT-SWAP": [
@@ -904,13 +904,13 @@
    ],
    [
     1794668400000,
-    null
+    1794960000000
    ]
   ],
   "MAGIC-USDT-SWAP": [
    [
     1794614400000,
-    null
+    1794960000000
    ]
   ],
   "RESOLV-USDT-SWAP": [
@@ -977,27 +977,12 @@
   ]
  },
  "price_off_now": {
-  "DOGE-USDT-SWAP": -0.0293,
-  "SUI-USDT-SWAP": -0.3023,
-  "AAVE-USDT-SWAP": 0.1373,
-  "FIL-USDT-SWAP": -0.0363,
-  "INJ-USDT-SWAP": -0.0838,
-  "XPL-USDT-SWAP": 0.0904,
-  "DOT-USDT-SWAP": -0.0511,
-  "OP-USDT-SWAP": -0.0818,
-  "XLM-USDT-SWAP": 0.1032,
-  "CRV-USDT-SWAP": -0.0805,
-  "ASTER-USDT-SWAP": 0.0734,
-  "H-USDT-SWAP": 1.9032,
-  "HBAR-USDT-SWAP": 0.0232,
-  "JUP-USDT-SWAP": -0.3493,
-  "ATOM-USDT-SWAP": 0.1023,
-  "ALGO-USDT-SWAP": -0.1287,
-  "MAGIC-USDT-SWAP": -0.0233,
-  "BARD-USDT-SWAP": 0.3846,
-  "HOME-USDT-SWAP": 0.0294,
-  "MINA-USDT-SWAP": -0.0376,
-  "CFX-USDT-SWAP": -0.3101
+  "XPL-USDT-SWAP": 0.0836,
+  "ASTER-USDT-SWAP": 0.0882,
+  "H-USDT-SWAP": 1.8802,
+  "JUP-USDT-SWAP": 0.1067,
+  "BARD-USDT-SWAP": 0.3915,
+  "HOME-USDT-SWAP": 0.0337
  },
  "trimmed_at": 1794761546503
 }
