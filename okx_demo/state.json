@@ -598,6 +598,10 @@
   [
    1795035951305,
    8202.56
+  ],
+  [
+   1795051654501,
+   8197.4
   ]
  ],
  "mirrored": {
@@ -1402,11 +1406,12 @@
    "entry": 69.02,
    "clOrdId": "evsol1794700800",
    "opened_at": 1794705671135,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s15653",
-   "ordId": "4100461477332762624"
+   "ordId": "4100461477332762624",
+   "closed_reason": "paper_closed"
   },
   "AVAX-USDT-SWAP|1794700800000": {
    "inst": "AVAX-USDT-SWAP",
@@ -1420,11 +1425,12 @@
    "entry": 6.913,
    "clOrdId": "evavax1794700800",
    "opened_at": 1794705671135,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s15653",
-   "ordId": "4100461501022191616"
+   "ordId": "4100461501022191616",
+   "closed_reason": "paper_closed"
   },
   "NEAR-USDT-SWAP|1794700800000": {
    "inst": "NEAR-USDT-SWAP",
@@ -1532,7 +1538,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "15844.5",
-   "stop": 2.4815153000160355,
+   "stop": 2.452515300016035,
    "target": null,
    "leverage": 1,
    "entry": 2.253,
@@ -1677,6 +1683,20 @@
    "funding": 0.4813431691150222,
    "close_price": 0.4783240924092409,
    "fee": -0.15713945
+  },
+  "2026-11-19T01:27:34Z|SOL-USDT-SWAP": {
+   "pnl": -79.8127473,
+   "price_pnl": -80.1125,
+   "funding": 1.63989345,
+   "close_price": 73.22,
+   "fee": -1.34014075
+  },
+  "2026-11-19T01:27:34Z|AVAX-USDT-SWAP": {
+   "pnl": -0.9259392406548884,
+   "price_pnl": -5.0601999999999965,
+   "funding": 4.633835559345108,
+   "close_price": 6.983378303198887,
+   "fee": -0.4995748
   }
  },
  "largest_close": {

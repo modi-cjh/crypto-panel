@@ -199,3 +199,6 @@
 {"ts": "2026-11-18T01:30:08Z", "action": "close", "inst": "ETHFI-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
 {"ts": "2026-11-18T17:18:26Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.5175153000160355, "new": 2.4815153000160355}
 {"ts": "2026-11-18T17:18:26Z", "action": "open", "inst": "KAITO-USDT-SWAP", "dry_run": false, "side": -1, "strategy": "evolved", "contracts": "2793", "price": 0.1772, "stop": "0.1929", "target": null, "leverage": 1, "risk_usdt": 43.91}
+{"ts": "2026-11-19T01:27:34Z", "action": "close", "inst": "SOL-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-19T01:27:34Z", "action": "close", "inst": "AVAX-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed"}
+{"ts": "2026-11-19T01:27:34Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.4815153000160355, "new": 2.452515300016035}
