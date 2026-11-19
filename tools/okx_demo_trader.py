@@ -53,15 +53,16 @@ BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
 RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # legacy volume-test profiles: 1 % risk, 10× cap; daily halt 10 %
 EVOLVED_DAILY_HALT = .25                         # following the evolution champions: 25 % (2026-11-15, was 10 %), counted on the whole account including the leader
-RISK_RANGE = (.02, .10)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range
-MAX_TRADE_RISK = .10
+RISK_RANGE = (.05, .20)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range; missing p['risk'] defaults to 5 %
+MAX_TRADE_RISK = .20      # 2026-11-20 live/demo follow: was .10; paper/evolution execution.MAX_TRADE_RISK stays .10
 EVOLVED_MAX_LEVERAGE = GENE_MAX_LEVERAGE   # 20×, same cap as the evolve leverage gene
 # MAJORS comes from execution. The per-instrument OKX leverage cap is read from the public instruments spec; when it is
 # missing or unusable no new position is opened on that coin (fail closed, no 20× fallback). Existing positions are
 # still managed and closed.
-# Every seat including the leader uses its own risk and leverage genes (2–10 %, 1–20×). Majors may be doubled then
-# clamped so the result never exceeds 10 %. The leader counts toward the same-direction cap and is subject to the
+# Every seat including the leader uses its own risk and leverage genes (5–20 %, 1–20×). Majors may be doubled then
+# clamped so the result never exceeds 20 %. The leader counts toward the same-direction cap and is subject to the
 # daily-loss stop, same as everyone else. LEADER_RISK / LEADER_LEVERAGE are the caps, not a fixed bigger size.
+# LEADER_RISK follows MAX_TRADE_RISK, so the 2026-11-20 cap raise also lifts the leader cap from 10 % to 20 %.
 LEADER_RISK, LEADER_LEVERAGE = MAX_TRADE_RISK, EVOLVED_MAX_LEVERAGE
 MARGIN_MODE = 'cross'             # evolved and legacy modes both use cross margin (全仓); liquidation is at the account level
 # Trading mode switch. demo = OKX demo trading (x-simulated-trading: 1); live = the real account (header omitted).
@@ -73,7 +74,7 @@ SIMULATED_VALUE = '1'
 LIVE_SIGNAL_MAX_AGE = 9 * 3600_000   # live refuses to act on evolve/signals.json older than this (cron is every 4 h)
 MAJOR_FACTOR = 2.0   # majors (execution.MAJORS) risk twice as much (execution.ACCOUNT_RULES)
 PRICE_TOLERANCE = .01             # demo mode: no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
-CROWD_STEPS = ((6, .25), (3, .5))  # same-side positions already open → risk factor for the next entry (execution.crowd_factor)
+CROWD_STEPS = ((10, .5),)  # 2026-11-20: <10 same-side already open → full risk; ≥10 → half. Paper/evolution execution.CROWD_STEPS stays ((6, .25), (3, .5)).
 SAME_SIDE_CAP = .05
 MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 20 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
@@ -95,7 +96,7 @@ def configure_evolved(universe=None):
     so a longer list from an older evolution run is never scanned in full; without it, the five majors."""
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT, MARGIN_MODE
     MARGIN_MODE = 'cross'
-    # Each order risks its strategy's own risk gene (2–10 %, capped at 10 % after crowding and the major-coin factor)
+    # Each order risks its strategy's own risk gene (5–20 %, default 5 % when missing, capped at 20 % after crowding and the major-coin factor)
     # and its leverage gene (1–20×, clamped to that coin's OKX max). An order is skipped if its stop would leave
     # account equity at or below total maintenance margin (0.5 % majors / 2.5 % others).
     # No total-risk cap per direction (only at most MAX_SAME_SIDE = 20 open per side); a 25 % daily loss on the whole account closes every
@@ -520,7 +521,7 @@ class Mirror:
             r *= next((f for n, f in CROWD_STEPS if crowd >= n), 1.0)
             if inst in MAJORS:
                 r *= MAJOR_FACTOR
-            r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 10 %
+            r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 20 %
         risk = r * self.equity
         same_risk = 0.0
         for existing_key, m in (self.s['mirrored'].items() if SAME_SIDE_CAP is not None else ()):   # only needed for a same-side risk cap

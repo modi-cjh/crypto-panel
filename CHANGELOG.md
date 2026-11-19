@@ -619,6 +619,12 @@
 - 不变：单笔风险 2%–10%（主流币加倍仍 ≤ 10%）、杠杆 1–20×、日亏 25% 停手、同向合计风险不设上限、扫描前 50 币、拥挤降风险（≥3 仓减半 / ≥6 仓四分之一）、每笔交易所止损、全仓。
 - 测试：`tests/test_evolve.py`（上限边界 19/20/21、22 个多头信号取 20（策略数增至 8 个 = 24 个空位，只让同向上限起作用）、平仓不受影响 20 笔）、`tests/test_okx_demo_trader.py`（默认 20 单、第 21 单起 `same_side_count`）、`tests/test_okx_live_mode.py` 断言改为 20。
 
+### 实盘单笔风险 2–10% → 5–20%，拥挤改为满 10 仓才减半（2026-11-20，只改跟单程序）
+- 做了什么：只改 `tools/okx_demo_trader.py`（OKX 实盘与模拟盘跟单共用）。`RISK_RANGE` `.02–.10` → `.05–.20`（缺 `p['risk']` 时默认 5%）；`MAX_TRADE_RISK` / `execution_profile.max_risk` 单笔上限 10% → 20%（主流币 ×2 后也不超过 20%）；`LEADER_RISK` 本就等于 `MAX_TRADE_RISK`，因此上限一并从 10% 升到 20%（第一名仍按自己的基因开仓，这只是帽）。`CROWD_STEPS` `((6, .25), (3, .5))` → `((10, .5),)`：同向已开不到 10 仓按满风险，≥10 仓下一单减半。摘要 `execution_profile.risk` / `risk_max` / `max_risk` / `leader_risk` 分别为 5% / 20% / 20% / 20%。文档 AGENTS.md、README.md、`deploy/live/README.md` 改为写明跟单与纸面从此分开。
+- 为什么：用户要求仓位按满风险开，并把每单风险从 2–10% 提到 5–20%；同向 7 单时旧规则已把新单压到四分之一。
+- 不变：杠杆 ≤20×、同向最多 20 仓、全仓、日亏 25% 停手、同向合计风险不设上限、扫描前 50 币、每笔交易所止损、主流币 ×2。**未改** `tools/evolve/execution.py` / `paper.py`：纸面与进化仍是 `MIN_TRADE_RISK` / `MAX_TRADE_RISK` 2%–10%、`CROWD_STEPS = ((6, .25), (3, .5))`、`ACCOUNT_RULES['leader_risk'] = 10%`。已开仓位不会按新风险重调，只影响之后的新单。
+- 测试：`tests/test_okx_demo_trader.py`（基因夹到 5–20%、缺风险默认 5%、5 仓仍满风险、第 11、12 单减半、主流币 ×2 后不超过 20%、`LEADER_RISK = 20%`）、`tests/test_okx_live_mode.py`（常量与 `execution_profile` 断言，3% 基因抬到 5% 后再 ×2 的下单张数）。`tests/test_evolve.py` 未改。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |
