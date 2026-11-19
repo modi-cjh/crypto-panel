@@ -1,11 +1,11 @@
 {
- "updated_at": "2026-11-19T05:17:50Z",
+ "updated_at": "2026-11-19T09:18:39Z",
  "champion": "s22730",
  "team": [
   "s18771",
   "s23178",
   "s20401",
-  "s25353",
+  "s25439",
   "s21482",
   "s22730",
   "s21328",
@@ -76,18 +76,6 @@
    "risk": 0.02,
    "leverage": 10,
    "leader": true
-  },
-  "GRASS-USDT-SWAP": {
-   "side": -1,
-   "entry": 0.45760846,
-   "stop": 0.42832690584165245,
-   "tp": 0.2825758142275384,
-   "opened": 1794384000000,
-   "strategy": "evolved",
-   "champion": "s13215",
-   "rank": 100,
-   "risk": 0.0234,
-   "leverage": 10
   },
   "CRV-USDT-SWAP": {
    "side": -1,
@@ -174,18 +162,6 @@
    "rank": 100,
    "risk": 0.055,
    "leverage": 20
-  },
-  "XPL-USDT-SWAP": {
-   "side": -1,
-   "entry": 0.043541289999999996,
-   "stop": 0.048375669159963,
-   "tp": null,
-   "opened": 1794801600000,
-   "strategy": "evolved",
-   "champion": "s20554",
-   "rank": 100,
-   "risk": 0.0214,
-   "leverage": 1
   },
   "KAITO-USDT-SWAP": {
    "side": -1,
