@@ -419,6 +419,10 @@
    [
     1794754800000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "JUP-USDT-SWAP": [
@@ -487,6 +491,10 @@
    [
     1794744000000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "H-USDT-SWAP": [
@@ -605,6 +613,10 @@
    [
     1794888000000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "OP-USDT-SWAP": [
@@ -623,12 +635,20 @@
    [
     1794888000000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "XLM-USDT-SWAP": [
    [
     1794571200000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "GRASS-USDT-SWAP": [
@@ -647,12 +667,20 @@
    [
     1794931200000,
     1794945600000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "BOME-USDT-SWAP": [
    [
     1794571200000,
     1794916800000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "MINA-USDT-SWAP": [
@@ -667,6 +695,10 @@
    [
     1794801600000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "CFX-USDT-SWAP": [
@@ -689,6 +721,10 @@
    [
     1794819600000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "SYRUP-USDT-SWAP": [
@@ -765,6 +801,10 @@
    [
     1794682800000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "HBAR-USDT-SWAP": [
@@ -787,6 +827,10 @@
    [
     1794931200000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "ATOM-USDT-SWAP": [
@@ -797,6 +841,10 @@
    [
     1794700800000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "ALGO-USDT-SWAP": [
@@ -863,6 +911,10 @@
    [
     1794682800000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "COMP-USDT-SWAP": [
@@ -913,6 +965,10 @@
    [
     1794668400000,
     1794960000000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "MAGIC-USDT-SWAP": [
@@ -975,6 +1031,10 @@
    [
     1794855600000,
     1794873600000
+   ],
+   [
+    1795089600000,
+    null
    ]
   ],
   "ZIL-USDT-SWAP": [
@@ -982,15 +1042,128 @@
     1794744000000,
     null
    ]
+  ],
+  "ETH-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "PEPE-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "NEAR-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "ENA-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "AVAX-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "ADA-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "ACT-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "ICP-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "ETHFI-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "SHIB-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "ETC-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "KAITO-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "AXS-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
+  ],
+  "IMX-USDT-SWAP": [
+   [
+    1795089600000,
+    null
+   ]
   ]
  },
  "price_off_now": {
-  "ARB-USDT-SWAP": -0.0437,
-  "XPL-USDT-SWAP": 0.0262,
-  "ASTER-USDT-SWAP": -0.3044,
-  "H-USDT-SWAP": 0.4681,
-  "BARD-USDT-SWAP": -0.2463,
-  "HOME-USDT-SWAP": 0.0948
+  "ETH-USDT-SWAP": 0.0176,
+  "PEPE-USDT-SWAP": 0.0351,
+  "NEAR-USDT-SWAP": -0.3062,
+  "ARB-USDT-SWAP": -0.0149,
+  "SUI-USDT-SWAP": 0.0847,
+  "ENA-USDT-SWAP": 0.0117,
+  "AAVE-USDT-SWAP": -0.0122,
+  "AVAX-USDT-SWAP": -0.0397,
+  "FIL-USDT-SWAP": -0.0634,
+  "INJ-USDT-SWAP": -0.0856,
+  "ADA-USDT-SWAP": 0.0482,
+  "ACT-USDT-SWAP": 0.0173,
+  "XPL-USDT-SWAP": 0.0381,
+  "DOT-USDT-SWAP": -0.0201,
+  "ICP-USDT-SWAP": 0.0234,
+  "OP-USDT-SWAP": -0.0203,
+  "XLM-USDT-SWAP": 0.0172,
+  "ETHFI-USDT-SWAP": 0.1006,
+  "CRV-USDT-SWAP": 0.0965,
+  "SHIB-USDT-SWAP": -0.0419,
+  "ASTER-USDT-SWAP": 0.1085,
+  "H-USDT-SWAP": 0.4319,
+  "HBAR-USDT-SWAP": 0.0995,
+  "GRASS-USDT-SWAP": -0.0315,
+  "ETC-USDT-SWAP": 0.0239,
+  "BOME-USDT-SWAP": -0.0172,
+  "ATOM-USDT-SWAP": 0.1144,
+  "KAITO-USDT-SWAP": 0.0962,
+  "BARD-USDT-SWAP": -0.2389,
+  "HOME-USDT-SWAP": 0.0787,
+  "2Z-USDT-SWAP": 0.1012,
+  "MINA-USDT-SWAP": 0.0923,
+  "AXS-USDT-SWAP": 0.0371,
+  "IMX-USDT-SWAP": -0.2264,
+  "CFX-USDT-SWAP": -0.0124
  },
  "trimmed_at": 1794761546503
 }

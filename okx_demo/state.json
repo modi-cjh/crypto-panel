@@ -610,6 +610,10 @@
   [
    1795079983333,
    8116.9
+  ],
+  [
+   1795095041927,
+   8143.21
   ]
  ],
  "mirrored": {
@@ -1570,11 +1574,13 @@
    "entry": 0.1772,
    "clOrdId": "evkaito1794816000",
    "opened_at": 1795022306136,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
    "champion": "s20554",
-   "ordId": "4111085982593826816"
+   "ordId": "4111085982593826816",
+   "closed_reason": "exchange_stop_or_target",
+   "realized_pnl": -48.968075044858715
   }
  },
  "paused": false,
