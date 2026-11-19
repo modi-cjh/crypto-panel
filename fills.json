@@ -1,8 +1,18 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-19T05:50:04Z",
+ "updated_at": "2026-11-19T06:50:04Z",
  "fills": [
+  {
+   "ts": "2026-11-19T06:50:04Z",
+   "action": "closed_on_exchange",
+   "inst": "GRASS-USDT-SWAP",
+   "strategy": "evolved",
+   "close_price": 0.4283,
+   "pnl": -0.723699,
+   "outcome": "stop",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-19T01:50:03Z",
    "action": "amend_stop",

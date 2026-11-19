@@ -1,8 +1,32 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-19T05:50:04Z",
+ "updated_at": "2026-11-19T06:50:04Z",
  "trades": [
+  {
+   "inst": "GRASS-USDT-SWAP",
+   "side": "short",
+   "contracts": 17.0,
+   "leverage": 10.0,
+   "entry": 0.3857,
+   "exit": 0.4283,
+   "stop": 0.4283,
+   "target": 0.2826,
+   "pnl": -0.723699,
+   "pnl_pct": -11.0449,
+   "roe_pct": -110.449,
+   "r": -0.9522,
+   "fee": -0.006919,
+   "funding": 0.00742,
+   "opened_at": "2026-11-15T15:50:04Z",
+   "closed_at": "2026-11-19T06:50:04Z",
+   "hold_minutes": 5220,
+   "exit_type": "sl",
+   "outcome": "stop",
+   "reason": "exchange_stop_or_target",
+   "strategy": "evolved",
+   "champion": "s13215"
+  },
   {
    "inst": "AVAX-USDT-SWAP",
    "side": "short",
@@ -121,22 +145,22 @@
  ],
  "stats": {
   "overall": {
-   "trades": 5,
-   "with_pnl": 5,
+   "trades": 6,
+   "with_pnl": 6,
    "wins": 2,
-   "losses": 3,
-   "win_rate": 40.0,
-   "pnl": -2.630981,
+   "losses": 4,
+   "win_rate": 33.3333,
+   "pnl": -3.35468,
    "avg_win": 0.80682,
-   "avg_loss": 1.414873,
-   "payoff": 0.570242,
-   "profit_factor": 0.380161,
-   "avg_r": -0.160448,
+   "avg_loss": 1.24208,
+   "payoff": 0.649571,
+   "profit_factor": 0.324786,
+   "avg_r": -0.292407,
    "best": 1.29736,
    "worst": -2.388202,
    "tp": 0,
-   "sl": 1,
-   "max_drawdown_closed": 2.630981
+   "sl": 2,
+   "max_drawdown_closed": 3.35468
   },
   "by_strategy": [
    {
@@ -157,6 +181,22 @@
     "tp": 0,
     "sl": 0,
     "max_drawdown_closed": 1.658196
+   },
+   {
+    "key": "s13215",
+    "trades": 1,
+    "with_pnl": 1,
+    "wins": 0,
+    "losses": 1,
+    "win_rate": 0.0,
+    "pnl": -0.723699,
+    "avg_loss": 0.723699,
+    "avg_r": -0.9522,
+    "best": -0.723699,
+    "worst": -0.723699,
+    "tp": 0,
+    "sl": 1,
+    "max_drawdown_closed": 0.723699
    },
    {
     "key": "s14155",
