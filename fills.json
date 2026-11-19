@@ -1,8 +1,26 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-19T20:50:03Z",
+ "updated_at": "2026-11-19T21:50:01Z",
  "fills": [
+  {
+   "ts": "2026-11-19T21:50:01Z",
+   "action": "amend_stop",
+   "inst": "KAITO-USDT-SWAP",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-19T21:50:01Z",
+   "action": "amend_stop",
+   "inst": "ENA-USDT-SWAP",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-19T21:50:01Z",
+   "action": "amend_stop",
+   "inst": "LTC-USDT-SWAP",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-19T17:50:04Z",
    "action": "amend_stop",
