@@ -1,8 +1,14 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-19T12:50:01Z",
+ "updated_at": "2026-11-19T13:50:01Z",
  "fills": [
+  {
+   "ts": "2026-11-19T13:50:01Z",
+   "action": "amend_stop",
+   "inst": "CRV-USDT-SWAP",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-19T09:50:01Z",
    "action": "closed_on_exchange",
