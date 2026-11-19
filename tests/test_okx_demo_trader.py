@@ -267,7 +267,9 @@ class MirrorTests(unittest.TestCase):
         self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0     # majors' extra size is tested on its own
         try:
             p = odt.configure_evolved()
-            self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT, p['margin_mode']), ('evolved', .02, .10, None, .25, 'cross'))
+            self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT, p['margin_mode']), ('evolved', .05, .20, None, .25, 'cross'))
+            self.assertEqual((p['risk'], p['max_risk'], p['leader_risk']), (.05, .20, .20))
+            self.assertEqual(odt.CROWD_STEPS, ((10, .5),))
             self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
             odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])     # the evolution's coin list
             self.assertEqual(odt.INSTRUMENTS, ['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])
@@ -280,10 +282,14 @@ class MirrorTests(unittest.TestCase):
             fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved')}))
             self.assertTrue(fake.posts[-1][1]['clOrdId'].startswith('evbtc'))
             self.assertEqual(m.summary()['execution_profile']['mode'], 'evolved')
-            # the order risks the strategy's own risk gene, clamped to 2–10 %
+            # the order risks the strategy's own risk gene, clamped to 5–20 %; missing risk defaults to 5 %
             px = 78000.0
-            for gene, want in ((.03, .03), (.004, .02), (.15, .10)):
-                fake = FakeOKX(prices={'BTC-USDT-SWAP': px}); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved', risk=gene)}))
+            cases = ((.08, .08), (.03, .05), (.004, .05), (None, .05), (.25, .20))
+            for gene, want in cases:
+                pos = dict(long_btc(), strategy='evolved')
+                if gene is not None:
+                    pos['risk'] = gene
+                fake = FakeOKX(prices={'BTC-USDT-SWAP': px}); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': pos}))
                 o = [b for q, b in fake.posts if q == '/api/v5/trade/order'][-1]
                 opened = [a for a in m.actions if a['action'] == 'open'][-1]
                 self.assertAlmostEqual(opened['risk_usdt'] / m.equity, want, delta=.002)
@@ -295,28 +301,28 @@ class MirrorTests(unittest.TestCase):
         try:
             odt.configure_evolved()
             px = {'BTC-USDT-SWAP': 78000.0, 'ETH-USDT-SWAP': 2340.0, 'SOL-USDT-SWAP': 93.0, 'XRP-USDT-SWAP': 1.28, 'DOGE-USDT-SWAP': .0742}
-            sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.03) for k, v in px.items()}
+            sig = {k: dict(strategy='evolved', side=-1, entry=v, stop=v * 1.04, tp=v * .9, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.06) for k, v in px.items()}
             sig['DOGE-USDT-SWAP']['rank'] = 1
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
             orders = [b['instId'] for p, b in fake.posts if p == '/api/v5/trade/order']
             self.assertEqual(orders, ['DOGE-USDT-SWAP', 'BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP'])
-            # 3 % + 3 % + 3 % + 1.5 % + 1.5 % (crowding from the 4th); evolved mode has no same-side risk cap
+            # five 6 % entries: crowding only starts at 10 same-side, so all stay full size; evolved mode has no same-side risk cap
             self.assertIsNone(odt.SAME_SIDE_CAP)
             self.assertIsNone(m.summary()['execution_profile']['same_side_cap'])
             self.assertFalse([a for a in m.actions if a.get('reason') == 'same_side_risk'])
-            for k in sig: sig[k].update(risk=.10, leverage=20)                                    # 10+10+10+5+5 = 40 % on one side: all open
+            for k in sig: sig[k].update(risk=.10, leverage=20)                                    # 10+10+10+10+10 = 50 % on one side: all open
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
             self.assertEqual(len([1 for p, b in fake.posts if p == '/api/v5/trade/order']), 5)
             self.assertFalse([a for a in m.actions if a.get('reason') == 'same_side_risk'])
-            for k in sig: sig[k].update(risk=.03, leverage=10)
+            for k in sig: sig[k].update(risk=.06, leverage=10)
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
-            self.assertEqual([round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'], [.03, .03, .03, .015, .015])
-            odt.SAME_SIDE_CAP = .07                                                               # a tighter cap: the third 3 % does not fit
+            self.assertEqual([round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'], [.06, .06, .06, .06, .06])
+            odt.SAME_SIDE_CAP = .13                                                               # a tighter cap: the third 6 % does not fit
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
             self.assertEqual([b['instId'] for p, b in fake.posts if p == '/api/v5/trade/order'], ['DOGE-USDT-SWAP', 'BTC-USDT-SWAP'])
             self.assertEqual(len([a for a in m.actions if a.get('reason') == 'same_side_risk']), 3)
-            odt.SAME_SIDE_CAP = .20
-            for k in sig: sig[k]['risk'] = .02
+            odt.SAME_SIDE_CAP = .35
+            for k in sig: sig[k]['risk'] = .06
             fake = FakeOKX(prices=px); m, state = run(fake, paper(**sig))
             self.assertEqual(len([1 for p, b in fake.posts if p == '/api/v5/trade/order']), 5)
         finally:
@@ -376,7 +382,7 @@ class MirrorTests(unittest.TestCase):
         px = {c: 10.0 for c in coins}
         try:
             odt.configure_evolved(coins)
-            sig = {c: dict(strategy='evolved', side=-1, entry=10.0, stop=12.0, tp=8.0, leverage=20, opened=NOW_MS - 10 * 60_000, rank=r, risk=.10)
+            sig = {c: dict(strategy='evolved', side=-1, entry=10.0, stop=12.0, tp=8.0, leverage=20, opened=NOW_MS - 10 * 60_000, rank=r, risk=.05)
                    for r, c in enumerate(coins)}
             fake = FakeOKX(prices=px, instruments=specs); m, state = run(fake, paper(**sig))
             orders = [b['instId'] for p, b in fake.posts if p == '/api/v5/trade/order']
@@ -402,10 +408,10 @@ class MirrorTests(unittest.TestCase):
             opened = {a['inst']: a for a in m.actions if a['action'] == 'open'}
             lead = opened['XRP-USDT-SWAP']
             self.assertAlmostEqual(lead['risk_usdt'] / m.equity, .08, delta=.002)
-            self.assertEqual(odt.LEADER_RISK, .10); self.assertEqual(lead['leverage'], 20); self.assertTrue(lead['leader'])
+            self.assertEqual(odt.LEADER_RISK, .20); self.assertEqual(lead['leverage'], 20); self.assertTrue(lead['leader'])
             self.assertEqual((odt.LEADER_LEVERAGE, odt.EVOLVED_MAX_LEVERAGE), (20, 20))
             self.assertLessEqual(max(a['leverage'] for a in opened.values()), 20)
-            # the leader counts toward the same-side cap (8 % + four more 3 % = 20 %, all fit)
+            # the leader counts toward the same-side cap (8 % + four more, all fit; 3 % genes raise to the 5 % floor)
             self.assertEqual(len(opened), 5)
             self.assertTrue(next(v for v in state['mirrored'].values() if v['inst'] == 'XRP-USDT-SWAP')['leader'])
         finally:
@@ -478,11 +484,32 @@ class MirrorTests(unittest.TestCase):
             odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP'])
             self.assertEqual((odt.MAJORS, odt.MAJOR_FACTOR), (('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'), 2.0))
             px = {'BTC-USDT-SWAP': 78000.0, 'PEPE-USDT-SWAP': .00000537}
-            sig = {k: dict(strategy='evolved', side=1, entry=v, stop=v * .96, tp=None, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.02) for k, v in px.items()}
+            sig = {k: dict(strategy='evolved', side=1, entry=v, stop=v * .96, tp=None, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.06) for k, v in px.items()}
             fake = FakeOKX(equity=100000, prices=px); m, _ = run(fake, paper(**sig))
             risk = {a['inst']: round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'}
-            self.assertEqual(risk, {'BTC-USDT-SWAP': .04, 'PEPE-USDT-SWAP': .02})
+            self.assertEqual(risk, {'BTC-USDT-SWAP': .12, 'PEPE-USDT-SWAP': .06})
             self.assertEqual(m.summary()['execution_profile']['major_factor'], 2.0)
+            # 10 % × 2 reaches the 20 % cap exactly; 12 % × 2 would be 24 % and is still clamped to 20 %
+            for gene, want_btc, want_pepe in ((.10, .20, .10), (.12, .20, .12)):
+                for k in sig: sig[k]['risk'] = gene
+                fake = FakeOKX(equity=100000, prices=px); m, _ = run(fake, paper(**sig))
+                risk = {a['inst']: round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'}
+                self.assertEqual(risk, {'BTC-USDT-SWAP': want_btc, 'PEPE-USDT-SWAP': want_pepe})
+        finally:
+            odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
+
+    def test_crowd_halves_risk_only_from_the_tenth_same_side_position(self):
+        coins = [f'C{i}-USDT-SWAP' for i in range(11)]
+        specs = {c: dict(ctVal='1', lotSz='0.01', minSz='0.01', tickSz='0.0001', lever='50') for c in coins}
+        px = {c: 10.0 for c in coins}
+        try:
+            odt.configure_evolved(coins)
+            sig = {c: dict(strategy='evolved', side=-1, entry=10.0, stop=12.0, tp=8.0, leverage=10, opened=NOW_MS - 10 * 60_000, rank=r, risk=.08)
+                   for r, c in enumerate(coins)}
+            fake = FakeOKX(equity=100000, prices=px, instruments=specs); m, _ = run(fake, paper(**sig))
+            opened = [round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open']
+            self.assertEqual(opened, [.08] * 10 + [.04])   # first 10 full risk (crowd 0–9); 11th halved
+            self.assertEqual(odt.CROWD_STEPS, ((10, .5),))
         finally:
             odt.ACTIVE_PROFILE = None; odt.configure_volume_test(odt.datetime(2026, 1, 1, tzinfo=odt.timezone.utc))
 
@@ -523,6 +550,7 @@ class MirrorTests(unittest.TestCase):
         self.assertEqual(len(state['history']), odt.HISTORY_POINTS)
 
     def test_evolved_leverage_follows_the_gene_then_the_instrument_cap_on_cross(self):
+        self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0
         try:
             odt.configure_evolved()
             px, stop = 78000.0, 78000.0 * 0.98   # 2 % stop: cross does not lower leverage for the stop (that was the isolated rule)

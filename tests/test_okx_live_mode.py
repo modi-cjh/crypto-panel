@@ -158,7 +158,8 @@ class ModeSwitchTests(unittest.TestCase):
 
     def test_risk_parameters_are_the_same_in_both_modes(self):
         # The switch only changes the transport (header / state folder / dry-run); the evolved profile is shared.
-        self.assertEqual(odt.RISK_RANGE, (.02, .10)); self.assertEqual(odt.MAX_TRADE_RISK, .10)
+        self.assertEqual(odt.RISK_RANGE, (.05, .20)); self.assertEqual(odt.MAX_TRADE_RISK, .20)
+        self.assertEqual(odt.LEADER_RISK, .20); self.assertEqual(odt.CROWD_STEPS, ((10, .5),))
         self.assertEqual(odt.EVOLVED_MAX_LEVERAGE, 20); self.assertEqual(odt.EVOLVED_DAILY_HALT, .25)
         self.assertEqual(odt.MAX_SAME_SIDE, 20)
         saved = {k: getattr(odt, k) for k in LiveModeBase.GLOBALS}
@@ -166,6 +167,7 @@ class ModeSwitchTests(unittest.TestCase):
             p = odt.configure_evolved(['BTC-USDT-SWAP'])
             self.assertEqual((p['margin_mode'], p['same_side_cap'], p['daily_halt'], p['max_leverage']), ('cross', None, .25, 20))
             self.assertEqual(p['max_same_side'], 20)
+            self.assertEqual((p['risk'], p['risk_max'], p['max_risk'], p['leader_risk']), (.05, .20, .20, .20))
         finally:
             for k, v in saved.items(): setattr(odt, k, v)
 
@@ -269,8 +271,8 @@ class MainTests(LiveModeBase):
         self.assertEqual((lev['lever'], lev['mgnMode'], order['tdMode']), ('7', 'cross', 'cross'))   # leverage gene, cross
         self.assertEqual(order['attachAlgoOrds'][0]['slTriggerPx'], '68600')                          # stop always attached
         self.assertNotIn('tpTriggerPx', order['attachAlgoOrds'][0])                                   # no TP when the gene has none
-        # risk gene 3 % × major factor 2 = 6 % of 10 000 = 600 USDT at a 1 400 stop distance → 0.4286 BTC = 42.85 contracts (lot 0.01)
-        self.assertEqual(order['sz'], '42.85')
+        # risk gene 3 % is raised to the 5 % floor, × major factor 2 = 10 % of 10 000 = 1 000 USDT at a 1 400 stop distance → 0.7142 BTC = 71.42 contracts (lot 0.01)
+        self.assertEqual(order['sz'], '71.42')
         self.assertTrue((self.data / 'okx_demo' / 'state.json').exists()); self.assertTrue((self.data / 'okx_live' / 'state.json').exists())
 
     def test_live_refuses_a_demo_state_and_demo_refuses_a_live_state(self):
