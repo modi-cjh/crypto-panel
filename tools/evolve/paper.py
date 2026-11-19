@@ -1,13 +1,18 @@
 """Paper trading for the champion team: ONE shared account, run by execution.simulate_account().
 
 The team's strategies all trade the same account: every position is sized on the whole account's equity (the strategy's
-risk gene, 2–10 %, then major-coin doubling and crowding, capped at 10 %). Every seat, including the leader, uses its
-own risk and leverage genes (leverage 1–20×, clamped to that coin's OKX max). Margin is
-shared and cross (全仓): liquidation is when account equity falls to or below total maintenance margin, and then every position is closed. The same-side cap (20 %) and the
-daily halt (10 %) still apply to everyone, including the leader, and so does the same-side count (at most
+risk gene, 5–20 %, missing = 5 %, then major-coin doubling and crowding (half from the 10th same-side position on), capped at
+20 %). Every seat, including the leader, uses its own risk and leverage genes (leverage 1–20×, clamped to that coin's OKX
+max). Margin is shared and cross (全仓): liquidation is when account equity falls to or below total maintenance margin,
+and then every position is closed. There is no same-side total-risk cap (ACCOUNT_RULES['same_side_cap'] = None); the
+daily halt (25 %) applies to everyone, including the leader, and so does the same-side count (at most
 ACCOUNT_RULES['max_same_side'] = 20 open positions on one side; only for entries after account['side_cap_from'], the
-first run that had it, so positions already open are not replayed away). The OKX demo mirror (tools/okx_demo_trader.py) follows the same 2–10 % / 1–20× genes on cross margin,
-clamped to each coin's OKX max leverage (20× if the public spec is missing). Live trading is decided separately.
+first run that had it, so positions already open are not replayed away). The 2026-11-20 sizing (5–20 %, cap 20 %,
+half at 10) likewise only applies to fills after account['risk_rules_from'] (the first run that had it); earlier fills,
+including positions still open then, are replayed with execution.LEGACY_SIZING (2–10 %, cap 10 %, half at 3 / quarter
+at 6) and their seat's stored risk gene, so they keep their original size. The OKX follow (tools/okx_demo_trader.py,
+demo and live) uses the same 5–20 % / 20 % / half-at-10 steps and 1–20× genes on cross margin, clamped to each coin's
+OKX max leverage (no new entry if the spec is missing).
 Each run replays the account from its start bar with the full seat history, so the result is exactly what the engine
 produces on live bars:
   account = dict(from_ts, start_equity, segs=[dict(id, champion, slot, genes, species, from_ts, wind_ts, boosts, reason)])
@@ -19,7 +24,7 @@ Before this, the account was five separate slots of 1/5 each; that history (curv
 paper['legacy'] and the shared account starts from the slots' total equity. The slot code below `_legacy_update` only
 serves that one-time conversion.
 """
-from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, same_side_full
+from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, same_side_full, clamp_risk
 from evolution import TEAM_SIZE, entry_gate
 from genome import fix
 
@@ -32,7 +37,7 @@ _CTX = dict(extra={})        # per update(): {slot index: {ts: equity of the oth
 def _size(genes, leader=False):
     """Per-trade risk and requested leverage from the genome (clamped). The leader flag is for priority only."""
     g = fix(dict(genes))
-    return dict(risk=min(g['risk'], ACCOUNT_RULES['max_risk']),
+    return dict(risk=clamp_risk(g.get('risk'), ACCOUNT_RULES['min_risk'], ACCOUNT_RULES['max_risk']),
                 leverage=int(g.get('leverage', DEFAULT_LEVERAGE)),
                 **({'leader': True} if leader else {}))
 
@@ -44,7 +49,7 @@ def _leader_view(leader, nodes=None):
     genes = (nodes or {}).get(leader, {}).get('genes') or {}
     g = fix(dict(genes)) if genes else None
     return dict(id=leader,
-                risk=(min(g['risk'], ACCOUNT_RULES['max_risk']) if g else ACCOUNT_RULES['max_risk']),
+                risk=(clamp_risk(g.get('risk'), ACCOUNT_RULES['min_risk'], ACCOUNT_RULES['max_risk']) if g else ACCOUNT_RULES['max_risk']),
                 leverage=int(g.get('leverage', DEFAULT_LEVERAGE) if g else ACCOUNT_RULES['leader_lever']),
                 max_risk=ACCOUNT_RULES['max_risk'], max_leverage=ACCOUNT_RULES['leader_lever'])
 
@@ -322,13 +327,17 @@ def update(state, series, changes, price_off=None):
             elif g['champion'] != leader and is_leader:
                 g['boosts'][-1][1] = last_ts
     idx = lambda ts: _index(series, ts)
-    segs = [dict(id=g['id'], genes=fix(g['genes']), from_i=idx(g['from_ts']), wind_i=idx(g['wind_ts']) if g['wind_ts'] is not None else None,
-                 boosts=[(idx(a), idx(b) if b is not None else None) for a, b in g['boosts']]) for g in acc['segs']]
+    # genes are re-clamped to the current bands for new entries; old_risk = the risk gene as stored when the seat was
+    # taken (fix() under the band of that time), used for fills before risk_rules_from so the replay keeps their size.
+    segs = [dict(id=g['id'], genes=fix(dict(g['genes'])), from_i=idx(g['from_ts']), wind_i=idx(g['wind_ts']) if g['wind_ts'] is not None else None,
+                 boosts=[(idx(a), idx(b) if b is not None else None) for a, b in g['boosts']],
+                 **({'old_risk': g['genes']['risk']} if g['genes'].get('risk') is not None else {})) for g in acc['segs']]
     blocked = {inst: [(idx(a), idx(b) if b is not None else None) for a, b in rs] for inst, rs in (price_off or {}).items()}
     off_now = {inst for inst, rs in (price_off or {}).items() if rs and rs[-1][1] is None}
     acc.setdefault('side_cap_from', last_ts)          # the same-side count starts with the first run that has it
+    acc.setdefault('risk_rules_from', last_ts)        # the 5–20 % / 20 % / half-at-10 sizing starts with the first run that has it
     res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked,
-                           side_cap_from=idx(acc['side_cap_from']))
+                           side_cap_from=idx(acc['side_cap_from']), risk_from=idx(acc['risk_rules_from']))
     by = {g['id']: g for g in acc['segs']}
     rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     who = lambda sid: by[sid]['champion']
@@ -378,7 +387,7 @@ def update(state, series, changes, price_off=None):
                 adjustments=[dict(a, amount=round(a['amount'], 2)) for a in res.get('adjustments') or []][-20:],
                 rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], max_same_side=ACCOUNT_RULES['max_same_side'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
                            leader_risk=ACCOUNT_RULES['leader_risk'], leader_lever=ACCOUNT_RULES['leader_lever'],
-                           max_risk=ACCOUNT_RULES['max_risk'], min_risk=ACCOUNT_RULES.get('min_risk', .02),
+                           max_risk=ACCOUNT_RULES['max_risk'], min_risk=ACCOUNT_RULES['min_risk'],
                            min_lever=ACCOUNT_RULES.get('min_lever', 1), margin_mode=ACCOUNT_RULES.get('margin_mode', 'cross'),
                            majors=list(ACCOUNT_RULES['majors']), major_factor=ACCOUNT_RULES['major_factor']),
                 curve=([p for p in legacy.get('curve') or [] if p[0] < acc['from_ts']] + [list(p) for p in res['curve']])[-400:],

@@ -511,19 +511,21 @@ class EvolutionTests(unittest.TestCase):
             self.assertAlmostEqual(b['pnl']['x'], b['equity'] - 5000.0, places=6)
 
     def test_shared_account_rules_one_position_per_coin_crowding_cap_leader_and_wind_down(self):
-        sr = self._breakout_market()
-        g = base_genes(risk=.02)
+        sr = self._breakout_market(coins=13)
+        g = base_genes(risk=.01)
         seg = lambda i, **kw: dict(dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]), **kw)
-        nocap = dict(X.ACCOUNT_RULES, max_same_side=None)                                # crowding steps on their own (the count cap is tested below)
-        r = X.simulate_account([seg(1), seg(2), seg(3)], sr, 30, 71, equity=10000.0, rules=nocap)
+        # crowding steps on their own (the count cap is tested below); a 1 % floor keeps 12 positions inside the margin
+        nocap = dict(X.ACCOUNT_RULES, max_same_side=None, min_risk=.01)
+        r = X.simulate_account([seg(1), seg(2), seg(3), seg(4)], sr, 30, 71, equity=10000.0, rules=nocap)
         pos = {p['inst']: p for p in r['positions']}
-        self.assertEqual(len(pos), 8)                                                    # one position per coin, 3 per strategy at most
-        self.assertEqual([sum(1 for p in pos.values() if p['seg'] == f'm{i}') for i in (1, 2, 3)], [3, 3, 2])
-        risk = [round(p['qty'] * (p['entry'] - p['stop']) / 10000.0, 3) for p in r['positions']]
-        self.assertEqual(risk[:3], [.02, .02, .02])                                      # the first three longs: full size
-        for x in risk[3:6]: self.assertAlmostEqual(x, .01, delta=.0005)                  # 3+ longs already open: half
-        for x in risk[6:]: self.assertAlmostEqual(x, .005, delta=.0005)                  # 6+: a quarter
-        self.assertEqual((X.crowd_factor(2), X.crowd_factor(3), X.crowd_factor(6)), (1.0, .5, .25))
+        self.assertEqual(len(pos), 12)                                                   # one position per coin, 3 per strategy at most
+        self.assertEqual([sum(1 for p in pos.values() if p['seg'] == f'm{i}') for i in (1, 2, 3, 4)], [3, 3, 3, 3])
+        risk = [round(p['qty'] * (p['entry'] - p['stop']) / 10000.0, 4) for p in r['positions']]
+        for x in risk[:10]: self.assertAlmostEqual(x, .01, delta=.0005)                  # the first ten longs: full size
+        for x in risk[10:]: self.assertAlmostEqual(x, .005, delta=.0005)                 # 10+ longs already open: half
+        self.assertEqual(X.CROWD_STEPS, ((10, .5),))
+        self.assertEqual([X.crowd_factor(n) for n in (0, 3, 6, 9, 10, 19)], [1.0, 1.0, 1.0, 1.0, .5, .5])
+        self.assertEqual(X.crowd_factor(6, X.LEGACY_SIZING['crowd_steps']), .25)         # the pre-2026-11-20 steps, replay only
         # same-side risk: no total cap by default (2026-11-15); an explicit same_side_cap still bounds it
         g5 = base_genes(risk=.05)
         self.assertIsNone(X.ACCOUNT_RULES['same_side_cap']); self.assertEqual(X.ACCOUNT_RULES['daily_halt'], .25)
@@ -535,13 +537,14 @@ class EvolutionTests(unittest.TestCase):
         total = sum(p['qty'] * (p['entry'] - p['stop']) for p in r5c['positions']) / 10000.0
         self.assertLessEqual(total, .205); self.assertGreater(total, .10)
         self.assertTrue(all(p['qty'] * (p['entry'] - p['stop']) / 10000.0 <= X.MAX_TRADE_RISK + .002 for p in r5['positions']))
-        # the leader uses its own risk/leverage genes (here 2 %), counts toward the same-side cap, and cannot exceed 20×
+        # the leader uses its own risk/leverage genes (a 1 % gene → the 5 % floor), counts toward the same-side cap, and cannot exceed 20×
         lead = X.simulate_account([seg(1, boosts=[(0, None)]), seg(2, genes=g5)], sr, 30, 71, equity=10000.0, rules=capped)
         lp = [p for p in lead['positions'] if p['boost']]
         self.assertTrue(lp)
-        self.assertAlmostEqual(lp[0]['qty'] * (lp[0]['entry'] - lp[0]['stop']) / 10000.0, g['risk'], delta=.002)
+        self.assertAlmostEqual(lp[0]['qty'] * (lp[0]['entry'] - lp[0]['stop']) / 10000.0, X.clamp_risk(g['risk']), delta=.002)
         self.assertLessEqual(lp[0]['lever'], X.LEVERAGE)
-        self.assertEqual((X.ACCOUNT_RULES['leader_risk'], X.ACCOUNT_RULES['leader_lever'], X.ACCOUNT_RULES['max_risk']), (.10, 20, .10))
+        self.assertEqual((X.ACCOUNT_RULES['leader_risk'], X.ACCOUNT_RULES['leader_lever'], X.ACCOUNT_RULES['max_risk']), (.20, 20, .20))
+        self.assertEqual(X.ACCOUNT_RULES['min_risk'], .05)
         total_lead = sum(p['qty'] * (p['entry'] - p['stop']) for p in lead['positions']) / 10000.0
         self.assertLessEqual(total_lead, .205)
         # wind-down: a segment that lost its seat at bar 45 keeps its positions but takes no new signal
@@ -564,27 +567,28 @@ class EvolutionTests(unittest.TestCase):
 
     def test_same_side_count_blocks_new_entries_on_a_full_side_only(self):
         sr = self._two_sided_market(ups=22)
-        g = base_genes(risk=.02)
+        g = base_genes(risk=.01)
         segs = [dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]) for i in range(8)]   # 24 free slots: only the cap binds
         side = lambda r, d: sum(1 for p in r['positions'] if p['side'] == d)
-        r = X.simulate_account(segs, sr, 30, 71, equity=10000.0)
+        small = dict(X.ACCOUNT_RULES, min_risk=.01)                  # 1 % sizes: 22 positions fit into the margin, only the count binds
+        r = X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=small)
         self.assertEqual((side(r, 1), side(r, -1)), (20, 2))         # 22 long signals: 20 taken; the 2 shorts are not affected
         # boundaries: cap 21 → 21 longs, cap 22 (= the signals) → all 22, off → all 22; a cap of 2 also fills the short side exactly
         for cap, want in ((21, (21, 2)), (22, (22, 2)), (None, (22, 2)), (2, (2, 2))):
-            rc = X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=dict(X.ACCOUNT_RULES, max_same_side=cap))
+            rc = X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=dict(small, max_same_side=cap))
             self.assertEqual((side(rc, 1), side(rc, -1)), want, cap)
         # the leader counts too: with the leader seated the long side still stops at 20
-        lead = X.simulate_account([dict(segs[0], boosts=[(0, None)])] + segs[1:], sr, 30, 71, equity=10000.0)
+        lead = X.simulate_account([dict(segs[0], boosts=[(0, None)])] + segs[1:], sr, 30, 71, equity=10000.0, rules=small)
         self.assertEqual(side(lead, 1), 20)
         # side_cap_from: fills happen on bar 41 (signal on bar 40's close); the cap applies to fills after that bar
-        self.assertEqual(side(X.simulate_account(segs, sr, 30, 71, equity=10000.0, side_cap_from=40), 1), 20)
-        self.assertEqual(side(X.simulate_account(segs, sr, 30, 71, equity=10000.0, side_cap_from=41), 1), 22)
+        self.assertEqual(side(X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=small, side_cap_from=40), 1), 20)
+        self.assertEqual(side(X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=small, side_cap_from=41), 1), 22)
 
     def test_same_side_count_never_blocks_exits(self):
         sr = self._two_sided_market(ups=22, downs=0)
-        g = base_genes(risk=.02, max_hold=5)
+        g = base_genes(risk=.01, max_hold=5)
         segs = [dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]) for i in range(8)]
-        r = X.simulate_account(segs, sr, 30, 71, equity=10000.0)
+        r = X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=dict(X.ACCOUNT_RULES, min_risk=.01))
         self.assertEqual(r['positions'], [])                         # the full long side still runs every position to its exit
         self.assertEqual([t['reason'] for t in r['trades']], ['time'] * 20)
 
@@ -601,21 +605,67 @@ class EvolutionTests(unittest.TestCase):
     def test_majors_risk_twice_as_much_in_the_shared_account(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 30
         sr = {k: series_from(list(closes), k) for k in ('BTC-USDT-SWAP', 'PEPE-USDT-SWAP')}
-        r = X.simulate_account([dict(id='m', genes=base_genes(risk=.02), from_i=0, wind_i=None, boosts=[])], sr, 30, 71, equity=10000.0)
+        lev = dict(leverage=20, stop_atr=5.0)                                       # wide stops, 20×: the margin does not bind
+        r = X.simulate_account([dict(id='m', genes=base_genes(risk=.05, **lev), from_i=0, wind_i=None, boosts=[])], sr, 30, 71, equity=10000.0)
         risk = {p['inst']: round(p['qty'] * (p['entry'] - p['stop']) / 10000.0, 3) for p in r['positions']}
-        # 2 % × 2 is 4 %, under the 10 % cap
-        self.assertEqual(risk, {'BTC-USDT-SWAP': .04, 'PEPE-USDT-SWAP': .02})
-        r2 = X.simulate_account([dict(id='m', genes=base_genes(risk=.08), from_i=0, wind_i=None, boosts=[])], sr, 30, 71, equity=10000.0)
+        # 5 % × 2 is 10 %, under the 20 % cap
+        self.assertEqual(risk, {'BTC-USDT-SWAP': .10, 'PEPE-USDT-SWAP': .05})
+        r2 = X.simulate_account([dict(id='m', genes=base_genes(risk=.15, **lev), from_i=0, wind_i=None, boosts=[])], sr, 30, 71, equity=10000.0)
         risk2 = {p['inst']: round(p['qty'] * (p['entry'] - p['stop']) / 10000.0, 3) for p in r2['positions']}
-        self.assertEqual(risk2, {'BTC-USDT-SWAP': .10, 'PEPE-USDT-SWAP': .08})   # 8 % × 2 is clamped to 10 %
+        self.assertEqual(risk2, {'BTC-USDT-SWAP': .20, 'PEPE-USDT-SWAP': .15})   # 15 % × 2 is clamped to 20 %
         self.assertEqual(X.ACCOUNT_RULES['major_factor'], 2.0)
         self.assertEqual(X.MAJORS, ('BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'BNB-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP'))
         self.assertEqual(X.ACCOUNT_RULES['majors'], X.MAJORS)
-        self.assertEqual(X.position_risk(.02, 'BNB-USDT-SWAP'), .04)
-        self.assertEqual(X.position_risk(.02, 'DOGE-USDT-SWAP'), .04)
-        self.assertEqual(X.position_risk(.02, 'BTC-USDT-SWAP'), .04)
-        self.assertEqual(X.position_risk(.08, 'BTC-USDT-SWAP'), .10)
+        self.assertEqual(X.position_risk(.05, 'BNB-USDT-SWAP'), .10)
+        self.assertEqual(X.position_risk(.05, 'DOGE-USDT-SWAP'), .10)
+        self.assertEqual(X.position_risk(.08, 'BTC-USDT-SWAP'), .16)
+        self.assertEqual(X.position_risk(.15, 'BTC-USDT-SWAP'), .20)
         self.assertEqual(X.position_risk(.05, 'PEPE-USDT-SWAP'), .05)
+
+    def test_trade_risk_is_kept_inside_5_to_20_percent_with_crowding_at_10(self):
+        self.assertEqual((X.MIN_TRADE_RISK, X.MAX_TRADE_RISK), (.05, .20))
+        self.assertEqual((X.ACCOUNT_RULES['min_risk'], X.ACCOUNT_RULES['max_risk'], X.ACCOUNT_RULES['leader_risk']), (.05, .20, .20))
+        pr = lambda *a: round(X.position_risk(*a), 6)
+        self.assertEqual(pr(None, 'PEPE-USDT-SWAP'), .05)                     # missing risk → 5 %
+        self.assertEqual(pr(.02, 'PEPE-USDT-SWAP'), .05)                      # an old 2 % gene → the 5 % floor
+        self.assertEqual(pr(.25, 'PEPE-USDT-SWAP'), .20)                      # above the band → 20 %
+        self.assertEqual(pr(.12, 'PEPE-USDT-SWAP', 9), .12)                   # 9 already open on the side: full
+        self.assertEqual(pr(.12, 'PEPE-USDT-SWAP', 10), .06)                  # 10 already open: half
+        self.assertEqual(pr(.05, 'PEPE-USDT-SWAP', 10), .025)                 # the floor is on the gene; crowding may go below it
+        self.assertEqual(pr(.20, 'BTC-USDT-SWAP', 10), .20)                   # half × major 2 stays within 20 %
+        self.assertEqual((X.clamp_risk(None), X.clamp_risk(.01), X.clamp_risk(.3), X.clamp_risk(.07)), (.05, .05, .20, .07))
+        legacy = dict(X.ACCOUNT_RULES, **X.LEGACY_SIZING)                     # the old sizing still reproduces the old numbers
+        self.assertEqual((pr(.02, 'PEPE-USDT-SWAP', 0, legacy), pr(.02, 'PEPE-USDT-SWAP', 3, legacy), pr(.08, 'BTC-USDT-SWAP', 6, legacy)), (.02, .01, .04))
+        # the single-strategy engine (fitness) uses the same floor: a 2 % gene is sized at 5 %
+        sr = {'PEPE-USDT-SWAP': series_from([100.0] * 40 + [110.0] + [111.0] * 30, 'PEPE-USDT-SWAP')}
+        lo = X.simulate(base_genes(risk=.02, leverage=20, stop_atr=5.0), sr, 30, 71, equity=10000.0)['positions'][0]
+        self.assertAlmostEqual(lo['qty'] * (lo['entry'] - lo['stop']) / 10000.0, .05, delta=.001)
+
+    def test_risk_from_keeps_the_size_of_fills_made_before_the_sizing_change(self):
+        sr = self._breakout_market(coins=12)
+        g = base_genes(risk=.12, leverage=20, stop_atr=5.0)                    # new band; the seat's stored gene was 2 %
+        segs = [dict(id=f'm{i}', genes=g, old_risk=.02, from_i=0, wind_i=None, boosts=[]) for i in range(4)]
+        rules = dict(X.ACCOUNT_RULES, max_same_side=None)
+        size = lambda r: [round(p['qty'] * (p['entry'] - p['stop']) / 10000.0, 3) for p in r['positions']]
+        # fills happen on bar 41: with risk_from=41 they are pre-change fills and keep the old size and old crowd steps
+        old = X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=rules, risk_from=41)
+        self.assertEqual(size(old)[:3], [.02, .02, .02]); self.assertEqual(size(old)[3:6], [.01, .01, .01])
+        self.assertTrue(all(abs(x - .005) < .0006 for x in size(old)[6:]))
+        # risk_from=40: the same fills are after the change and use the gene (12 %) — until the margin runs out
+        new = X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=rules, risk_from=40)
+        self.assertTrue(new['positions']); self.assertTrue(all(abs(x - .12) < .002 for x in size(new)))
+        self.assertEqual(size(X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=rules)), size(new))   # None = new rules everywhere
+
+    def test_paper_account_records_when_the_new_risk_rules_started(self):
+        acc = dict(from_ts=T0, start_equity=10000.0, segs=[], next=0)
+        sr = self._two_sided_market()
+        state = dict(nodes={}, team=[], paper=dict(account=acc, start_equity=10000.0))
+        view, _ = P.update(state, sr, [])
+        self.assertEqual(acc['risk_rules_from'], sr['U0-USDT-SWAP'].ts[-1])
+        self.assertEqual((view['rules']['min_risk'], view['rules']['max_risk'], view['rules']['leader_risk']), (.05, .20, .20))
+        acc['risk_rules_from'] = T0                                  # an earlier start is kept, not moved forward
+        P.update(state, sr, [])
+        self.assertEqual(acc['risk_rules_from'], T0)
 
     def test_coins_whose_demo_price_is_off_take_no_new_entry_and_the_ranges_are_remembered(self):
         sr = self._breakout_market(coins=3)
@@ -716,7 +766,7 @@ class EvolutionTests(unittest.TestCase):
         E.choose_team(st, T0 + E.MIN_TENURE + 3600_000)
         self.assertEqual(st['champion'], ids[1])
         # the bigger size is its own title: only for a member that passed both gates
-        self.assertEqual(st['leader'], ids[1]); self.assertEqual(P.LEADER_RISK, .10)
+        self.assertEqual(st['leader'], ids[1]); self.assertEqual(P.LEADER_RISK, .20)
         st['nodes'][ids[1]]['qualified'] = False
         E.choose_team(st, T0 + E.MIN_TENURE + 2 * 3600_000)
         self.assertEqual(st['leader'], ids[0])                                         # lost at once, the best qualified member takes it
@@ -955,22 +1005,29 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
             self.assertEqual(c['leverage'], 20)
 
     def test_risk_and_leverage_genes_are_clamped_and_old_genomes_migrate(self):
-        self.assertEqual(G.GENES['risk'][1:], (.02, .10))
+        self.assertEqual(G.GENES['risk'][1:], (.05, .20))
         self.assertEqual(G.GENES['leverage'][1:], (1, 20))
         low = G.fix(dict(base_genes(), risk=.01, leverage=0))
-        self.assertEqual((low['risk'], low['leverage']), (.02, 1))
+        self.assertEqual((low['risk'], low['leverage']), (.05, 1))
+        self.assertEqual(G.fix(dict(base_genes(), risk=.0499))['risk'], .05)     # a gene from the old 2–10 % band below 5 %
+        self.assertEqual(G.fix(dict(base_genes(), risk=.10))['risk'], .10)       # inside both bands: unchanged
         high = G.fix(dict(base_genes(), risk=.25, leverage=250))
-        self.assertEqual((high['risk'], high['leverage']), (.10, 20))
+        self.assertEqual((high['risk'], high['leverage']), (.20, 20))
+        self.assertEqual(G.fix({k: v for k, v in base_genes().items() if k != 'risk'})['risk'], .05)   # missing → 5 %
+        rng = random.Random(3)
+        for _ in range(200):                                                     # random init and mutation stay inside 5–20 %
+            self.assertTrue(.05 <= G.random_genome(rng)['risk'] <= .20)
+            self.assertTrue(.05 <= G.mutate(dict(base_genes(), risk=.02), rng, rate=1.0)['risk'] <= .20)
         # genomes saved under the old 1–100× band are pulled back to ≤ 20× by fix (and so by mutate / crossover)
         self.assertEqual(G.fix(dict(base_genes(), leverage=21))['leverage'], 20)
         self.assertEqual(G.fix(dict(base_genes(), leverage=100))['leverage'], 20)
         self.assertEqual(G.fix(dict(base_genes(), leverage=20))['leverage'], 20)
-        missing = {k: v for k, v in base_genes(risk=.04).items() if k != 'leverage'}
+        missing = {k: v for k, v in base_genes(risk=.07).items() if k != 'leverage'}
         self.assertEqual(G.fix(missing)['leverage'], 10)
-        self.assertEqual(G.fix(missing)['risk'], .04)
-        # majors ×2 cannot push a 8 % gene past 10 %
-        self.assertEqual(X.position_risk(.08, 'BTC-USDT-SWAP'), .10)
-        self.assertEqual(X.position_risk(.10, 'BTC-USDT-SWAP'), .10)
+        self.assertEqual(G.fix(missing)['risk'], .07)
+        # majors ×2 cannot push a 12 % gene past 20 %
+        self.assertEqual(X.position_risk(.12, 'BTC-USDT-SWAP'), .20)
+        self.assertEqual(X.position_risk(.20, 'BTC-USDT-SWAP'), .20)
 
     def test_cross_liquidation_closes_the_account_at_the_bar_price_with_fees(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 3
@@ -1342,13 +1399,14 @@ class EntryGatePaperIntegrationTests(unittest.TestCase):
             self.assertFalse(any(m.get('id') == new_id and m.get('trading') for m in view2['members']))
             self.assertFalse(any(sig.get('champion') == new_id for sig in signals.values()))
             self.assertTrue(view2['members'])
-            self.assertEqual(view2['rules']['max_risk'], .10)
+            self.assertEqual(view2['rules']['max_risk'], .20)
             self.assertEqual(view2['rules']['lever'], 20)
             if view2['leader']:
-                self.assertLessEqual(view2['leader']['risk'], .10)
+                self.assertLessEqual(view2['leader']['risk'], .20)
                 self.assertLessEqual(view2['leader']['leverage'], 20)
             for sig in signals.values():
-                self.assertLessEqual(sig['risk'], .10)
+                self.assertLessEqual(sig['risk'], .20)
+                self.assertGreaterEqual(sig['risk'], .05)
                 self.assertLessEqual(sig['leverage'], 20)
         finally:
             E.TEAM_SIZE, E.TEAM_DIRECTION_CAP = ev_size, ev_cap
@@ -1471,7 +1529,7 @@ class RunTests(unittest.TestCase):
                 # Lineage nodes are slim; seated members keep their genes; every node's details are in nodes.json.
                 seated = {m['id'] for m in dash['team']} | ({dash['champion']['id']} if dash.get('champion') else set())
                 self.assertEqual(dash['schema'], 1); self.assertEqual(dash['details'], 'nodes.json')   # schema 1: pages from before nodes.json still read it
-                self.assertEqual(dash['gene_bounds']['risk'], [0.02, 0.10])
+                self.assertEqual(dash['gene_bounds']['risk'], [0.05, 0.20])
                 self.assertEqual(dash['gene_bounds']['leverage'], [1, 20])
                 for n in dash['nodes']: self.assertIn('genes', n); self.assertEqual('summary' in n, n['id'] in seated); self.assertIn('train', n)
                 det = json.loads((out / 'nodes.json').read_text())
