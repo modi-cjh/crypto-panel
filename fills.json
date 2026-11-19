@@ -1,8 +1,18 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-19T08:50:01Z",
+ "updated_at": "2026-11-19T09:50:01Z",
  "fills": [
+  {
+   "ts": "2026-11-19T09:50:01Z",
+   "action": "closed_on_exchange",
+   "inst": "XPL-USDT-SWAP",
+   "strategy": "evolved",
+   "close_price": 0.04836,
+   "pnl": -0.571507,
+   "outcome": "stop",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-19T06:50:04Z",
    "action": "closed_on_exchange",
