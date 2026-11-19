@@ -569,7 +569,8 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     `events` = entries(g, series), when the caller already computed them.
     `stop_entries_at`: from this bar index on no new signals are taken; open positions run to their own exits
     (a member that lost its seat winds down instead of being closed at market).
-    `risk` / `lever_cap` override the genome's risk gene and leverage gene (still capped by MAX_TRADE_RISK / LEVERAGE),
+    `risk` / `lever_cap` override the genome's risk gene and leverage gene (still kept inside MIN_TRADE_RISK–MAX_TRADE_RISK
+    and capped by LEVERAGE),
     and `extra_equity` ({ts: USDT}, carried forward) is equity outside this run that sizing and the margin check may
     count on (legacy slot accounting in paper.py).
 
@@ -582,7 +583,7 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     cash, pos, trades, curve = equity, {}, [], []
     peak, max_dd, pending, dists = equity, 0.0, {}, {}
     rr, trail = g['target_rr'], g.get('trail', 0)
-    risk = min(g['risk'] if risk is None else risk, MAX_TRADE_RISK)
+    risk = clamp_risk(g.get('risk') if risk is None else risk)
     desired_lever = LEVERAGE if lever_cap is None else lever_cap
     if lever_cap is None:
         desired_lever = g.get('leverage', DEFAULT_LEVERAGE)
@@ -716,13 +717,16 @@ def fitness(m):
 # ----------------------------------------------------------------- the shared (cross-margin) team account
 # major_factor: a trade on one of MAJORS risks this many times the usual amount (the most liquid coins, and the ones
 # whose OKX demo prices follow the real market). The same MAJORS list sets the 0.5 % MMR tier.
-# Per-trade risk never exceeds 10 % of equity, for every seat including the leader (the gene itself is 2–10 %).
+# Per-trade risk never exceeds 20 % of equity, for every seat including the leader (the gene itself is 5–20 %; a
+# missing or out-of-range gene is kept inside 5–20 %).
 # Leverage is chosen by the gene (1–20×) and then clamped to that coin's OKX max; it only sets initial margin.
 # A new entry is skipped when its stop (or every open stop at once) would leave mark equity at or below total MM.
-# major_factor still doubles a major-coin entry, then the 10 % cap is applied so a doubled 8 % gene becomes 10 %, not 16 %.
+# major_factor still doubles a major-coin entry, then the 20 % cap is applied so a doubled 15 % gene becomes 20 %, not 30 %.
 # leader_risk / leader_lever are the same caps: the leader uses its own risk and leverage genes, not a fixed bigger size.
-MAX_TRADE_RISK = .10
-MIN_TRADE_RISK = .02
+# 2026-11-20: 5–20 % / cap 20 % / crowd half at 10 (was 2–10 % / cap 10 % / half at 3, quarter at 6), the same values the
+# OKX follow (tools/okx_demo_trader.py, demo and live) has used since PR #106.
+MAX_TRADE_RISK = .20
+MIN_TRADE_RISK = .05
 # Same-direction position cap (lightweight): at most this many open positions on one side (long or short), the leader
 # included; a new entry on a full side is skipped, the other side and every exit are untouched.
 # Why a count, not notional or margin: the account sizes by risk, so notional is risk ÷ stop distance and swings 10×
@@ -730,16 +734,18 @@ MIN_TRADE_RISK = .02
 # side. The risk-based same_side_cap (20 %) did not bind either, because crowding shrinks every extra entry.
 # A position count is the same number in the paper account and on the OKX demo mirror (no ctVal, avgPx or leverage
 # differences), and it is what crowd_factor already counts.
-# Why 6: CROWD_STEPS already treats 6 open on a side as heavily crowded (quarter size); stopping there keeps at
-# most about half of the book on one side (13 open, 12 short was the situation that asked for this) while three
-# 3-position seats still fit on one side. With the default 6 the quarter step of CROWD_STEPS is no longer reached;
-# it applies again if the cap is raised.
-MAX_SAME_SIDE_POSITIONS = 20   # 2026-11-18 user: at most 20 per side (was 15, before that 10, before that 6); above 6 the quarter step of CROWD_STEPS applies again
+# The first cap was 6 (the old CROWD_STEPS quarter step); the user has since raised it to 20. With CROWD_STEPS
+# ((10, .5),) entries 11–20 on one side risk half.
+MAX_SAME_SIDE_POSITIONS = 20   # 2026-11-18 user: at most 20 per side (was 15, before that 10, before that 6)
 ACCOUNT_RULES = dict(leader_risk=MAX_TRADE_RISK, leader_lever=LEVERAGE, lever=LEVERAGE, same_side_cap=None, daily_halt=.25,   # 2026-11-15 user: no same-side total-risk cap, daily halt 25 %
                     
                      day_shift=7 * HOUR, majors=MAJORS, major_factor=2.0, max_risk=MAX_TRADE_RISK, min_risk=MIN_TRADE_RISK,
                      min_lever=MIN_LEVERAGE, margin_mode=MARGIN_MODE, max_same_side=MAX_SAME_SIDE_POSITIONS)
-CROWD_STEPS = ((6, .25), (3, .5))     # same-side positions already open → risk factor for the next entry on that side
+CROWD_STEPS = ((10, .5),)     # same-side positions already open → risk factor for the next entry: <10 full, ≥10 half (2026-11-20; was ((6, .25), (3, .5)))
+# Paper-account sizing before 2026-11-20. simulate_account() uses it for fills on or before `risk_from`
+# (account['risk_rules_from'] in paper.py), so the replay of positions that were already filled, open ones included,
+# keeps their original size; only later entries use the 5–20 % / 20 % / half-at-10 rules above.
+LEGACY_SIZING = dict(min_risk=.02, max_risk=.10, crowd_steps=((6, .25), (3, .5)))
 
 
 def same_side_full(same_side_open, cap=MAX_SAME_SIDE_POSITIONS):
@@ -748,23 +754,31 @@ def same_side_full(same_side_open, cap=MAX_SAME_SIDE_POSITIONS):
     return bool(cap) and cap > 0 and same_side_open >= cap
 
 
-def crowd_factor(same_side_open):
-    """Many positions on one side are one bet: with 3 or more already open on that side a new entry risks half, with 6 or
-    more a quarter (everyone, the leader included). The OKX mirror uses the same steps."""
-    return next((f for n, f in CROWD_STEPS if same_side_open >= n), 1.0)
+def crowd_factor(same_side_open, steps=None):
+    """Many positions on one side are one bet: with 10 or more already open on that side a new entry risks half
+    (everyone, the leader included). The OKX mirror uses the same steps. `steps` defaults to CROWD_STEPS."""
+    return next((f for n, f in (CROWD_STEPS if steps is None else steps) if same_side_open >= n), 1.0)
+
+
+def clamp_risk(base, lo=MIN_TRADE_RISK, hi=MAX_TRADE_RISK):
+    """A strategy's base risk kept inside [lo, hi]; missing = lo (5 %), the same as the OKX follow's RISK_RANGE."""
+    return lo if base is None else min(hi, max(lo, float(base)))
 
 
 def position_risk(base, inst, same_side_open=0, rules=None):
-    """Per-trade risk as a fraction of equity: base (the strategy's risk gene) × crowding × optional major-coin factor, then
-    clamped to rules['max_risk'] (10 %). Used by the paper account. The OKX demo follow has its own caps."""
+    """Per-trade risk as a fraction of equity: base (the strategy's risk gene, kept inside rules['min_risk']–
+    rules['max_risk'], 5–20 %; missing = 5 %) × crowding (rules['crowd_steps'], default CROWD_STEPS) × optional major-coin factor, then
+    clamped to rules['max_risk'] (20 %). Used by the paper account; the OKX follow applies the same steps itself."""
     rules = rules or ACCOUNT_RULES
-    r = (base if base is not None else 0.0) * crowd_factor(same_side_open)
+    lo, hi = rules.get('min_risk', MIN_TRADE_RISK), rules.get('max_risk', MAX_TRADE_RISK)
+    r = clamp_risk(base, lo, hi) * crowd_factor(same_side_open, rules.get('crowd_steps'))
     if inst in rules.get('majors', ()):
         r *= rules.get('major_factor', 1.0)
-    return min(r, rules.get('max_risk', MAX_TRADE_RISK))
+    return min(r, hi)
 
 
-def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None, side_cap_from=None):
+def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None, side_cap_from=None,
+                     risk_from=None):
     """ONE shared-equity account traded by several strategies at once, with cross (全仓) liquidation: the paper account of the champion team.
 
     segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
@@ -775,16 +789,19 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     Same bar rules as simulate() (signal on a close, fill at the next open with slippage and fee, stop before target,
     gaps fill at the open, time exit, trailing stop, whole contract lots, funding). What is shared:
     - size = account equity × risk ÷ stop distance (risk = the strategy's risk gene for every seat, including the
-      leader), then clamped to rules['max_risk'] (10 %) after crowding and the major-coin factor;
+      leader, kept inside rules['min_risk']–rules['max_risk'] = 5–20 %), then clamped to rules['max_risk'] (20 %) after
+      crowding and the major-coin factor. risk_from = a bar index: fills on or before it are sized with LEGACY_SIZING
+      (2–10 %, cap 10 %, half at 3 / quarter at 6) and the segment's `old_risk` (its stored gene, when given), so the
+      replay does not resize positions that were filled before the 2026-11-20 change (None = new rules on every bar);
     - one position per coin for the whole account, at most MAX_POSITIONS per strategy;
     - margin = notional ÷ leverage (leverage = the gene, 1–20×, then the per-coin OKX cap;
       cap = rules['lever'] / 'leader_lever', both 20×), and a new entry needs it to fit into 95 % of the free margin
       (equity − margin in use); the entry is skipped when its stop, or every open stop at once, would leave mark equity
       at or below total maintenance margin;
-    - a trade on one of rules['majors'] risks rules['major_factor'] times as much, still never above the 10 % cap;
+    - a trade on one of rules['majors'] risks rules['major_factor'] times as much, still never above the 20 % cap;
     - `blocked` = {inst: [(i0, i1 or None)]}: bar ranges in which a coin takes no new entry (its OKX demo price was
       away from the real market, data.price_check); positions already open run on;
-    - crowding: with 3+ positions already open on a side the next entry on that side risks half, with 6+ a quarter;
+    - crowding (rules['crowd_steps'], default CROWD_STEPS): with 10+ positions already open on a side the next entry on that side risks half;
     - same-side cap: when rules['same_side_cap'] is set, the open risk of one side plus the new entry stays within
       that × equity; None (the default since 2026-11-15) = no total-risk cap per side, only the count below;
     - same-side count: with rules['max_same_side'] positions already open on a side (the leader included), a new
@@ -871,7 +888,11 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             if dist / px < MIN_STOP_DIST:
                 continue
             mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items())
-            r = position_risk(g['risk'], inst, sum(1 for p in pos.values() if p['side'] == d), rules)
+            n_same = sum(1 for p in pos.values() if p['side'] == d)
+            if risk_from is not None and i <= risk_from:      # filled before the 2026-11-20 sizing change: original size
+                r = position_risk(by_id[sid].get('old_risk', g['risk']), inst, n_same, {**rules, **LEGACY_SIZING})
+            else:
+                r = position_risk(g['risk'], inst, n_same, rules)
             qty = mark * r / dist
             if s.spec:
                 ct, lot, mn = s.spec

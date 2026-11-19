@@ -625,6 +625,15 @@
 - 不变：杠杆 ≤20×、同向最多 20 仓、全仓、日亏 25% 停手、同向合计风险不设上限、扫描前 50 币、每笔交易所止损、主流币 ×2。**未改** `tools/evolve/execution.py` / `paper.py`：纸面与进化仍是 `MIN_TRADE_RISK` / `MAX_TRADE_RISK` 2%–10%、`CROWD_STEPS = ((6, .25), (3, .5))`、`ACCOUNT_RULES['leader_risk'] = 10%`。已开仓位不会按新风险重调，只影响之后的新单。
 - 测试：`tests/test_okx_demo_trader.py`（基因夹到 5–20%、缺风险默认 5%、5 仓仍满风险、第 11、12 单减半、主流币 ×2 后不超过 20%、`LEADER_RISK = 20%`）、`tests/test_okx_live_mode.py`（常量与 `execution_profile` 断言，3% 基因抬到 5% 后再 ×2 的下单张数）。`tests/test_evolve.py` 未改。
 
+### 纸面与进化同步实盘：风险 5–20%、单笔上限 20%、满 10 仓才减半（2026-11-20）
+- 做了什么：`tools/evolve/execution.py` `MIN_TRADE_RISK` .02 → .05、`MAX_TRADE_RISK` .10 → .20（`ACCOUNT_RULES` 的 `min_risk` / `max_risk` / `leader_risk` 跟随，`leader_risk` 只是上限）、`CROWD_STEPS` `((6, .25), (3, .5))` → `((10, .5),)`；新增 `clamp_risk()`，`position_risk()` 与 `simulate()` 现在对风险基因同时加下限和上限（缺失按 5%，此前只有 `min(..., 10%)`）。`tools/evolve/genome.py` `GENES['risk']` (.02, .10) → (.05, .20)，随机初始化、突变、交叉都经 `fix()` 落在新区间；`fix()` 把旧的 2–4.99% 基因抬到 5%、> 20% 压到 20%，缺失按 5%。`paper.py` 的 `_size()` / 第一名卡片同样夹到 5–20%。看板进化页文案与兜底值改为 5–20% / 20% / “同方向已有 10 个以上持仓时新开仓风险减半”，OKX 跟单一句改为引用同一区间。`okx_demo_trader.py` 只改注释（常量未动）。AGENTS.md、README.md、`deploy/live/README.md`、模块文档字符串改为“纸面 / 进化与跟单一致”。
+- 为什么：PR #106 只把实盘 / 模拟盘跟单改成 5–20% / 20% / 满 10 仓减半，纸面与进化仍是旧值，信号来源与执行规则分叉。用户要求两边重新一致。
+- 已开纸面仓位：纸面账户每次从起点整体重放（`simulate_account`），若直接改常量，所有历史成交（含仍持有的仓位）都会按新风险重算尺寸、改写权益曲线。因此仿照 `side_cap_from` 新增 `account['risk_rules_from']`（第一次带此规则运行时的最后一根 K 线）：之前的成交用 `execution.LEGACY_SIZING`（2–10%、10%、≥3 减半 / ≥6 四分之一）和席位入座时保存的风险基因（`old_risk`）重放，尺寸不变；之后的开仓才用新规则。为此 `paper.update` 改为 `fix(dict(seg['genes']))`，不再原地改写已保存的席位基因。
+- 守擂与冠军组合：本次不动 `defense_streaks`、种群、`--reset`。但 `refresh()` 每次运行都用新规则重算存活策略的样本外 / 终审成绩：风险基因 < 5% 的策略被抬到 5% 后回撤 / 收益会变，若因此不再合格，下一代 `record_defense` 会按原有规则把它的守擂清零，`choose_team` 也可能按保留线 / 上场门槛换下它。风险基因已在 5–10% 的策略单策略回测与之前逐笔相同（`simulate()` 不加主流币倍数和拥挤），成绩不变。
+- 适应度：每次运行都在滚动窗口上整体重算，没有跨版本保存后再比较的分数，所以同一次运行内的分数可比；旧基因被夹紧后的值由 `refresh()` 写回 state（`nodes[*].genes`）。之后的后代可进化到 10–20%，与此前日志里的历史适应度不能直接比较。
+- 不变：杠杆 1–20×、同向最多 20 仓、同向合计风险不设上限、日亏 25% 停手、全仓、主流币 ×2、每笔交易所止损、扫描前 50 币、`TEAM_SIZE`、守擂 5 代；跟单程序常量。
+- 测试：`tests/test_evolve.py`（基因区间 / `gene_bounds` 5–20%、夹紧与缺失默认、随机与突变不出界、`crowd_factor` 9 → 1、10 → 0.5、`position_risk` 下限 / 上限 / 主流币、`simulate()` 的 2% 基因按 5% 开仓、`risk_from` 前后的尺寸、`risk_rules_from` 记录且不前移、`leader_risk` / `max_risk` 20%；同向计数测试用 1% 下限的规则只让计数起作用）、`tests/evolve.test.mjs` 与夹具 `gene_bounds` / `rules`。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

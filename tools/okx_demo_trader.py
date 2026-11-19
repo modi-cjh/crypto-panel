@@ -15,14 +15,14 @@ stops can be compared with the paper results. In demo mode every request carries
 
 Each run, against <data>/combined/state.json:
   - a paper position opened in the last OPEN_WINDOW that is not mirrored yet is opened at market,
-    sized by the strategy's risk at the paper stop (evolved mode: cross margin, the strategy's own 2–10 % risk gene;
-    less when many positions are already open on that side; the legacy modes: cross, 1 %), with the stop (and the
+    sized by the strategy's risk at the paper stop (evolved mode: cross margin, the strategy's own 5–20 % risk gene;
+    half from the 10th position already open on that side; the legacy modes: cross, 1 %), with the stop (and the
     mean-reversion target) attached as exchange-side algo orders;
   - when the paper stop trails, the exchange stop is amended;
   - when the paper position is gone, the mirrored position is closed;
   - if the exchange stop already closed a mirrored position, it is marked done and never reopened.
 Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; in demo mode
-the process refuses to send any request without `x-simulated-trading: 1`. Evolved mode uses cross margin (全仓), the strategy's own risk (2–10 %) and leverage
+the process refuses to send any request without `x-simulated-trading: 1`. Evolved mode uses cross margin (全仓), the strategy's own risk (5–20 %) and leverage
 (1–20×, clamped to that coin's OKX max; fallback 20× if the public spec is missing). A new order is skipped if its stop would leave account equity at or below total maintenance margin. A UTC+7 day
 loss of 10% closes everything and blocks new entries until the next day; actions `pause`, `resume`,
 `flatten` (close all and pause) and `dry-run` (log intended orders, send nothing) are available.
@@ -54,7 +54,7 @@ INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP
 RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # legacy volume-test profiles: 1 % risk, 10× cap; daily halt 10 %
 EVOLVED_DAILY_HALT = .25                         # following the evolution champions: 25 % (2026-11-15, was 10 %), counted on the whole account including the leader
 RISK_RANGE = (.05, .20)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range; missing p['risk'] defaults to 5 %
-MAX_TRADE_RISK = .20      # 2026-11-20 live/demo follow: was .10; paper/evolution execution.MAX_TRADE_RISK stays .10
+MAX_TRADE_RISK = .20      # 2026-11-20 live/demo follow: was .10; paper/evolution execution.MAX_TRADE_RISK is .20 as well (synced)
 EVOLVED_MAX_LEVERAGE = GENE_MAX_LEVERAGE   # 20×, same cap as the evolve leverage gene
 # MAJORS comes from execution. The per-instrument OKX leverage cap is read from the public instruments spec; when it is
 # missing or unusable no new position is opened on that coin (fail closed, no 20× fallback). Existing positions are
@@ -74,7 +74,7 @@ SIMULATED_VALUE = '1'
 LIVE_SIGNAL_MAX_AGE = 9 * 3600_000   # live refuses to act on evolve/signals.json older than this (cron is every 4 h)
 MAJOR_FACTOR = 2.0   # majors (execution.MAJORS) risk twice as much (execution.ACCOUNT_RULES)
 PRICE_TOLERANCE = .01             # demo mode: no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
-CROWD_STEPS = ((10, .5),)  # 2026-11-20: <10 same-side already open → full risk; ≥10 → half. Paper/evolution execution.CROWD_STEPS stays ((6, .25), (3, .5)).
+CROWD_STEPS = ((10, .5),)  # 2026-11-20: <10 same-side already open → full risk; ≥10 → half. Paper/evolution execution.CROWD_STEPS is the same (synced).
 SAME_SIDE_CAP = .05
 MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 20 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
