@@ -1,8 +1,14 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-20T08:50:04Z",
+ "updated_at": "2026-11-20T09:50:01Z",
  "fills": [
+  {
+   "ts": "2026-11-20T09:50:01Z",
+   "action": "amend_stop",
+   "inst": "KAITO-USDT-SWAP",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-20T05:50:04Z",
    "action": "amend_stop",
