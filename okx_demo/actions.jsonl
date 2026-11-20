@@ -207,3 +207,5 @@
 {"ts": "2026-11-20T01:22:07Z", "action": "amend_stop", "inst": "LTC-USDT-SWAP", "dry_run": false, "old": 50.089659154215184, "new": 49.60965915422144}
 {"ts": "2026-11-20T05:14:25Z", "action": "amend_stop", "inst": "LTC-USDT-SWAP", "dry_run": false, "old": 49.60965915422144, "new": 49.199659154221436}
 {"ts": "2026-11-20T05:14:25Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.452515300016035, "new": 2.4055153000160354}
+{"ts": "2026-11-20T13:27:50Z", "action": "amend_stop", "inst": "LTC-USDT-SWAP", "dry_run": false, "old": 49.199659154221436, "new": 49.00965915422144}
+{"ts": "2026-11-20T13:27:50Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.4055153000160354, "new": 2.3725153000160355}
