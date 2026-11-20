@@ -24,7 +24,7 @@ GENES = {
     'target_rr': ('float', 0.0, 6.0),    # target as multiple of stop distance; < .5 means no target
     'max_hold': ('int', 4, 240),         # bars of the genome's timeframe (capped at MAX_HOLD_H hours)
     'trail': ('choice', [0, 1], None),   # 1: the stop trails the best price at the stop distance after every bar
-    'risk': ('float', .05, .20),         # equity at risk per trade, chosen by the strategy itself (5–20 %; 2–10 % before 2026-11-20)
+    'risk': ('float', .05, .10),         # equity at risk per trade, chosen by the strategy itself (5–10 %; 5–20 % in PR #107, 2–10 % before)
     'leverage': ('int', 1, 20),          # leverage the strategy wants (sets initial margin on cross); clamped to the coin's OKX max
     'vol_min': ('float', .3, 1.2),       # trade only when ATR% ÷ its baseline is inside [vol_min, vol_max]
     'vol_max': ('float', 1.0, 4.0),
@@ -40,8 +40,9 @@ DEFAULTS = {'tf': 1, 'trail': 0, 'vol_mult': 3.0, 'rs_th': .1, 'leverage': 10}
 def fix(g):
     """Clamp to bounds, keep slow > fast, vol_max > vol_min, and treat tiny targets as 'no target'.
     Genomes saved before a gene existed get its neutral default (1H, no trailing, 10× leverage), so they
-    behave as before except out-of-range risk/leverage is clamped into the current 5–20 % / 1–20× bands (a gene saved
-    under the old 2–10 % band below 5 % becomes 5 %; one above 20 % becomes 20 %). A missing risk gene becomes 5 %."""
+    behave as before except out-of-range risk/leverage is clamped into the current 5–10 % / 1–20× bands (a gene saved
+    under the old 2–10 % band below 5 % becomes 5 %; one saved under the 5–20 % band above 10 % becomes 10 %).
+    A missing risk gene becomes 5 %."""
     if g.get('risk') is None:
         g['risk'] = GENES['risk'][1]
     for k, v in DEFAULTS.items():

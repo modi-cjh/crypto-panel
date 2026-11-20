@@ -267,8 +267,8 @@ class MirrorTests(unittest.TestCase):
         self.addCleanup(setattr, odt, 'MAJOR_FACTOR', odt.MAJOR_FACTOR); odt.MAJOR_FACTOR = 1.0     # majors' extra size is tested on its own
         try:
             p = odt.configure_evolved()
-            self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT, p['margin_mode']), ('evolved', .05, .20, None, .25, 'cross'))
-            self.assertEqual((p['risk'], p['max_risk'], p['leader_risk']), (.05, .20, .20))
+            self.assertEqual((p['mode'], odt.RISK, p['risk_max'], odt.SAME_SIDE_CAP, odt.DAILY_HALT, p['margin_mode']), ('evolved', .05, .10, None, .25, 'cross'))
+            self.assertEqual((p['risk'], p['max_risk'], p['leader_risk']), (.05, .10, .10))
             self.assertEqual(odt.CROWD_STEPS, ((10, .5),))
             self.assertEqual(odt.INSTRUMENTS, odt.EVOLVED_INSTRUMENTS)
             odt.configure_evolved(['BTC-USDT-SWAP', 'PEPE-USDT-SWAP', 'WIF-USDT-SWAP'])     # the evolution's coin list
@@ -282,9 +282,10 @@ class MirrorTests(unittest.TestCase):
             fake = FakeOKX(); m, _ = run(fake, paper(**{'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved')}))
             self.assertTrue(fake.posts[-1][1]['clOrdId'].startswith('evbtc'))
             self.assertEqual(m.summary()['execution_profile']['mode'], 'evolved')
-            # the order risks the strategy's own risk gene, clamped to 5–20 %; missing risk defaults to 5 %
+            # the order risks the strategy's own risk gene, clamped to 5–10 %; missing risk defaults to 5 %
+            # (a gene from the old 5–20 % band, 12 % or 20 %, is held at 10 %)
             px = 78000.0
-            cases = ((.08, .08), (.03, .05), (.004, .05), (None, .05), (.25, .20))
+            cases = ((.08, .08), (.03, .05), (.004, .05), (None, .05), (.12, .10), (.20, .10), (.25, .10))
             for gene, want in cases:
                 pos = dict(long_btc(), strategy='evolved')
                 if gene is not None:
@@ -408,7 +409,7 @@ class MirrorTests(unittest.TestCase):
             opened = {a['inst']: a for a in m.actions if a['action'] == 'open'}
             lead = opened['XRP-USDT-SWAP']
             self.assertAlmostEqual(lead['risk_usdt'] / m.equity, .08, delta=.002)
-            self.assertEqual(odt.LEADER_RISK, .20); self.assertEqual(lead['leverage'], 20); self.assertTrue(lead['leader'])
+            self.assertEqual(odt.LEADER_RISK, .10); self.assertEqual(lead['leverage'], 20); self.assertTrue(lead['leader'])
             self.assertEqual((odt.LEADER_LEVERAGE, odt.EVOLVED_MAX_LEVERAGE), (20, 20))
             self.assertLessEqual(max(a['leverage'] for a in opened.values()), 20)
             # the leader counts toward the same-side cap (8 % + four more, all fit; 3 % genes raise to the 5 % floor)
@@ -487,10 +488,11 @@ class MirrorTests(unittest.TestCase):
             sig = {k: dict(strategy='evolved', side=1, entry=v, stop=v * .96, tp=None, leverage=10, opened=NOW_MS - 10 * 60_000, rank=2, risk=.06) for k, v in px.items()}
             fake = FakeOKX(equity=100000, prices=px); m, _ = run(fake, paper(**sig))
             risk = {a['inst']: round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'}
-            self.assertEqual(risk, {'BTC-USDT-SWAP': .12, 'PEPE-USDT-SWAP': .06})
+            self.assertEqual(risk, {'BTC-USDT-SWAP': .10, 'PEPE-USDT-SWAP': .06})   # 6 % × 2 = 12 %, clamped to the 10 % cap
             self.assertEqual(m.summary()['execution_profile']['major_factor'], 2.0)
-            # 10 % × 2 reaches the 20 % cap exactly; 12 % × 2 would be 24 % and is still clamped to 20 %
-            for gene, want_btc, want_pepe in ((.10, .20, .10), (.12, .20, .12)):
+            # 5 % × 2 reaches the 10 % cap exactly; a 3 % gene is first raised to the 5 % floor, then doubled; 10 % (and an
+            # old 20 % gene, clamped to 10 %) × 2 would be 20 % and is still clamped to 10 %
+            for gene, want_btc, want_pepe in ((.05, .10, .05), (.03, .10, .05), (.04, .10, .05), (.10, .10, .10), (.20, .10, .10)):
                 for k in sig: sig[k]['risk'] = gene
                 fake = FakeOKX(equity=100000, prices=px); m, _ = run(fake, paper(**sig))
                 risk = {a['inst']: round(a['risk_usdt'] / m.equity, 3) for a in m.actions if a['action'] == 'open'}
