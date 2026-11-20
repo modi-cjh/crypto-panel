@@ -1,8 +1,26 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-20T12:50:04Z",
+ "updated_at": "2026-11-20T13:50:04Z",
  "fills": [
+  {
+   "ts": "2026-11-20T13:50:04Z",
+   "action": "amend_stop",
+   "inst": "KAITO-USDT-SWAP",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-20T13:50:04Z",
+   "action": "amend_stop",
+   "inst": "ICP-USDT-SWAP",
+   "dry_run": false
+  },
+  {
+   "ts": "2026-11-20T13:50:04Z",
+   "action": "amend_stop",
+   "inst": "LTC-USDT-SWAP",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-20T09:50:01Z",
    "action": "amend_stop",
@@ -213,8 +231,6 @@
    "inst": "BNB-USDT-SWAP",
    "reason": "paper_closed",
    "strategy": "evolved",
-   "close_price": 592.12,
-   "pnl": -0.198222,
    "dry_run": false
   },
   {
