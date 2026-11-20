@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-20T05:13:44Z",
+ "updated_at": "2026-11-20T09:15:52Z",
  "champion": "s22730",
  "team": [
   "s18771",
@@ -154,7 +154,7 @@
   "LTC-USDT-SWAP": {
    "side": -1,
    "entry": 44.461106,
-   "stop": 49.199659154221436,
+   "stop": 49.14965915422144,
    "tp": 29.318753606979264,
    "opened": 1794700800000,
    "strategy": "evolved",
@@ -166,7 +166,7 @@
   "KAITO-USDT-SWAP": {
    "side": -1,
    "entry": 0.17436512,
-   "stop": 0.18612142307902546,
+   "stop": 0.18542142307902545,
    "tp": null,
    "opened": 1794816000000,
    "strategy": "evolved",
@@ -178,7 +178,7 @@
   "ICP-USDT-SWAP": {
    "side": -1,
    "entry": 2.2835432,
-   "stop": 2.4055153000160354,
+   "stop": 2.403515300016035,
    "tp": null,
    "opened": 1794931200000,
    "strategy": "evolved",
