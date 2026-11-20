@@ -1,7 +1,7 @@
 {
- "updated_at": "2026-11-19T21:03:45Z",
- "equity": 8230.822641240175,
- "available": 6893.131883081021,
+ "updated_at": "2026-11-20T01:22:07Z",
+ "equity": 8141.294605718268,
+ "available": 6902.156641200365,
  "day_start": 8210.314714515174,
  "paused": false,
  "halted": false,
@@ -12,11 +12,11 @@
    "side": "short",
    "contracts": "15844.5",
    "avgPx": "2.253",
-   "markPx": "2.289",
-   "upl": "-5.704020000000005",
-   "uplRatio": "-0.0159786950732357",
+   "markPx": "2.285",
+   "upl": "-5.0702400000000045",
+   "uplRatio": "-0.0142032845095428",
    "lever": "1",
-   "margin": "362.680605",
+   "margin": "362.046825",
    "mgnMode": "cross",
    "ctVal": 0.01,
    "ours": true
@@ -26,11 +26,11 @@
    "side": "short",
    "contracts": "15",
    "avgPx": "43.4319586666666667",
-   "markPx": "43.1045",
-   "upl": "4.911879999999975",
-   "uplRatio": "0.0301583144504125",
+   "markPx": "43.2154",
+   "upl": "3.248379999999962",
+   "uplRatio": "0.0199446373882162",
    "lever": "4",
-   "margin": "160.1845134505770643",
+   "margin": "169.8972009505770643",
    "mgnMode": "isolated",
    "ctVal": 1.0,
    "ours": true
@@ -40,11 +40,11 @@
    "side": "short",
    "contracts": "35.28",
    "avgPx": "0.1452",
-   "markPx": "0.159",
-   "upl": "-48.68640000000003",
-   "uplRatio": "-0.2851239669421488",
+   "markPx": "0.1598",
+   "upl": "-51.50880000000001",
+   "uplRatio": "-0.3016528925619837",
    "lever": "3",
-   "margin": "175.5718479415883969",
+   "margin": "179.7895719415883969",
    "mgnMode": "isolated",
    "ctVal": 100.0,
    "ours": true
@@ -54,11 +54,11 @@
    "side": "short",
    "contracts": "11.3",
    "avgPx": "3.0018141592920356",
-   "markPx": "2.276",
-   "upl": "82.01700000000004",
-   "uplRatio": "0.4835836735897174",
+   "markPx": "3.195",
+   "upl": "-21.829999999999966",
+   "uplRatio": "-0.1287127253430813",
    "lever": "2",
-   "margin": "163.1898788056447981",
+   "margin": "157.2692438056447981",
    "mgnMode": "isolated",
    "ctVal": 10.0,
    "ours": true
@@ -68,11 +68,11 @@
    "side": "short",
    "contracts": "13.66",
    "avgPx": "0.0656244219619329",
-   "markPx": "0.05938",
-   "upl": "85.29880400000333",
-   "uplRatio": "0.9515393469759059",
+   "markPx": "0.0592917",
+   "upl": "86.50498200000332",
+   "uplRatio": "0.9649947035886042",
    "lever": "10",
-   "margin": "29.4591378245324517",
+   "margin": "35.5284499895324517",
    "mgnMode": "isolated",
    "ctVal": 1000.0,
    "ours": true
@@ -82,11 +82,11 @@
    "side": "short",
    "contracts": "1.99",
    "avgPx": "71693.407035175879397",
-   "markPx": "62584.45",
-   "upl": "181.26824500000018",
-   "uplRatio": "1.2705431938402145",
+   "markPx": "63069.66",
+   "upl": "171.61256600000004",
+   "uplRatio": "1.2028647251963764",
    "lever": "10",
-   "margin": "141.7906121368072579",
+   "margin": "146.4624468305572579",
    "mgnMode": "isolated",
    "ctVal": 0.01,
    "ours": true
@@ -254,7 +254,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "15",
-   "stop": 50.089659154215184,
+   "stop": 49.60965915422144,
    "target": 29.318753606976628,
    "leverage": 4,
    "entry": 43.45,
@@ -908,6 +908,10 @@
   [
    1795122225594,
    8230.82
+  ],
+  [
+   1795137727886,
+   8141.29
   ]
  ],
  "closed_trades": 39,
@@ -1316,6 +1320,14 @@
  ],
  "recent_actions": [
   {
+   "ts": "2026-11-20T01:22:07Z",
+   "action": "amend_stop",
+   "inst": "LTC-USDT-SWAP",
+   "dry_run": false,
+   "old": 50.089659154215184,
+   "new": 49.60965915422144
+  },
+  {
    "ts": "2026-11-19T21:03:45Z",
    "action": "amend_stop",
    "inst": "LTC-USDT-SWAP",
@@ -1614,20 +1626,6 @@
    "dry_run": false,
    "old": 51.439659154222824,
    "new": 50.599659154222834
-  },
-  {
-   "ts": "2026-11-15T01:21:11Z",
-   "action": "open",
-   "inst": "LTC-USDT-SWAP",
-   "dry_run": false,
-   "side": -1,
-   "strategy": "evolved",
-   "contracts": "15",
-   "price": 43.45,
-   "stop": "51.4397",
-   "target": "29.3188",
-   "leverage": 4,
-   "risk_usdt": 120.1
   }
  ],
  "largest_close": {

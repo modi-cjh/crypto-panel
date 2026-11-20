@@ -1,14 +1,14 @@
 {
- "updated_at": "2026-11-19T21:02:44Z",
+ "updated_at": "2026-11-20T01:21:10Z",
  "champion": "s22730",
  "team": [
   "s18771",
   "s23178",
   "s20401",
-  "s25439",
+  "s27131",
   "s21482",
   "s22730",
-  "s21328",
+  "s23387",
   "s19112"
  ],
  "instruments": [
@@ -73,7 +73,7 @@
    "strategy": "evolved",
    "champion": "s13164",
    "rank": 100,
-   "risk": 0.02,
+   "risk": 0.05,
    "leverage": 10,
    "leader": true
   },
@@ -86,20 +86,20 @@
    "strategy": "evolved",
    "champion": "s13215",
    "rank": 100,
-   "risk": 0.0234,
+   "risk": 0.05,
    "leverage": 10,
    "leader": true
   },
   "ENA-USDT-SWAP": {
    "side": -1,
    "entry": 0.142051584,
-   "stop": 0.12224533570031498,
+   "stop": 0.120825335700315,
    "tp": 0.09432817760914952,
    "opened": 1794470400000,
    "strategy": "evolved",
    "champion": "s13215",
    "rank": 100,
-   "risk": 0.0234,
+   "risk": 0.05,
    "leverage": 10,
    "leader": true
   },
@@ -112,7 +112,7 @@
    "strategy": "evolved",
    "champion": "s13164",
    "rank": 100,
-   "risk": 0.02,
+   "risk": 0.05,
    "leverage": 10
   },
   "DOGE-USDT-SWAP": {
@@ -124,14 +124,14 @@
    "strategy": "evolved",
    "champion": "s13164",
    "rank": 100,
-   "risk": 0.02,
+   "risk": 0.05,
    "leverage": 10
   },
   "NEAR-USDT-SWAP": {
    "side": -1,
    "entry": 3.0263946,
-   "stop": 3.9758961981635315,
-   "tp": 1.0163918234892901,
+   "stop": 3.9758961981629364,
+   "tp": 1.0163918234904212,
    "opened": 1794700800000,
    "strategy": "evolved",
    "champion": "s18637",
@@ -142,8 +142,8 @@
   "ADA-USDT-SWAP": {
    "side": -1,
    "entry": 0.1474705,
-   "stop": 0.17563508723611954,
-   "tp": 0.08413383425137294,
+   "stop": 0.17563508723618357,
+   "tp": 0.08413383425125123,
    "opened": 1794700800000,
    "strategy": "evolved",
    "champion": "s18637",
@@ -154,8 +154,8 @@
   "LTC-USDT-SWAP": {
    "side": -1,
    "entry": 44.461106,
-   "stop": 50.089659154215184,
-   "tp": 29.318753606991145,
+   "stop": 49.60965915422144,
+   "tp": 29.318753606979264,
    "opened": 1794700800000,
    "strategy": "evolved",
    "champion": "s18637",
@@ -172,7 +172,7 @@
    "strategy": "evolved",
    "champion": "s20554",
    "rank": 100,
-   "risk": 0.0214,
+   "risk": 0.05,
    "leverage": 1
   },
   "ICP-USDT-SWAP": {
@@ -184,7 +184,7 @@
    "strategy": "evolved",
    "champion": "s20554",
    "rank": 100,
-   "risk": 0.0214,
+   "risk": 0.05,
    "leverage": 1
   }
  }
