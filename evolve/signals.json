@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-20T13:27:03Z",
+ "updated_at": "2026-11-20T17:10:02Z",
  "champion": "s22730",
  "team": [
   "s18771",
@@ -80,7 +80,7 @@
   "CRV-USDT-SWAP": {
    "side": -1,
    "entry": 0.24115176,
-   "stop": 0.21052577700713235,
+   "stop": 0.20092577700713235,
    "tp": 0.17358216208074262,
    "opened": 1794441600000,
    "strategy": "evolved",
@@ -93,7 +93,7 @@
   "ENA-USDT-SWAP": {
    "side": -1,
    "entry": 0.142051584,
-   "stop": 0.11849533570031501,
+   "stop": 0.114265335700315,
    "tp": 0.09432817760914952,
    "opened": 1794470400000,
    "strategy": "evolved",
@@ -130,7 +130,7 @@
   "NEAR-USDT-SWAP": {
    "side": -1,
    "entry": 3.0263946,
-   "stop": 3.9758961981629364,
+   "stop": 3.865896198162936,
    "tp": 1.0163918234904212,
    "opened": 1794700800000,
    "strategy": "evolved",
@@ -142,7 +142,7 @@
   "ADA-USDT-SWAP": {
    "side": -1,
    "entry": 0.1474705,
-   "stop": 0.17563508723618357,
+   "stop": 0.17163508723618356,
    "tp": 0.08413383425125123,
    "opened": 1794700800000,
    "strategy": "evolved",
@@ -154,7 +154,7 @@
   "LTC-USDT-SWAP": {
    "side": -1,
    "entry": 44.461106,
-   "stop": 49.00965915422144,
+   "stop": 47.47965915422144,
    "tp": 29.318753606979264,
    "opened": 1794700800000,
    "strategy": "evolved",
@@ -166,7 +166,7 @@
   "KAITO-USDT-SWAP": {
    "side": -1,
    "entry": 0.17436512,
-   "stop": 0.18322142307902547,
+   "stop": 0.17342142307902547,
    "tp": null,
    "opened": 1794816000000,
    "strategy": "evolved",
@@ -178,7 +178,7 @@
   "ICP-USDT-SWAP": {
    "side": -1,
    "entry": 2.2835432,
-   "stop": 2.3725153000160355,
+   "stop": 2.2875153000160355,
    "tp": null,
    "opened": 1794931200000,
    "strategy": "evolved",
@@ -186,6 +186,30 @@
    "rank": 100,
    "risk": 0.05,
    "leverage": 1
+  },
+  "AVAX-USDT-SWAP": {
+   "side": 1,
+   "entry": 6.4892976,
+   "stop": 6.21966432202955,
+   "tp": 6.858695190819517,
+   "opened": 1795190400000,
+   "strategy": "evolved",
+   "champion": "s18771",
+   "rank": 7,
+   "risk": 0.05,
+   "leverage": 3
+  },
+  "FIL-USDT-SWAP": {
+   "side": 1,
+   "entry": 0.5195038799999999,
+   "stop": 0.49213689667951405,
+   "tp": 0.5569966471490655,
+   "opened": 1795190400000,
+   "strategy": "evolved",
+   "champion": "s18771",
+   "rank": 7,
+   "risk": 0.05,
+   "leverage": 3
   }
  }
 }

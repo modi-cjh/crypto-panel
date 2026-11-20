@@ -1,6 +1,6 @@
 {
- "day": "2026-11-20",
- "day_start": 8210.314714515174,
+ "day": "2026-11-21",
+ "day_start": 8539.410827679189,
  "halted": false,
  "history": [
   [
@@ -638,6 +638,10 @@
   [
    1795181270967,
    8397.23
+  ],
+  [
+   1795194653344,
+   8511.14
   ]
  ],
  "mirrored": {
@@ -1474,7 +1478,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "11.3",
-   "stop": 3.9758961981632375,
+   "stop": 3.865896198162936,
    "target": 1.0163918234898492,
    "leverage": 2,
    "entry": 3.006,
@@ -1492,7 +1496,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "35.28",
-   "stop": 0.17563508723606563,
+   "stop": 0.17163508723618356,
    "target": 0.08413383425147535,
    "leverage": 3,
    "entry": 0.1454,
@@ -1510,7 +1514,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "15",
-   "stop": 49.00965915422144,
+   "stop": 47.47965915422144,
    "target": 29.318753606976628,
    "leverage": 4,
    "entry": 43.45,
@@ -1574,7 +1578,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "15844.5",
-   "stop": 2.3725153000160355,
+   "stop": 2.2875153000160355,
    "target": null,
    "leverage": 1,
    "entry": 2.253,
@@ -1605,6 +1609,42 @@
    "ordId": "4111085982593826816",
    "closed_reason": "exchange_stop_or_target",
    "realized_pnl": -48.968075044858715
+  },
+  "AVAX-USDT-SWAP|1795190400000": {
+   "inst": "AVAX-USDT-SWAP",
+   "side": 1,
+   "posSide": "long",
+   "strategy": "evolved",
+   "contracts": "1389.2",
+   "stop": 6.21966432202955,
+   "target": 6.858695190819517,
+   "leverage": 3,
+   "entry": 6.527,
+   "clOrdId": "evavax1795190400",
+   "opened_at": 1795194653344,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "cross",
+   "champion": "s18771",
+   "ordId": "4116868993822212096"
+  },
+  "FIL-USDT-SWAP|1795190400000": {
+   "inst": "FIL-USDT-SWAP",
+   "side": 1,
+   "posSide": "long",
+   "strategy": "evolved",
+   "contracts": "167682",
+   "stop": 0.49213689667951405,
+   "target": 0.5569966471490655,
+   "leverage": 3,
+   "entry": 0.5176,
+   "clOrdId": "evfil1795190400",
+   "opened_at": 1795194653344,
+   "status": "open",
+   "leader": false,
+   "mgnMode": "cross",
+   "champion": "s18771",
+   "ordId": "4116869028316168192"
   }
  },
  "paused": false,
