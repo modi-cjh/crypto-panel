@@ -331,6 +331,10 @@
    [
     1795132800000,
     1795161600000
+   ],
+   [
+    1795204800000,
+    null
    ]
   ],
   "ASTER-USDT-SWAP": [
@@ -701,6 +705,10 @@
    [
     1795089600000,
     1795161600000
+   ],
+   [
+    1795204800000,
+    null
    ]
   ],
   "MINA-USDT-SWAP": [
@@ -1180,7 +1188,7 @@
    ],
    [
     1795190400000,
-    null
+    1795204800000
    ]
   ],
   "BTC-USDT-SWAP": [
@@ -1239,14 +1247,15 @@
   ]
  },
  "price_off_now": {
-  "AAVE-USDT-SWAP": 0.0297,
-  "XPL-USDT-SWAP": 0.1303,
-  "ASTER-USDT-SWAP": -0.026,
-  "H-USDT-SWAP": 0.9003,
-  "JUP-USDT-SWAP": -0.1526,
-  "BARD-USDT-SWAP": -0.2539,
-  "HOME-USDT-SWAP": 0.2102,
-  "IMX-USDT-SWAP": 0.011
+  "ARB-USDT-SWAP": -0.0734,
+  "AAVE-USDT-SWAP": 0.0435,
+  "XPL-USDT-SWAP": 0.1346,
+  "ASTER-USDT-SWAP": -0.0401,
+  "H-USDT-SWAP": 1.036,
+  "JUP-USDT-SWAP": -0.2134,
+  "BOME-USDT-SWAP": 0.0234,
+  "BARD-USDT-SWAP": -0.2756,
+  "HOME-USDT-SWAP": 0.209
  },
  "trimmed_at": 1794761546503
 }

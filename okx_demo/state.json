@@ -642,6 +642,10 @@
   [
    1795194653344,
    8511.14
+  ],
+  [
+   1795208481616,
+   8530.72
   ]
  ],
  "mirrored": {
@@ -1478,7 +1482,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "11.3",
-   "stop": 3.865896198162936,
+   "stop": 3.8198961981629362,
    "target": 1.0163918234898492,
    "leverage": 2,
    "entry": 3.006,
@@ -1496,7 +1500,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "35.28",
-   "stop": 0.17163508723618356,
+   "stop": 0.17103508723618355,
    "target": 0.08413383425147535,
    "leverage": 3,
    "entry": 0.1454,
@@ -1578,7 +1582,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "15844.5",
-   "stop": 2.2875153000160355,
+   "stop": 2.2705153000160356,
    "target": null,
    "leverage": 1,
    "entry": 2.253,
