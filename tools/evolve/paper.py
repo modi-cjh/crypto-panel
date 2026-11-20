@@ -1,18 +1,22 @@
 """Paper trading for the champion team: ONE shared account, run by execution.simulate_account().
 
 The team's strategies all trade the same account: every position is sized on the whole account's equity (the strategy's
-risk gene, 5–20 %, missing = 5 %, then major-coin doubling and crowding (half from the 10th same-side position on), capped at
-20 %). Every seat, including the leader, uses its own risk and leverage genes (leverage 1–20×, clamped to that coin's OKX
+risk gene, 5–10 %, missing = 5 %, then major-coin doubling and crowding (half from the 10th same-side position on), capped at
+10 %). Every seat, including the leader, uses its own risk and leverage genes (leverage 1–20×, clamped to that coin's OKX
 max). Margin is shared and cross (全仓): liquidation is when account equity falls to or below total maintenance margin,
 and then every position is closed. There is no same-side total-risk cap (ACCOUNT_RULES['same_side_cap'] = None); the
 daily halt (25 %) applies to everyone, including the leader, and so does the same-side count (at most
 ACCOUNT_RULES['max_same_side'] = 20 open positions on one side; only for entries after account['side_cap_from'], the
-first run that had it, so positions already open are not replayed away). The 2026-11-20 sizing (5–20 %, cap 20 %,
-half at 10) likewise only applies to fills after account['risk_rules_from'] (the first run that had it); earlier fills,
-including positions still open then, are replayed with execution.LEGACY_SIZING (2–10 %, cap 10 %, half at 3 / quarter
-at 6) and their seat's stored risk gene, so they keep their original size. The OKX follow (tools/okx_demo_trader.py,
-demo and live) uses the same 5–20 % / 20 % / half-at-10 steps and 1–20× genes on cross margin, clamped to each coin's
-OKX max leverage (no new entry if the spec is missing).
+first run that had it, so positions already open are not replayed away). Sizing changes work the same way, in eras,
+so fills that already happened (including positions still open) keep their original size on every replay:
+- fills on or before account['risk_rules_from'] (the first run with PR #107): execution.LEGACY_SIZING (2–10 %, cap
+  10 %, half at 3 / quarter at 6) with their seat's stored risk gene;
+- fills after it and on or before account['risk_cap_from'] (the first run with the 5–10 % band): execution.PRIOR_SIZING
+  (5–20 %, cap 20 %, half at 10) with their seat's stored risk gene;
+- later fills: the current ACCOUNT_RULES (5–10 %, cap 10 %, half at 10).
+Both stamps are set once (setdefault) and never moved. The OKX follow (tools/okx_demo_trader.py, demo and live) uses the
+same 5–10 % / 10 % / half-at-10 steps and 1–20× genes on cross margin, clamped to each coin's OKX max leverage (no new
+entry if the spec is missing).
 Each run replays the account from its start bar with the full seat history, so the result is exactly what the engine
 produces on live bars:
   account = dict(from_ts, start_equity, segs=[dict(id, champion, slot, genes, species, from_ts, wind_ts, boosts, reason)])
@@ -328,16 +332,19 @@ def update(state, series, changes, price_off=None):
                 g['boosts'][-1][1] = last_ts
     idx = lambda ts: _index(series, ts)
     # genes are re-clamped to the current bands for new entries; old_risk = the risk gene as stored when the seat was
-    # taken (fix() under the band of that time), used for fills before risk_rules_from so the replay keeps their size.
+    # taken (fix() under the band of that time), used for fills on or before risk_rules_from / risk_cap_from so the
+    # replay keeps their size (each era clamps it into its own band).
     segs = [dict(id=g['id'], genes=fix(dict(g['genes'])), from_i=idx(g['from_ts']), wind_i=idx(g['wind_ts']) if g['wind_ts'] is not None else None,
                  boosts=[(idx(a), idx(b) if b is not None else None) for a, b in g['boosts']],
                  **({'old_risk': g['genes']['risk']} if g['genes'].get('risk') is not None else {})) for g in acc['segs']]
     blocked = {inst: [(idx(a), idx(b) if b is not None else None) for a, b in rs] for inst, rs in (price_off or {}).items()}
     off_now = {inst for inst, rs in (price_off or {}).items() if rs and rs[-1][1] is None}
     acc.setdefault('side_cap_from', last_ts)          # the same-side count starts with the first run that has it
-    acc.setdefault('risk_rules_from', last_ts)        # the 5–20 % / 20 % / half-at-10 sizing starts with the first run that has it
+    acc.setdefault('risk_rules_from', last_ts)        # the 5–20 % / 20 % / half-at-10 sizing (PR #107) started with the first run that had it
+    acc.setdefault('risk_cap_from', last_ts)          # the 5–10 % / 10 % / half-at-10 sizing starts with the first run that has it
     res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked,
-                           side_cap_from=idx(acc['side_cap_from']), risk_from=idx(acc['risk_rules_from']))
+                           side_cap_from=idx(acc['side_cap_from']), risk_from=idx(acc['risk_rules_from']),
+                           risk_cap_from=idx(acc['risk_cap_from']))
     by = {g['id']: g for g in acc['segs']}
     rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     who = lambda sid: by[sid]['champion']

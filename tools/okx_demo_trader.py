@@ -15,14 +15,14 @@ stops can be compared with the paper results. In demo mode every request carries
 
 Each run, against <data>/combined/state.json:
   - a paper position opened in the last OPEN_WINDOW that is not mirrored yet is opened at market,
-    sized by the strategy's risk at the paper stop (evolved mode: cross margin, the strategy's own 5–20 % risk gene;
+    sized by the strategy's risk at the paper stop (evolved mode: cross margin, the strategy's own 5–10 % risk gene;
     half from the 10th position already open on that side; the legacy modes: cross, 1 %), with the stop (and the
     mean-reversion target) attached as exchange-side algo orders;
   - when the paper stop trails, the exchange stop is amended;
   - when the paper position is gone, the mirrored position is closed;
   - if the exchange stop already closed a mirrored position, it is marked done and never reopened.
 Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; in demo mode
-the process refuses to send any request without `x-simulated-trading: 1`. Evolved mode uses cross margin (全仓), the strategy's own risk (5–20 %) and leverage
+the process refuses to send any request without `x-simulated-trading: 1`. Evolved mode uses cross margin (全仓), the strategy's own risk (5–10 %) and leverage
 (1–20×, clamped to that coin's OKX max; fallback 20× if the public spec is missing). A new order is skipped if its stop would leave account equity at or below total maintenance margin. A UTC+7 day
 loss of 10% closes everything and blocks new entries until the next day; actions `pause`, `resume`,
 `flatten` (close all and pause) and `dry-run` (log intended orders, send nothing) are available.
@@ -53,16 +53,16 @@ BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
 RISK, MAX_LEVERAGE, DAILY_HALT = .01, 10, .10   # legacy volume-test profiles: 1 % risk, 10× cap; daily halt 10 %
 EVOLVED_DAILY_HALT = .25                         # following the evolution champions: 25 % (2026-11-15, was 10 %), counted on the whole account including the leader
-RISK_RANGE = (.05, .20)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range; missing p['risk'] defaults to 5 %
-MAX_TRADE_RISK = .20      # 2026-11-20 live/demo follow: was .10; paper/evolution execution.MAX_TRADE_RISK is .20 as well (synced)
+RISK_RANGE = (.05, .10)   # evolved mode: each order risks its strategy's own risk gene, kept inside this range; missing p['risk'] defaults to 5 %
+MAX_TRADE_RISK = .10      # 2026-11-20: lowered from .20 (PR #106 had raised it from .10); paper/evolution execution.MAX_TRADE_RISK is .10 as well (synced)
 EVOLVED_MAX_LEVERAGE = GENE_MAX_LEVERAGE   # 20×, same cap as the evolve leverage gene
 # MAJORS comes from execution. The per-instrument OKX leverage cap is read from the public instruments spec; when it is
 # missing or unusable no new position is opened on that coin (fail closed, no 20× fallback). Existing positions are
 # still managed and closed.
-# Every seat including the leader uses its own risk and leverage genes (5–20 %, 1–20×). Majors may be doubled then
-# clamped so the result never exceeds 20 %. The leader counts toward the same-direction cap and is subject to the
+# Every seat including the leader uses its own risk and leverage genes (5–10 %, 1–20×). Majors may be doubled then
+# clamped so the result never exceeds 10 %. The leader counts toward the same-direction cap and is subject to the
 # daily-loss stop, same as everyone else. LEADER_RISK / LEADER_LEVERAGE are the caps, not a fixed bigger size.
-# LEADER_RISK follows MAX_TRADE_RISK, so the 2026-11-20 cap raise also lifts the leader cap from 10 % to 20 %.
+# LEADER_RISK follows MAX_TRADE_RISK: 10 % (PR #106 had lifted it to 20 %; the later 2026-11-20 change set it back to 10 %).
 LEADER_RISK, LEADER_LEVERAGE = MAX_TRADE_RISK, EVOLVED_MAX_LEVERAGE
 MARGIN_MODE = 'cross'             # evolved and legacy modes both use cross margin (全仓); liquidation is at the account level
 # Trading mode switch. demo = OKX demo trading (x-simulated-trading: 1); live = the real account (header omitted).
@@ -96,7 +96,7 @@ def configure_evolved(universe=None):
     so a longer list from an older evolution run is never scanned in full; without it, the five majors."""
     global INSTRUMENTS, RISK, SAME_SIDE_CAP, ACTIVE_PROFILE, DAILY_HALT, MARGIN_MODE
     MARGIN_MODE = 'cross'
-    # Each order risks its strategy's own risk gene (5–20 %, default 5 % when missing, capped at 20 % after crowding and the major-coin factor)
+    # Each order risks its strategy's own risk gene (5–10 %, default 5 % when missing, capped at 10 % after crowding and the major-coin factor)
     # and its leverage gene (1–20×, clamped to that coin's OKX max). An order is skipped if its stop would leave
     # account equity at or below total maintenance margin (0.5 % majors / 2.5 % others).
     # No total-risk cap per direction (only at most MAX_SAME_SIDE = 20 open per side); a 25 % daily loss on the whole account closes every
@@ -521,7 +521,7 @@ class Mirror:
             r *= next((f for n, f in CROWD_STEPS if crowd >= n), 1.0)
             if inst in MAJORS:
                 r *= MAJOR_FACTOR
-            r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 20 %
+            r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 10 %
         risk = r * self.equity
         same_risk = 0.0
         for existing_key, m in (self.s['mirrored'].items() if SAME_SIDE_CAP is not None else ()):   # only needed for a same-side risk cap

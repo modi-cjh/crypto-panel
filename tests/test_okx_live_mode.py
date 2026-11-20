@@ -158,8 +158,8 @@ class ModeSwitchTests(unittest.TestCase):
 
     def test_risk_parameters_are_the_same_in_both_modes(self):
         # The switch only changes the transport (header / state folder / dry-run); the evolved profile is shared.
-        self.assertEqual(odt.RISK_RANGE, (.05, .20)); self.assertEqual(odt.MAX_TRADE_RISK, .20)
-        self.assertEqual(odt.LEADER_RISK, .20); self.assertEqual(odt.CROWD_STEPS, ((10, .5),))
+        self.assertEqual(odt.RISK_RANGE, (.05, .10)); self.assertEqual(odt.MAX_TRADE_RISK, .10)
+        self.assertEqual(odt.LEADER_RISK, .10); self.assertEqual(odt.CROWD_STEPS, ((10, .5),))
         self.assertEqual(odt.EVOLVED_MAX_LEVERAGE, 20); self.assertEqual(odt.EVOLVED_DAILY_HALT, .25)
         self.assertEqual(odt.MAX_SAME_SIDE, 20)
         saved = {k: getattr(odt, k) for k in LiveModeBase.GLOBALS}
@@ -167,7 +167,7 @@ class ModeSwitchTests(unittest.TestCase):
             p = odt.configure_evolved(['BTC-USDT-SWAP'])
             self.assertEqual((p['margin_mode'], p['same_side_cap'], p['daily_halt'], p['max_leverage']), ('cross', None, .25, 20))
             self.assertEqual(p['max_same_side'], 20)
-            self.assertEqual((p['risk'], p['risk_max'], p['max_risk'], p['leader_risk']), (.05, .20, .20, .20))
+            self.assertEqual((p['risk'], p['risk_max'], p['max_risk'], p['leader_risk']), (.05, .10, .10, .10))
         finally:
             for k, v in saved.items(): setattr(odt, k, v)
 

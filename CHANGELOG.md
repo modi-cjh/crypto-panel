@@ -634,6 +634,14 @@
 - 不变：杠杆 1–20×、同向最多 20 仓、同向合计风险不设上限、日亏 25% 停手、全仓、主流币 ×2、每笔交易所止损、扫描前 50 币、`TEAM_SIZE`、守擂 5 代；跟单程序常量。
 - 测试：`tests/test_evolve.py`（基因区间 / `gene_bounds` 5–20%、夹紧与缺失默认、随机与突变不出界、`crowd_factor` 9 → 1、10 → 0.5、`position_risk` 下限 / 上限 / 主流币、`simulate()` 的 2% 基因按 5% 开仓、`risk_from` 前后的尺寸、`risk_rules_from` 记录且不前移、`leader_risk` / `max_risk` 20%；同向计数测试用 1% 下限的规则只让计数起作用）、`tests/evolve.test.mjs` 与夹具 `gene_bounds` / `rules`。
 
+### 单笔风险 5–20% → 5–10%，单笔上限 20% → 10%（实盘 / 模拟盘跟单 / 纸面 / 进化，2026-11-20）
+- 做了什么：`tools/okx_demo_trader.py`（实盘与 OKX 模拟盘跟单共用）`RISK_RANGE` (.05, .20) → (.05, .10)、`MAX_TRADE_RISK` .20 → .10，`LEADER_RISK` 跟随为 10%（只是上限，第一名仍按自己的基因开仓）；缺 `p['risk']` 仍默认 5%，主流币 ×2 后仍 ≤ 10%；摘要 `execution_profile` 的 `risk` / `risk_max` / `max_risk` / `leader_risk` 为 5% / 10% / 10% / 10%。`tools/evolve/execution.py` `MAX_TRADE_RISK` .20 → .10（`MIN_TRADE_RISK` 仍 .05；`ACCOUNT_RULES` 的 `min_risk` / `max_risk` / `leader_risk` 跟随为 5% / 10% / 10%）；`tools/evolve/genome.py` `GENES['risk']` (.05, .20) → (.05, .10)，随机初始化、突变、交叉、`fix()` 都落在新区间（5–20% 时期保存的 > 10% 基因压到 10%，< 5% 抬到 5%，缺失 5%）；`paper.py` 的 `_size()` / 第一名卡片同样夹到 5–10%。看板进化页兜底值与夹具 `gene_bounds` / `rules` 改为 5–10% / 10%。实盘、OKX 模拟盘、纸面、进化现在都是 5–10% / 单笔 10% / 满 10 仓减半，纸面 / 进化与跟单仍一致。
+- 为什么：用户要求把每单风险从 5–20% 降到 5–10%，四处一起改。
+- 已开仓位不改尺寸：实盘 / 模拟盘跟单只在开新仓时用风险，已有仓位不会被改。纸面账户每次从起点重放，所以在 PR #107 的 `risk_rules_from` / `LEGACY_SIZING` 之上再加一段：新增 `execution.PRIOR_SIZING`（5–20%、20%、满 10 仓减半，即 PR #107 的规则）和 `account['risk_cap_from']`（第一次带本规则运行时 `setdefault` 记下，此后不变）；`simulate_account(risk_cap_from=…)`：`risk_rules_from` 及之前用 `LEGACY_SIZING`，之后到 `risk_cap_from` 用 `PRIOR_SIZING` 与席位保存时的风险基因（`old_risk`），再之后用当前 5–10% 规则。已有的 `risk_rules_from` 不移动，`LEGACY_SIZING` 数值不变，因此已成交 / 仍持有的纸面仓位尺寸不变。
+- 守擂与种群：不重置 `defense_streaks`、种群和进化状态；风险基因 > 10% 的策略下次 `fix()` / 评估时按 10% 计算，只影响这些成员之后的适应度。
+- 不变：`CROWD_STEPS = ((10, .5),)`、杠杆 1–20×、同向最多 20 仓、同向合计风险不设上限、日亏 25% 停手、全仓、主流币 ×2、每笔交易所止损、扫描前 50 币、`TEAM_SIZE`、守擂 5 代。
+- 测试：`tests/test_okx_demo_trader.py` / `tests/test_okx_live_mode.py`（基因夹到 5–10%、12% / 20% 旧基因按 10%、缺风险 5%、3% 基因先抬到 5% 再 ×2、主流币 ×2 ≤ 10%、`LEADER_RISK = 10%`、`execution_profile` 5% / 10% / 10% / 10%；拥挤断言不变）；`tests/test_evolve.py`（`GENES['risk']` / `gene_bounds` 5–10%、夹紧 / 随机 / 突变不出界、`position_risk` / `simulate()` 上限 10%、`PRIOR_SIZING` 数值、`risk_cap_from` 前 12% 基因与主流币 20% 尺寸保持、之后压到 10%、纸面重放中已开仓位尺寸不变、`risk_rules_from` 不前移且 `risk_cap_from` 只设一次）；`tests/evolve.test.mjs` 与夹具。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |
