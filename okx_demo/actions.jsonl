@@ -205,3 +205,5 @@
 {"ts": "2026-11-19T13:30:41Z", "action": "closed_on_exchange", "inst": "KAITO-USDT-SWAP", "dry_run": false, "strategy": "evolved", "pnl": -48.968075044858715, "price_pnl": -48.437399999999954, "funding": -0.0182581848587571, "close_price": 0.1943424274973147, "fee": -0.51241686, "outcome": "stop"}
 {"ts": "2026-11-19T21:03:45Z", "action": "amend_stop", "inst": "LTC-USDT-SWAP", "dry_run": false, "old": 50.599659154222834, "new": 50.089659154215184}
 {"ts": "2026-11-20T01:22:07Z", "action": "amend_stop", "inst": "LTC-USDT-SWAP", "dry_run": false, "old": 50.089659154215184, "new": 49.60965915422144}
+{"ts": "2026-11-20T05:14:25Z", "action": "amend_stop", "inst": "LTC-USDT-SWAP", "dry_run": false, "old": 49.60965915422144, "new": 49.199659154221436}
+{"ts": "2026-11-20T05:14:25Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.452515300016035, "new": 2.4055153000160354}
