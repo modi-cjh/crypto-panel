@@ -14,7 +14,10 @@ so fills that already happened (including positions still open) keep their origi
 - fills after it and on or before account['risk_cap_from'] (the first run with the 5–10 % band): execution.PRIOR_SIZING
   (5–20 %, cap 20 %, half at 10) with their seat's stored risk gene;
 - later fills: the current ACCOUNT_RULES (5–10 %, cap 10 %, half at 10).
-Both stamps are set once (setdefault) and never moved. The OKX follow (tools/okx_demo_trader.py, demo and live) uses the
+Both stamps are set once (setdefault) and never moved. The 7-day hold cap (execution.MAX_HOLD_H = 168 h, was 720 h)
+works the same way: account['hold_cap_from'] = the last bar of the previous run (the last bar the published history
+covers; this run's last bar when unknown). Bars up to it keep the 720 h cap, so trades that already closed are not
+replayed differently; after it every position, including one opened earlier, exits once it has been held 168 h. The OKX follow (tools/okx_demo_trader.py, demo and live) uses the
 same 5–10 % / 10 % / half-at-10 steps and 1–20× genes on cross margin, clamped to each coin's OKX max leverage (no new
 entry if the spec is missing).
 Each run replays the account from its start bar with the full seat history, so the result is exactly what the engine
@@ -278,8 +281,9 @@ def _convert(state, series, last_ts):
     return state['paper']
 
 
-def update(state, series, changes, price_off=None):
+def update(state, series, changes, price_off=None, prev_last=None):
     """price_off: data.price_check ranges {inst: [[from_ts, to_ts or None]]} — coins that take no new entry in those ranges.
+    prev_last: the last bar of the previous run (its published curve), used once to stamp account['hold_cap_from'].
     Apply this run's seat and leader changes, replay the shared account, and return (dashboard view, mirror signals)."""
     nodes, s = state['nodes'], next(iter(series.values()))
     last_ts = s.ts[-1]
@@ -342,9 +346,11 @@ def update(state, series, changes, price_off=None):
     acc.setdefault('side_cap_from', last_ts)          # the same-side count starts with the first run that has it
     acc.setdefault('risk_rules_from', last_ts)        # the 5–20 % / 20 % / half-at-10 sizing (PR #107) started with the first run that had it
     acc.setdefault('risk_cap_from', last_ts)          # the 5–10 % / 10 % / half-at-10 sizing starts with the first run that has it
+    # the 168 h hold cap starts right after the bars the previous run already published (closed trades stay as they were)
+    acc.setdefault('hold_cap_from', min(prev_last, last_ts) if prev_last is not None else last_ts)
     res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked,
                            side_cap_from=idx(acc['side_cap_from']), risk_from=idx(acc['risk_rules_from']),
-                           risk_cap_from=idx(acc['risk_cap_from']))
+                           risk_cap_from=idx(acc['risk_cap_from']), hold_from=idx(acc['hold_cap_from']))
     by = {g['id']: g for g in acc['segs']}
     rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     who = lambda sid: by[sid]['champion']

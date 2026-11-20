@@ -642,6 +642,14 @@
 - 不变：`CROWD_STEPS = ((10, .5),)`、杠杆 1–20×、同向最多 20 仓、同向合计风险不设上限、日亏 25% 停手、全仓、主流币 ×2、每笔交易所止损、扫描前 50 币、`TEAM_SIZE`、守擂 5 代。
 - 测试：`tests/test_okx_demo_trader.py` / `tests/test_okx_live_mode.py`（基因夹到 5–10%、12% / 20% 旧基因按 10%、缺风险 5%、3% 基因先抬到 5% 再 ×2、主流币 ×2 ≤ 10%、`LEADER_RISK = 10%`、`execution_profile` 5% / 10% / 10% / 10%；拥挤断言不变）；`tests/test_evolve.py`（`GENES['risk']` / `gene_bounds` 5–10%、夹紧 / 随机 / 突变不出界、`position_risk` / `simulate()` 上限 10%、`PRIOR_SIZING` 数值、`risk_cap_from` 前 12% 基因与主流币 20% 尺寸保持、之后压到 10%、纸面重放中已开仓位尺寸不变、`risk_rules_from` 不前移且 `risk_cap_from` 只设一次）；`tests/evolve.test.mjs` 与夹具。
 
+### 最长持仓 30 天 → 7 天（进化回测 / 纸面 / OKX 模拟盘 / 实盘，2026-11-20）
+- 做了什么：`tools/evolve/execution.py` `MAX_HOLD_H` 720 → 168：`simulate()`（进化适应度、样本外、终审回测）与 `simulate_account()`（纸面账户）里每笔仓位持有 `min(max_hold × tf, 168)` 小时后按收盘价平仓（原因 `time`）。基因 `max_hold` 区间不变（`('int', 4, 240)`），也不加“换冠军时平仓”规则，其它参数不动。纸面账户每次从起点整体重放，直接改常量会把已平仓的历史改写（当前账户里 CRV 持有 211 小时止盈、GRASS 持有 190 小时止损，新上限下会变成第 168 小时 `time` 平仓，后面的权益和尺寸跟着变），所以仿照 `risk_cap_from` 加一段：新增 `execution.OLD_MAX_HOLD_H = 720` 与 `simulate_account(hold_from=…)`，`paper.update` 一次性记下 `account['hold_cap_from']` = 上一次运行的最后一根 K 线（`run.previous_last_bar()` 读旧 `dashboard.json` 的纸面曲线最后一点；读不到时用本次最后一根），之后不再移动。该 K 线及之前按 720 小时，之后按 168 小时：已发布的成交和曲线不变，仍未平仓且已超过 168 小时的仓位在下一次纸面运行的第一根新 K 线收盘平掉。
+- 实盘 / OKX 模拟盘：跟单程序（`tools/okx_demo_trader.py`，两边共用）没有自己的持仓时长检查，只跟纸面信号：每次运行对比 `signals.json` 的 `inst|opened`，纸面仓位消失就 `close-position` 市价平仓（原因 `paper_closed`）。因此纸面到 168 小时平仓后，实盘下一次运行（每小时 :50）跟着平；信号过期时实盘本轮不操作（不变）。跟单代码未改。
+- 为什么：用户要求最长持仓从 30 天缩短到 7 天，实盘、模拟盘、纸面、进化 / 回测一起生效。
+- 影响：下一次纸面运行会平掉已持有超过 168 小时的 4 笔纸面仓位（H、ENA、BTC、DOGE 空单，均属已退场席位），其中 ENA 空单实盘也持有，会随之平掉。进化适应度每次运行重算，max_hold × tf > 168 的策略成绩会变。
+- 不变：基因区间、风险 5–10% / 单笔 10%、杠杆 1–20×、同向最多 20 仓、日亏 25% 停手、全仓、`risk_rules_from` / `risk_cap_from` / `side_cap_from`、跟单常量；旧三策略的 168 小时 / 90 天不涉及。
+- 测试：`tests/test_evolve.py` 新增 `MAX_HOLD_H == 168`（基因区间不变）、`simulate()` 240 根（1H / 日线）都在 168 小时 `time` 平仓、`hold_from` 前后 720 / 168 小时、纸面重放：上次运行已止损的仓位（持有 179 小时）原样保留、超 168 小时的未平仓在下一次运行第一根新 K 线平掉、`hold_cap_from` 只设一次且不晚于本次最后一根、`previous_last_bar` 读旧看板。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

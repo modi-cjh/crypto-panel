@@ -22,7 +22,7 @@ GENES = {
     'rs_th': ('float', .02, .3),         # relative strength: (coin − BTC) return over `lookback` bars crosses ±rs_th
     'stop_atr': ('float', .8, 5.0),      # stop distance in ATR(14)
     'target_rr': ('float', 0.0, 6.0),    # target as multiple of stop distance; < .5 means no target
-    'max_hold': ('int', 4, 240),         # bars of the genome's timeframe (capped at MAX_HOLD_H hours)
+    'max_hold': ('int', 4, 240),         # bars of the genome's timeframe (capped at MAX_HOLD_H = 168 hours)
     'trail': ('choice', [0, 1], None),   # 1: the stop trails the best price at the stop distance after every bar
     'risk': ('float', .05, .10),         # equity at risk per trade, chosen by the strategy itself (5–10 %; 5–20 % in PR #107, 2–10 % before)
     'leverage': ('int', 1, 20),          # leverage the strategy wants (sets initial margin on cross); clamped to the coin's OKX max

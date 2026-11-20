@@ -25,6 +25,15 @@ def iso(ms):
     return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
 
 
+def previous_last_bar(path):
+    """The last bar the previous run replayed: the last point of the paper curve in its dashboard.json (None if unknown).
+    Only used once, to stamp the paper account's hold_cap_from (paper.update)."""
+    try:
+        return int(json.loads(Path(path).read_text())['paper']['curve'][-1][0])
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return None
+
+
 GRAPH_KEYS = ('id', 'gen', 'born', 'died', 'species', 'parents', 'how', 'origin', 'fitness', 'qualified', 'train', 'test', 'final', 'test_ok', 'final_ok', 'oos_dd')
 
 
@@ -111,7 +120,7 @@ def main(argv=None):
     price_off, off_now = D.price_check(args.data, next(iter(series.values())).ts[-1]) if real_universe else ({}, {})
     if off_now:
         print('模拟盘价格偏离真实行情 > 1%，暂停开新仓：' + '、'.join(f"{k.split('-')[0]} {v * 100:+.0f}%" if v is not None else k.split('-')[0] for k, v in off_now.items()))
-    paper_view, signals = P.update(state, series, changes, price_off)
+    paper_view, signals = P.update(state, series, changes, price_off, prev_last=previous_last_bar(out / 'dashboard.json'))
     E.prune(state)
     timing = dict(seconds=round(time.time() - t0, 1), generations=len(rows), switched=switched, changes=[dict(slot=c[0], old=c[1], new=c[2], reason=c[3]) for c in changes])
     state_path.write_text(json.dumps(state, separators=(',', ':')))

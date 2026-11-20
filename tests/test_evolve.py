@@ -707,6 +707,108 @@ class EvolutionTests(unittest.TestCase):
         P.update(state, sr, [])
         self.assertEqual((acc['risk_rules_from'], acc['risk_cap_from']), (T0, sr['U0-USDT-SWAP'].ts[-1]))
 
+    # ---- 7-day hold cap (2026-11-20: MAX_HOLD_H 720 → 168) ----
+    @staticmethod
+    def _long_hold_market(n=260, drop_at=None):
+        """Breakout on bar 40 (fill on bar 41), then flat at 111 for the rest; drop_at = a bar that gaps far below the stop."""
+        closes = [100.0] * 40 + [110.0] + [111.0] * (n - 41)
+        opens = [closes[0]] + closes[:-1]
+        if drop_at is not None:
+            for i in range(drop_at, n):
+                closes[i] = opens[i] = 100.0                   # gaps through the stop (about 103) at the open
+        return closes, opens
+
+    def test_max_hold_is_seven_days(self):
+        self.assertEqual(X.MAX_HOLD_H, 168)
+        self.assertEqual(X.OLD_MAX_HOLD_H, 720)              # kept only for the paper replay of bars before hold_cap_from
+        self.assertEqual(G.GENES['max_hold'], ('int', 4, 240))  # the gene range itself is unchanged
+
+    def test_simulate_exits_after_168_hours_whatever_the_max_hold_gene(self):
+        closes, _ = self._long_hold_market()
+        s = series_from(closes)
+        for genes in (base_genes(max_hold=240, stop_atr=5.0), base_genes(max_hold=200, stop_atr=5.0)):
+            r = X.simulate(genes, {'BTC-USDT-SWAP': s}, 30, s.n)
+            t = r['trades'][0]
+            self.assertEqual((t['reason'], t['opened'], t['closed']), ('time', s.ts[41], s.ts[41 + 168]), genes)
+            self.assertEqual((t['closed'] - t['opened']) // H, 168)
+        r = X.simulate(base_genes(max_hold=100, stop_atr=5.0), {'BTC-USDT-SWAP': s}, 30, s.n)   # a shorter gene keeps its own hold
+        self.assertEqual(r['trades'][0]['closed'], s.ts[41 + 100])
+        # daily bars (tf 24): 240 bars would be 5760 h, still capped at 168 h
+        w = series_from(walk(2400, 5))
+        r = X.simulate(base_genes(max_hold=240, tf=24, lookback=5, stop_atr=8.0), {'BTC-USDT-SWAP': w}, 200, w.n)
+        times = [(t['closed'] - t['opened']) // H for t in r['trades'] if t['reason'] == 'time']
+        self.assertTrue(times); self.assertEqual(set(times), {168})
+        self.assertTrue(all((t['closed'] - t['opened']) // H <= 168 for t in r['trades']))
+
+    def test_simulate_account_keeps_the_720h_cap_up_to_hold_from_and_168h_after_it(self):
+        closes, _ = self._long_hold_market()
+        sr = {'BTC-USDT-SWAP': series_from(closes)}
+        ts = sr['BTC-USDT-SWAP'].ts
+        seg = [dict(id='m', genes=base_genes(max_hold=240, stop_atr=5.0, risk=.05), from_i=0, wind_i=None, boosts=[])]
+        run = lambda **kw: X.simulate_account(seg, sr, 30, len(closes), equity=10000.0, **kw)
+        r = run()                                                        # None: 168 h on every bar
+        self.assertEqual([(t['reason'], t['closed']) for t in r['trades']], [('time', ts[41 + 168])])
+        r = run(hold_from=len(closes) - 1)                               # every bar on or before the stamp: the old 720 h cap
+        self.assertEqual((r['trades'], len(r['positions'])), ([], 1))
+        r = run(hold_from=230)                                           # held 189 h at the stamp: closes at the first bar after it
+        self.assertEqual([(t['reason'], t['closed']) for t in r['trades']], [('time', ts[231])])
+        r = run(hold_from=100)                                           # stamp before 168 h: the new cap applies on time
+        self.assertEqual([(t['reason'], t['closed']) for t in r['trades']], [('time', ts[41 + 168])])
+
+    def test_paper_replay_closes_over_168h_positions_next_run_without_rewriting_closed_trades(self):
+        a_closes, a_opens = self._long_hold_market()                     # A: still open after 168 h → must close at the next run
+        b_closes, b_opens = self._long_hold_market(drop_at=220)          # B: closed by its stop at bar 220 after 179 h (old 720 h cap)
+        sr = {'AAA-USDT-SWAP': series_from(a_closes, 'AAA-USDT-SWAP', opens=a_opens),
+              'BBB-USDT-SWAP': series_from(b_closes, 'BBB-USDT-SWAP', opens=b_opens)}
+        ts = sr['AAA-USDT-SWAP'].ts
+        genes = base_genes(max_hold=240, stop_atr=5.0, risk=.05, leverage=5, direction='long')   # long only: no re-entry after B's drop
+        cut = lambda k: {inst: X.Series(inst, s.ts[:k], s.o[:k], s.h[:k], s.l[:k], s.c[:k]) for inst, s in sr.items()}
+
+        def account(**stamps):
+            acc = dict(from_ts=T0 + 30 * H, start_equity=10000.0, next=1, side_cap_from=T0, risk_rules_from=T0, risk_cap_from=T0,
+                       segs=[dict(id='a1', champion='n1', slot=0, genes=dict(genes), species='momentum', from_ts=T0 + 30 * H,
+                                  wind_ts=None, boosts=[], reason='carry')], **stamps)
+            return acc, dict(nodes={'n1': dict(genes=dict(genes), species='momentum', fitness=1.0)}, team=[], paper=dict(account=acc, start_equity=10000.0))
+
+        # the previous run (old code = 720 h on every bar it saw) ended at bar 230: B had closed on its stop, A was open
+        prev_acc, prev_state = account(hold_cap_from=ts[230])
+        before, _ = P.update(prev_state, cut(231), [])
+        self.assertEqual([(t['inst'], t['reason'], t['closed']) for t in before['trades']], [('BBB-USDT-SWAP', 'stop', ts[220])])
+        self.assertEqual([p['inst'] for p in before['positions']], ['AAA-USDT-SWAP'])
+        # the next run (4 bars later) with the new code: the stamp is the previous run's last bar
+        acc, state = account()
+        after, _ = P.update(state, cut(235), [], prev_last=ts[230])
+        self.assertEqual(acc['hold_cap_from'], ts[230])
+        self.assertEqual(after['positions'], [])                                       # A (190 h) closed at the first new bar
+        got = {t['inst']: t for t in after['trades']}
+        self.assertEqual((got['AAA-USDT-SWAP']['reason'], got['AAA-USDT-SWAP']['closed']), ('time', ts[231]))
+        self.assertEqual(got['BBB-USDT-SWAP'], before['trades'][0])                    # the closed trade is replayed exactly as published
+        self.assertEqual([c for c in after['curve'] if c[0] <= ts[230]], [c for c in before['curve'] if c[0] <= ts[230]])
+        # a plain 168 h cap everywhere would have rewritten B (time exit at bar 209 instead of its stop at bar 220)
+        plain = X.simulate_account([dict(id='a1', genes=genes, from_i=30, wind_i=None, boosts=[])], cut(235), 30, 235, equity=10000.0)
+        self.assertEqual({t['inst']: (t['reason'], t['closed']) for t in plain['trades']}['BBB-USDT-SWAP'], ('time', ts[209]))
+        # the stamp is set once: later runs keep it
+        P.update(state, cut(240), [], prev_last=ts[234])
+        self.assertEqual(acc['hold_cap_from'], ts[230])
+
+    def test_hold_cap_stamp_falls_back_to_this_run_and_reads_the_previous_dashboard(self):
+        acc = dict(from_ts=T0, start_equity=10000.0, segs=[], next=0)
+        sr = self._two_sided_market()
+        last = sr['U0-USDT-SWAP'].ts[-1]
+        state = dict(nodes={}, team=[], paper=dict(account=acc, start_equity=10000.0))
+        P.update(state, sr, [])
+        self.assertEqual(acc['hold_cap_from'], last)                                     # unknown previous run: this run's last bar
+        del acc['hold_cap_from']
+        P.update(state, sr, [], prev_last=last + 5 * H)
+        self.assertEqual(acc['hold_cap_from'], last)                                     # never after this run's last bar
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'dashboard.json'
+            self.assertIsNone(R.previous_last_bar(path))
+            path.write_text(json.dumps(dict(paper=dict(curve=[[T0, 1.0], [T0 + 7 * H, 2.0]]))))
+            self.assertEqual(R.previous_last_bar(path), T0 + 7 * H)
+            path.write_text('{"paper": null}')
+            self.assertIsNone(R.previous_last_bar(path))
+
     def test_paper_replay_keeps_the_size_of_positions_filled_under_the_5_to_20_percent_rules(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 30                    # breakout on bar 40, fills on bar 41
         sr = {k: series_from(list(closes), k) for k in ('BTC-USDT-SWAP', 'PEPE-USDT-SWAP')}

@@ -54,7 +54,8 @@ MARGIN_MODE = 'cross'        # paper and the OKX demo follower both use cross ma
 MARGIN_USE = .95     # an entry may use at most this share of the free margin
 MIN_STOP_DIST = .002 # stops closer than this (fraction of price) are skipped, as on OKX
 START_EQUITY = 10000.0
-MAX_HOLD_H = 720     # longest hold in hours, whatever the timeframe
+MAX_HOLD_H = 168     # longest hold in hours, whatever the timeframe (2026-11-20 user: 7 days, was 720 = 30 days)
+OLD_MAX_HOLD_H = 720 # the cap before that; simulate_account() keeps it for bars on or before `hold_from` (paper replay)
 MAX_POSITIONS = 3    # open positions per strategy at the same time; extra signals wait until one closes
 HOUR = 3600_000
 
@@ -785,7 +786,7 @@ def position_risk(base, inst, same_side_open=0, rules=None):
 
 
 def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None, side_cap_from=None,
-                     risk_from=None, risk_cap_from=None):
+                     risk_from=None, risk_cap_from=None, hold_from=None):
     """ONE shared-equity account traded by several strategies at once, with cross (全仓) liquidation: the paper account of the champion team.
 
     segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
@@ -817,6 +818,10 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
       entry on that side is skipped (same_side_full); the other side and exits are not affected. side_cap_from = a
       bar index: the count only applies to fills after that bar, so switching it on does not rewrite the replay of
       positions that were already open (None = every bar);
+    - time exit: a position closes at the close once it has been held min(max_hold × tf, cap) hours. hold_from = a bar
+      index: on bars up to and including it the cap is OLD_MAX_HOLD_H (720 h), after it MAX_HOLD_H (168 h), so the replay
+      never rewrites trades that already closed, while a position still open past 168 h closes at the first bar after
+      hold_from (None = MAX_HOLD_H on every bar);
     - daily halt (days start at UTC+7 midnight): when the whole account, including the leader, has lost
       rules['daily_halt'] × the day's starting equity, every position is closed and no strategy opens until the next day;
     - liquidation is at the account level (cross / 全仓): when mark equity (cash + unrealized PnL, after fees and
@@ -924,7 +929,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             rr = g['target_rr']
             new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None, opened=ts0[i], bar=i,
                          fee=qty * px * FEE, dist=dist, lever=lever, margin=margin, funding=0.0, seg=sid, boost=boost, risk=r,
-                         hold=min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H), trail=g.get('trail', 0),
+                         hold=min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H), hold_old=min(g['max_hold'] * g.get('tf', 1), OLD_MAX_HOLD_H),
+                         trail=g.get('trail', 0),
                          liq=liquidation_price(px, d, lever, mmr=mmr), mmr=mmr)
             opens_now = marks_at(series, list(pos), i, 'o')
             ok, _why = cross_open_allowed(cash, pos, inst, new_p, opens_now)
@@ -951,7 +957,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         liq_now(marks_at(series, list(pos), i, 'c'), i)
         for inst in list(pos):
             p, s = pos[inst], series[inst]
-            if i - p['bar'] >= p['hold']:
+            if i - p['bar'] >= (p['hold'] if hold_from is None or i > hold_from else p['hold_old']):
                 close(inst, s.c[i], 'time', i)
             elif p['trail']:
                 p['stop'] = max(p['stop'], s.h[i] - p['dist']) if p['side'] == 1 else min(p['stop'], s.l[i] + p['dist'])
