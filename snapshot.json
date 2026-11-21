@@ -2,14 +2,14 @@
  "schema_version": 1,
  "source": "okx-live",
  "trading_mode": "live",
- "updated_at": "2026-11-21T09:50:03Z",
- "equity": 114.380913,
- "available": 91.592398,
+ "updated_at": "2026-11-21T10:50:02Z",
+ "equity": 113.805633,
+ "available": 90.96482,
  "day_start": 131.795868,
- "day_pnl": -17.414955,
- "day_pnl_pct": -13.2136,
+ "day_pnl": -17.990235,
+ "day_pnl_pct": -13.6501,
  "start_equity": 126.66404,
- "total_pnl": -12.283127,
+ "total_pnl": -12.858407,
  "paused": false,
  "halted": false,
  "dry_run": false,
@@ -22,10 +22,10 @@
    "lever": 11.0,
    "mgnMode": "cross",
    "avgPx": 1623.71,
-   "markPx": 1638.39,
-   "upl": -2.24604,
-   "uplRatio": -0.0994513,
-   "margin": 22.788515,
+   "markPx": 1642.04,
+   "upl": -2.80449,
+   "uplRatio": -0.124179,
+   "margin": 22.839284,
    "ctVal": 0.1,
    "ours": true,
    "stop": 1709.962,
@@ -608,6 +608,10 @@
   [
    1795254603758,
    114.38
+  ],
+  [
+   1795258202693,
+   113.81
   ]
  ]
 }
