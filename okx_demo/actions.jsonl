@@ -228,3 +228,4 @@
 {"ts": "2026-11-21T05:06:58Z", "action": "closed_on_exchange", "inst": "AVAX-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "stop_loss", "pnl": -437.03924945926866, "price_pnl": -429.2570000000001, "funding": 1.070609640731444, "close_price": 6.218133170169882, "fee": -8.8528591, "outcome": "stop"}
 {"ts": "2026-11-21T05:06:58Z", "action": "closed_on_exchange", "inst": "FIL-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "stop_loss", "pnl": -499.8163094181735, "price_pnl": -490.1252200000015, "funding": -1.2480538281719955, "close_price": 0.4889, "fee": -8.44303559, "outcome": "stop"}
 {"ts": "2026-11-21T05:06:58Z", "action": "skip", "inst": "ETH-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
+{"ts": "2026-11-21T08:58:55Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.1695153000160357, "new": 2.1625153000160355}
