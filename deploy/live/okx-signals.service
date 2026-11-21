@@ -1,0 +1,51 @@
+# /etc/systemd/system/okx-signals.service
+# Modi 每小时信号（正式模式）：H:01:30 UTC 增量拉 OKX 公共 1H K 线，用 GitHub 已发布的 paper-data state.json 只重放
+# 纸面账户，原子写 /var/lib/modi-okx-signals/evolve/signals.json。不进化、不发布、不写 paper-data、不持有任何密钥
+# （不读 okx-live.env；/etc/modi-okx-live 对本服务不可见）。跑完（成功或失败）立刻触发一次实盘跟单 okx-live@run：
+# 成功 → 用新信号；失败 → 跟单沿用上一小时的信号（okx-live@ 的 hourly 模式只检查本地文件新鲜度）。
+# 影子期请用 okx-signals-shadow.service（--shadow、不触发跟单）；本单元在切换步骤里才启用，见 docs/shadow-run-plan.md。
+# 资源：实盘优先。tg-shop-bot（MemoryMax 200M）与 readapi（200M）共用这台 1 GB 机器；超过 MemoryMax 只杀本进程，
+# 实盘仍由 OnFailure 触发。需要 systemd ≥ 249（OnSuccess=）；服务器是 255。
+[Unit]
+Description=Modi hourly signals (replay only, no keys; then okx-live@run)
+After=network-online.target
+Wants=network-online.target
+OnSuccess=okx-live@run.service
+OnFailure=okx-live@run.service
+
+[Service]
+Type=oneshot
+User=modi-signals
+Group=modi-signals
+WorkingDirectory=/opt/modi-okx-live
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# 状态目录 0755：只有公共行情与已公开的 paper-data 推出的信号，实盘用户 modi-live 需要读取 evolve/signals.json
+StateDirectory=modi-okx-signals
+StateDirectoryMode=0755
+ExecStart=/usr/bin/python3 tools/evolve/signals_hourly.py --data /var/lib/modi-okx-signals --candles /var/lib/modi-okx-signals/candles
+# oneshot 退出后 systemd 255 不再给出 MemoryPeak（$$ = shell 的 $，%% = %）：在 cgroup 删除前把 memory.peak、CPU 与结果追加到 metrics.log（影子期验收用）
+ExecStopPost=-/bin/sh -c 'echo "$$(date -u +%%FT%%TZ) unit=%n result=$$SERVICE_RESULT status=$$EXIT_STATUS memory_peak=$$(cat /sys/fs/cgroup/system.slice/%n/memory.peak 2>/dev/null) $$(grep ^usage_usec /sys/fs/cgroup/system.slice/%n/cpu.stat 2>/dev/null)" >> /var/lib/modi-okx-signals/metrics.log'
+# 脚本自己在 H:05（K 线）/ H:08（资金费）截止；这里只是兜底
+TimeoutStartSec=600
+# 本盒实测峰值 RSS 约 409 MiB（418 000 KB）（重放时 execution.Series 的指标缓存约 200 MB）：MemoryHigh 定在 460M（报告建议 420M，
+# 会在正常运行时就被节流），MemoryMax 520M 不变；影子期用 systemctl show -p MemoryPeak 实测后再调
+MemoryHigh=460M
+MemoryMax=520M
+CPUWeight=20
+IOWeight=20
+Nice=15
+OOMScoreAdjust=500
+UMask=0022
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+InaccessiblePaths=-/etc/modi-okx-live
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=

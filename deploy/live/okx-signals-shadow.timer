@@ -1,0 +1,14 @@
+# /etc/systemd/system/okx-signals-shadow.timer
+# 影子期：每小时 H:01:30 UTC 跑 okx-signals-shadow.service（--shadow，不触发跟单）。与 okx-signals.timer 不要同时启用
+# （同时启用也不会重复：脚本持锁，后到的一个直接退出 4）。
+[Unit]
+Description=Modi hourly signals, SHADOW, at H:01:30 UTC
+
+[Timer]
+OnCalendar=*-*-* *:01:30 UTC
+AccuracySec=1s
+Persistent=false
+Unit=okx-signals-shadow.service
+
+[Install]
+WantedBy=timers.target

@@ -175,9 +175,20 @@ def load_series(data_dir, now_ms, get=okx_get, instruments=None, cache_dir=None)
     with ThreadPoolExecutor(WORKERS) as pool:
         got = dict(zip(instruments, pool.map(lambda inst: _safe_update(cache, inst, now_ms, get), instruments)))
         funding = dict(zip(instruments, pool.map(lambda inst: _safe_funding(cache, inst, now_ms, get), instruments))) if contracts else {}
+    return assemble(got, specs, funding, contracts)
+
+
+STALE_HOURS = 3           # a coin whose last bar is more than this behind the freshest coin is left out (delisted / suspended)
+
+
+def assemble(got, specs, funding, contracts=True):
+    """{inst: Series} on the shared timeline from the fetched rows ({inst: rows}, oldest first), the contract specs and
+    the funding rows. Shared by load_series (GitHub run.py) and tools/evolve/signals_hourly.py (hourly server signals), so
+    both build the same series from the same rows. Coins without rows, or STALE_HOURS behind the freshest, are left out;
+    the timeline is the intersection of the remaining coins' timestamps."""
     per = {k: v for k, v in got.items() if v}
     newest = max(rows[-1][0] for rows in per.values())
-    per = {k: v for k, v in per.items() if v[-1][0] >= newest - 3 * HOUR}
+    per = {k: v for k, v in per.items() if v[-1][0] >= newest - STALE_HOURS * HOUR}
     common = sorted(set.intersection(*(set(r[0] for r in rows) for rows in per.values())))
     keep = set(common)
     out = {}

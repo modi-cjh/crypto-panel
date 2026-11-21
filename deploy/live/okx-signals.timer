@@ -1,0 +1,15 @@
+# /etc/systemd/system/okx-signals.timer
+# 每小时 H:01:30 UTC：1H K 线 H:00 收盘、约 H:00:02 confirm，留约 88 秒余量。跑完由 OnSuccess / OnFailure 触发 okx-live@run。
+# okx-live.timer（:50）保留为心跳：只核对止损 / 平仓（跟单幂等）。Persistent=false：错过的一小时由下一个 H:01:30 补上，
+# 开机后不补跑（开机时网络可能未就绪，且晚到的信号由下一小时覆盖）。
+[Unit]
+Description=Modi hourly signals at H:01:30 UTC
+
+[Timer]
+OnCalendar=*-*-* *:01:30 UTC
+AccuracySec=1s
+Persistent=false
+Unit=okx-signals.service
+
+[Install]
+WantedBy=timers.target

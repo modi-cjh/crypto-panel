@@ -13,7 +13,7 @@
 额外的实盘保护：
 
 - 在 GitHub Actions（`GITHUB_ACTIONS=true`）或 `runtime/` 常驻服务里以 `live` 启动会直接拒绝。GitHub 上的定时任务继续跑模拟盘，不受影响。
-- 实盘只跟随 `evolve/signals.json`，文件缺失或 `updated_at` 超过 9 小时就不操作（交易所止损仍在）；不会退回已退役的旧策略引擎。
+- 实盘只跟随 `evolve/signals.json`，文件缺失或 `updated_at` 超过 9 小时（每小时信号模式 `OKX_SIGNAL_MODE=hourly`：2 小时 15 分）就不操作（交易所止损仍在）；不会退回已退役的旧策略引擎。
 - 新的实盘状态默认暂停：即使关掉 dry-run，也要再明确执行一次 `resume` 才会开新仓。
 - 冒烟测试 `okx_demo_smoke.py`（会真实开平一笔 BTC）只允许在模拟盘运行。
 - 密钥开了提现权限会拒绝运行（原有检查）。
@@ -23,6 +23,10 @@
 - 进化与信号仍由 GitHub Actions 每 4 小时生成，发布到公开的 `paper-data` 分支。
 - 服务器上的 `okx-live.timer` 每小时 :50（UTC）运行一次 `okx-live@run.service`：先用 `tools/fetch_signals.py` 下载并校验 `evolve/signals.json`，再运行跟单程序。没有新信号的那几次只核对止损、平仓和日亏停手。
 - 实盘账户摘要只保存在服务器 `/var/lib/modi-okx-live/okx_live/`，**不会**发布到 `paper-data` 或公开看板。
+
+## 每小时信号（可选，默认不启用）
+
+`okx-signals.service` / `.timer`（正式）与 `okx-signals-shadow.service` / `.timer`（影子）在 H:01:30 运行 `tools/evolve/signals_hourly.py`：只用公共数据重放 GitHub 已发布的纸面账户，不读 `okx-live.env`（`/etc/modi-okx-live` 对它不可见）、不持有密钥，以独立的低权限用户 `modi-signals` 运行，状态在 `/var/lib/modi-okx-signals/`。影子只写 `signals.shadow.json`、不触发跟单；正式单元写 `signals.json` 并以 `OnSuccess=` / `OnFailure=` 触发 `okx-live@run`。只有安装 drop-in `okx-live-hourly.conf`（`OKX_SIGNAL_MODE=hourly`）后，跟单才改用本地每小时信号（2 h 15 min / 2 h）；不装就是现状（GitHub 信号，9 h / 5 h），`okx-live@.service` 本身没有改。安装、影子 2–3 天、对账、验收、切换与回退：[`docs/shadow-run-plan.md`](../../docs/shadow-run-plan.md)。
 
 ## 部署步骤（Ubuntu 24.04，139.180.146.42）
 

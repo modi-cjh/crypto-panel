@@ -81,7 +81,15 @@ MODES = ('demo', 'live')
 STATE_DIRS = {'demo': 'okx_demo', 'live': 'okx_live'}   # live never shares (or inherits) the demo mirror's state
 SIMULATED_HEADER = 'x-simulated-trading'
 SIMULATED_VALUE = '1'
-LIVE_SIGNAL_MAX_AGE = 9 * 3600_000   # live refuses to act on evolve/signals.json older than this (cron is every 4 h)
+# Signal timing (env OKX_SIGNAL_MODE, read in main() via signal_timing(); live and demo use the same function):
+#   github (default, unset)  signals.json from the GitHub run every 4 h (+ up to ~3 h cron delay): 9 h / 5 h, unchanged.
+#   hourly                   signals.json from the live server's tools/evolve/signals_hourly.py at H:01:30 every hour:
+#                            2 h 15 min / 2 h (one missed hour still passes; older entries go through late_ok).
+# OKX_LIVE_SIGNAL_MAX_AGE_MIN / OKX_OPEN_WINDOW_MIN override either value (minutes, 1..1440).
+# The hourly defaults only apply when the mode says so: under the GitHub 4 h signals 2 h 15 min would refuse most hours.
+SIGNAL_TIMING = {'github': (9 * 3600_000, 5 * 3600_000), 'hourly': (135 * 60_000, 2 * 3600_000)}
+SIGNAL_MODE_ENV, MAX_AGE_ENV, OPEN_WINDOW_ENV = 'OKX_SIGNAL_MODE', 'OKX_LIVE_SIGNAL_MAX_AGE_MIN', 'OKX_OPEN_WINDOW_MIN'
+LIVE_SIGNAL_MAX_AGE = SIGNAL_TIMING['github'][0]   # live refuses to act on evolve/signals.json older than this
 MAJOR_FACTOR = 2.0   # majors (execution.MAJORS) risk twice as much (execution.ACCOUNT_RULES)
 PRICE_TOLERANCE = .01             # demo mode: no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
 CROWD_STEPS = ((10, .5),)  # 2026-11-20: <10 same-side already open → full risk; ≥10 → half. Paper/evolution execution.CROWD_STEPS is the same (synced).
@@ -89,7 +97,7 @@ SAME_SIDE_CAP = .05
 MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 20 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
 HISTORY_STEP = 15 * 60_000       # runs every 5 minutes; keep one curve point per 15 minutes
-OPEN_WINDOW = 5 * 3600_000        # paper entries at most this old are mirrored as they are (runs are 4 h apart, plus delay)
+OPEN_WINDOW = SIGNAL_TIMING['github'][1]   # paper entries at most this old are mirrored as they are; older ones only via late_ok
 LATE_BAND = (.5, 1.5)             # older entries are still followed while the price is within this band of the paper stop distance
 MIN_STOP_DIST = .002              # skip entries whose stop is already too close to the current price
 AMEND_TOLERANCE = .003            # amend the exchange stop when the paper stop moved more than 0.3% (0.1% logged a move every run)
@@ -146,6 +154,35 @@ def real_price(inst):
         return float(json.loads(out)['data'][0]['last']) or None
     except (ValueError, KeyError, IndexError, TypeError):
         return None
+
+
+def signal_timing(env=None):
+    """(signal mode, max signal age ms, open window ms) from OKX_SIGNAL_MODE and the two minute overrides. An unknown
+    mode or a bad override refuses to run (fail closed) rather than trading on a window nobody chose."""
+    env = os.environ if env is None else env
+    mode = str(env.get(SIGNAL_MODE_ENV, '')).strip().lower() or 'github'
+    if mode not in SIGNAL_TIMING:
+        raise SystemExit(f'{SIGNAL_MODE_ENV} 只能是 github 或 hourly，已拒绝运行')
+    age, window = SIGNAL_TIMING[mode]
+
+    def minutes(key, default):
+        raw = str(env.get(key, '')).strip()
+        if not raw:
+            return default
+        try:
+            v = float(raw)
+        except ValueError:
+            raise SystemExit(f'{key} 必须是分钟数，已拒绝运行') from None
+        if not 1 <= v <= 1440:
+            raise SystemExit(f'{key} 必须在 1–1440 分钟之间，已拒绝运行')
+        return int(v * 60_000)
+    return mode, minutes(MAX_AGE_ENV, age), minutes(OPEN_WINDOW_ENV, window)
+
+
+def apply_signal_timing(env=None):
+    global LIVE_SIGNAL_MAX_AGE, OPEN_WINDOW
+    mode, LIVE_SIGNAL_MAX_AGE, OPEN_WINDOW = signal_timing(env)
+    return mode, LIVE_SIGNAL_MAX_AGE, OPEN_WINDOW
 
 
 def trading_mode(env=None):
@@ -1016,6 +1053,8 @@ def main():
     assert_mode(mode)
     forced_dry = dry_run_forced(mode)
     live = mode == 'live'
+    signal_mode, _, _ = apply_signal_timing()
+    print(f'信号模式 {signal_mode} · 信号最长 {LIVE_SIGNAL_MAX_AGE // 60_000} 分钟（实盘）· 新信号跟单窗口 {OPEN_WINDOW // 60_000} 分钟')
     print(f"OKX {'实盘' if live else '模拟盘'} · {'dry-run（只读账户、记录意图，不发送任何订单）' if forced_dry else '真实下单' if live else '模拟下单'}")
     creds = [os.environ.get(k, '').strip() for k in ('OKX_API_KEY', 'OKX_API_SECRET', 'OKX_API_PASSPHRASE')]
     if not all(creds):
@@ -1031,7 +1070,7 @@ def main():
         age = signal_age_ms(sig, datetime.now(timezone.utc))
         if live and args.action != 'snapshot' and (age is None or age > LIVE_SIGNAL_MAX_AGE):
             # A stale signal file would keep closed paper positions open and follow old entries; the exchange stops stay in place.
-            raise SystemExit(f'evolve/signals.json 已过期、时间戳在未来或缺少 updated_at（超过 {LIVE_SIGNAL_MAX_AGE // 3600_000} 小时），实盘本轮不操作。')
+            raise SystemExit(f'evolve/signals.json 已过期、时间戳在未来或缺少 updated_at（超过 {LIVE_SIGNAL_MAX_AGE // 60_000} 分钟），实盘本轮不操作。')
         exits = sig.get('exits') if isinstance(sig.get('exits'), dict) else {}
         paper = {'positions': sig.get('positions', {}), 'exits': {k: v for k, v in exits.items() if isinstance(k, str) and isinstance(v, str)},
                  'source': 'evolve'}
