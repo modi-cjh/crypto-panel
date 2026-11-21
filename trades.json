@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-21T15:50:03Z",
+ "updated_at": "2026-11-21T16:50:01Z",
  "trades": [
   {
    "inst": "ETH-USDT-SWAP",
@@ -546,7 +546,7 @@
    "usdt": 32.24,
    "pct": 23.7863,
    "peak_at": "2026-11-20T21:50:04Z",
-   "trough_at": "2026-11-21T15:50:03Z"
+   "trough_at": "2026-11-21T16:50:01Z"
   }
  }
 }
