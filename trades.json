@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-21T05:50:04Z",
+ "updated_at": "2026-11-21T06:50:04Z",
  "trades": [
   {
    "inst": "FIL-USDT-SWAP",
@@ -503,10 +503,10 @@
    }
   ],
   "equity_drawdown": {
-   "usdt": 15.27,
-   "pct": 11.5568,
-   "peak_at": "2026-11-16T12:50:03Z",
-   "trough_at": "2026-11-17T23:50:04Z"
+   "usdt": 21.17,
+   "pct": 15.619,
+   "peak_at": "2026-11-20T21:50:04Z",
+   "trough_at": "2026-11-21T06:50:04Z"
   }
  }
 }
