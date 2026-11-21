@@ -662,6 +662,10 @@
   [
    1795266648840,
    7608.96
+  ],
+  [
+   1795280279506,
+   7579.15
   ]
  ],
  "mirrored": {
@@ -1313,14 +1317,15 @@
    "entry": 0.06563,
    "clOrdId": "evdoge1794499200",
    "opened_at": 1794503691664,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s13164",
    "ordId": "4093684339183173632",
    "dist": 0.005402566405693164,
    "best": 0.0505889,
-   "trailing": true
+   "trailing": true,
+   "closed_reason": "manual_user"
   },
   "BNB-USDT-SWAP|1794528000000": {
    "inst": "BNB-USDT-SWAP",
@@ -1508,13 +1513,14 @@
    "entry": 3.006,
    "clOrdId": "evnear1794700800",
    "opened_at": 1794705671135,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s18637",
    "ordId": "4100461525416263680",
    "dist": 1.0578961981615889,
-   "best": 2.258
+   "best": 2.258,
+   "closed_reason": "manual_user"
   },
   "ADA-USDT-SWAP|1794700800000": {
    "inst": "ADA-USDT-SWAP",
@@ -1528,13 +1534,14 @@
    "entry": 0.1454,
    "clOrdId": "evada1794700800",
    "opened_at": 1794705671135,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s18637",
    "ordId": "4100461549609009152",
    "dist": 0.03333508723594582,
-   "best": 0.1334
+   "best": 0.1334,
+   "closed_reason": "manual_user"
   },
   "LTC-USDT-SWAP|1794700800000": {
    "inst": "LTC-USDT-SWAP",
@@ -1548,13 +1555,14 @@
    "entry": 43.45,
    "clOrdId": "evltc1794700800",
    "opened_at": 1794705671135,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s18637",
    "ordId": "4100461573197774848",
    "dist": 7.9696591541761626,
-   "best": 37.6
+   "best": 37.6,
+   "closed_reason": "manual_user"
   },
   "ENA-USDT-SWAP|1794470400000": {
    "inst": "ENA-USDT-SWAP",
@@ -1614,14 +1622,15 @@
    "entry": 2.253,
    "clOrdId": "evicp1794931200",
    "opened_at": 1794935857709,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
    "champion": "s20554",
    "ordId": "4108185302442950656",
    "dist": 0.30151530001603544,
    "best": 1.866,
-   "trailing": true
+   "trailing": true,
+   "closed_reason": "manual_user"
   },
   "KAITO-USDT-SWAP|1794816000000": {
    "inst": "KAITO-USDT-SWAP",
@@ -1830,6 +1839,41 @@
    "funding": 8.50423129616093,
    "close_price": 59091.6,
    "fee": -1.30131082
+  },
+  "2026-11-21T16:57:59Z|DOGE-USDT-SWAP": {
+   "pnl": 95.05000724502716,
+   "price_pnl": 143.82712400000284,
+   "funding": -47.95260071297568,
+   "close_price": 0.0550953499267936,
+   "fee": -0.824516042
+  },
+  "2026-11-21T16:57:59Z|NEAR-USDT-SWAP": {
+   "pnl": -1.3258854943551845,
+   "price_pnl": 16.366000000000017,
+   "funding": -17.3608634943552,
+   "close_price": 2.856982300884956,
+   "fee": -0.331022
+  },
+  "2026-11-21T16:57:59Z|ADA-USDT-SWAP": {
+   "pnl": 14.678986907204523,
+   "price_pnl": 2.1673999999999367,
+   "funding": 13.022768807204587,
+   "close_price": 0.1445856575963719,
+   "fee": -0.5111819
+  },
+  "2026-11-21T16:57:59Z|LTC-USDT-SWAP": {
+   "pnl": 71.65163239930996,
+   "price_pnl": 53.7838,
+   "funding": 18.492419879309967,
+   "close_price": 39.846372,
+   "fee": -0.62458748
+  },
+  "2026-11-21T16:57:59Z|ICP-USDT-SWAP": {
+   "pnl": 88.3313818889831,
+   "price_pnl": 52.92063,
+   "funding": 35.741268158983104,
+   "close_price": 1.919,
+   "fee": -0.33051627
   }
  },
  "largest_close": {

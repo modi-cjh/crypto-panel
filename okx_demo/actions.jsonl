@@ -229,3 +229,8 @@
 {"ts": "2026-11-21T05:06:58Z", "action": "closed_on_exchange", "inst": "FIL-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "stop_loss", "pnl": -499.8163094181735, "price_pnl": -490.1252200000015, "funding": -1.2480538281719955, "close_price": 0.4889, "fee": -8.44303559, "outcome": "stop"}
 {"ts": "2026-11-21T05:06:58Z", "action": "skip", "inst": "ETH-USDT-SWAP", "dry_run": false, "reason": "paper_entry_too_old"}
 {"ts": "2026-11-21T08:58:55Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.1695153000160357, "new": 2.1625153000160355}
+{"ts": "2026-11-21T16:57:59Z", "action": "close", "inst": "DOGE-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "manual_user", "paper_reason": "manual_user"}
+{"ts": "2026-11-21T16:57:59Z", "action": "close", "inst": "NEAR-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "manual_user", "paper_reason": "manual_user"}
+{"ts": "2026-11-21T16:57:59Z", "action": "close", "inst": "ADA-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "manual_user", "paper_reason": "manual_user"}
+{"ts": "2026-11-21T16:57:59Z", "action": "close", "inst": "LTC-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "manual_user", "paper_reason": "manual_user"}
+{"ts": "2026-11-21T16:57:59Z", "action": "close", "inst": "ICP-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "manual_user", "paper_reason": "manual_user"}
