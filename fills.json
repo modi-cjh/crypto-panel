@@ -1,8 +1,19 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-21T12:50:04Z",
+ "updated_at": "2026-11-21T13:50:05Z",
  "fills": [
+  {
+   "ts": "2026-11-21T13:50:05Z",
+   "action": "closed_on_exchange",
+   "inst": "ETH-USDT-SWAP",
+   "reason": "stop_loss",
+   "strategy": "evolved",
+   "close_price": 1709.99,
+   "pnl": -13.466511,
+   "outcome": "stop",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-21T04:50:04Z",
    "action": "closed_on_exchange",
@@ -372,14 +383,6 @@
    "ts": "2026-11-18T17:50:04Z",
    "action": "amend_stop",
    "inst": "ENA-USDT-SWAP",
-   "dry_run": false
-  },
-  {
-   "ts": "2026-11-18T01:50:04Z",
-   "action": "close",
-   "inst": "IMX-USDT-SWAP",
-   "reason": "paper_closed",
-   "strategy": "evolved",
    "dry_run": false
   }
  ],

@@ -2,40 +2,19 @@
  "schema_version": 1,
  "source": "okx-live",
  "trading_mode": "live",
- "updated_at": "2026-11-21T12:50:04Z",
- "equity": 110.771643,
- "available": 87.655012,
+ "updated_at": "2026-11-21T13:50:05Z",
+ "equity": 103.295299,
+ "available": 103.295299,
  "day_start": 131.795868,
- "day_pnl": -21.024225,
- "day_pnl_pct": -15.9521,
+ "day_pnl": -28.500569,
+ "day_pnl_pct": -21.6248,
  "start_equity": 126.66404,
- "total_pnl": -15.892397,
+ "total_pnl": -23.368741,
  "paused": false,
  "halted": false,
  "dry_run": false,
- "closed_trades": 16,
- "positions": [
-  {
-   "inst": "ETH-USDT-SWAP",
-   "side": "short",
-   "contracts": 1.53,
-   "lever": 11.0,
-   "mgnMode": "cross",
-   "avgPx": 1623.71,
-   "markPx": 1661.96,
-   "upl": -5.85225,
-   "uplRatio": -0.259129,
-   "margin": 23.116353,
-   "ctVal": 0.1,
-   "ours": true,
-   "stop": 1709.962,
-   "target": 1356.698,
-   "strategy": "evolved",
-   "champion": "s27131",
-   "leader": false,
-   "opened_at": "2026-11-21T01:50:04Z"
-  }
- ],
+ "closed_trades": 17,
+ "positions": [],
  "history": [
   [
    1794751218461,
@@ -620,6 +599,10 @@
   [
    1795265404528,
    110.77
+  ],
+  [
+   1795269005074,
+   103.3
   ]
  ]
 }

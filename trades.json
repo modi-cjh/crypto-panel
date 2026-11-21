@@ -1,8 +1,32 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-21T12:50:04Z",
+ "updated_at": "2026-11-21T13:50:05Z",
  "trades": [
+  {
+   "inst": "ETH-USDT-SWAP",
+   "side": "short",
+   "contracts": 1.53,
+   "leverage": 11.0,
+   "entry": 1623.72,
+   "exit": 1709.99,
+   "stop": 1709.96,
+   "target": 1356.7,
+   "pnl": -13.466511,
+   "pnl_pct": -5.31311,
+   "roe_pct": -58.4442,
+   "r": -1.016,
+   "fee": -0.255028,
+   "funding": -0.010642,
+   "opened_at": "2026-11-21T01:50:04Z",
+   "closed_at": "2026-11-21T13:50:05Z",
+   "hold_minutes": 720,
+   "exit_type": "sl",
+   "outcome": "stop",
+   "reason": "stop_loss",
+   "strategy": "evolved",
+   "champion": "s27131"
+  },
   {
    "inst": "FIL-USDT-SWAP",
    "side": "long",
@@ -378,22 +402,22 @@
  ],
  "stats": {
   "overall": {
-   "trades": 16,
-   "with_pnl": 16,
+   "trades": 17,
+   "with_pnl": 17,
    "wins": 9,
-   "losses": 7,
-   "win_rate": 56.25,
-   "pnl": -9.908191,
+   "losses": 8,
+   "win_rate": 52.9412,
+   "pnl": -23.374702,
    "avg_win": 1.041817,
-   "avg_loss": 2.754935,
-   "payoff": 0.378164,
-   "profit_factor": 0.486211,
-   "avg_r": 0.150116,
+   "avg_loss": 4.093882,
+   "payoff": 0.254481,
+   "profit_factor": 0.286292,
+   "avg_r": 0.0815212,
    "best": 1.837938,
-   "worst": -6.999129,
+   "worst": -13.466511,
    "tp": 1,
-   "sl": 5,
-   "max_drawdown_closed": 13.744719
+   "sl": 6,
+   "max_drawdown_closed": 27.21123
   },
   "by_strategy": [
    {
@@ -500,13 +524,29 @@
     "tp": 0,
     "sl": 0,
     "max_drawdown_closed": 0.198222
+   },
+   {
+    "key": "s27131",
+    "trades": 1,
+    "with_pnl": 1,
+    "wins": 0,
+    "losses": 1,
+    "win_rate": 0.0,
+    "pnl": -13.466511,
+    "avg_loss": 13.466511,
+    "avg_r": -1.016,
+    "best": -13.466511,
+    "worst": -13.466511,
+    "tp": 0,
+    "sl": 1,
+    "max_drawdown_closed": 13.466511
    }
   ],
   "equity_drawdown": {
-   "usdt": 24.77,
-   "pct": 18.275,
+   "usdt": 32.24,
+   "pct": 23.7863,
    "peak_at": "2026-11-20T21:50:04Z",
-   "trough_at": "2026-11-21T12:50:04Z"
+   "trough_at": "2026-11-21T13:50:05Z"
   }
  }
 }
