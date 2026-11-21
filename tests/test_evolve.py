@@ -1793,3 +1793,102 @@ class ExitRuleTests(unittest.TestCase):
         # a pending signal published for the OKX follow always carries tp and dist
         sig = P._signal_from_pending(self.INST, 1, base_genes(target_rr=0.0), sr, sr[self.INST].ts[-1], 'm')
         self.assertAlmostEqual(sig['tp'], sig['entry'] + 3.0 * sig['dist'])
+
+
+class ManualCloseTests(unittest.TestCase):
+    """The user's manual closes (paper.MANUAL_CLOSES → simulate_account(manual=...), reason manual_user): only that exact
+    position, at its real price, never rewriting bars already published; afterwards the coin is free like any other."""
+    A, B = 'BTC-USDT-SWAP', 'ETH-USDT-SWAP'
+
+    def sr(self, n=20):
+        ts = [T0 + i * H for i in range(n)]
+        return {k: X.Series(k, ts, [100.0] * n, [100.1] * n, [99.99] * n, [100.0] * n) for k in (self.A, self.B)}
+
+    def genes(self):
+        return dict(name='A', risk=.05, leverage=10, target_rr=0, max_hold=240, tf=1, trail=0)
+
+    def run_acc(self, entries, sr, manual=None, rules=X.ACCOUNT_RULES, **kw):
+        with mock.patch.object(X, 'signal_sets', side_effect=lambda g, series: (entries, {})):
+            return X.simulate_account([dict(id='a', genes=self.genes(), from_i=0)], sr, 0, next(iter(sr.values())).n,
+                                      rules=rules, manual=manual, **kw)
+
+    def test_closes_only_that_exact_position_at_its_price_with_reason_manual_user(self):
+        sr = self.sr(); ts = sr[self.A].ts
+        entries = {0: [(self.A, -1, 5.0), (self.B, -1, 5.0)]}                 # two shorts, both fill at bar 1's open
+        base = self.run_acc(entries, sr)
+        self.assertEqual(sorted(p['inst'] for p in base['positions']), [self.A, self.B])
+        at = ts[4] + 19 * 60_000 + 27_000                                     # 04:19:27 → booked at the open of bar 5
+        r = self.run_acc(entries, sr, manual={(self.A, ts[1]): (at, 97.5, None)})
+        self.assertEqual(len(r['trades']), 1)
+        t = r['trades'][0]
+        self.assertEqual((t['inst'], t['reason'], t['exit'], t['opened'], t['closed'], t['booked']), (self.A, 'manual_user', 97.5, ts[1], at, ts[5]))
+        p = next(p for p in base['positions'] if p['inst'] == self.A)
+        fee_in = p['qty'] * p['entry'] * X.FEE
+        self.assertAlmostEqual(t['pnl'], p['qty'] * (p['entry'] - 97.5) - p['qty'] * 97.5 * X.FEE - fee_in - p['funding'])   # no slip, taker fee
+        self.assertEqual([q for q in r['positions'] if q['inst'] == self.B], [q for q in base['positions'] if q['inst'] == self.B])
+        self.assertEqual(r['curve'][:5], base['curve'][:5])                   # nothing changes before the booking bar
+        # another entry time of the same coin, or a coin not held, is never closed
+        for key in ((self.A, ts[2]), ('SOL-USDT-SWAP', ts[1])):
+            self.assertEqual(self.run_acc(entries, sr, manual={key: (at, 97.5, None)}), base, key)
+
+    def test_bars_already_published_are_never_rewritten(self):
+        sr = self.sr(); ts = sr[self.A].ts
+        entries = {0: [(self.A, -1, 5.0)], 6: [(self.B, -1, 5.0)]}
+        base = self.run_acc(entries, sr)
+        r = self.run_acc(entries, sr, manual={(self.A, ts[1]): (ts[2] + 1000, 98.0, 9)})   # happened at bar 2, published up to bar 9
+        t = next(t for t in r['trades'] if t['reason'] == 'manual_user')
+        self.assertEqual((t['closed'], t['booked'], t['exit']), (ts[2] + 1000, ts[10], 98.0))
+        self.assertEqual(r['curve'][:10], base['curve'][:10])                 # bars 0..9 exactly as before
+        self.assertEqual([q for q in r['positions'] if q['inst'] == self.B], [q for q in base['positions'] if q['inst'] == self.B])
+        early = self.run_acc(entries, sr, manual={(self.A, ts[1]): (ts[2] + 1000, 98.0, None)})
+        self.assertEqual(next(t for t in early['trades'] if t['reason'] == 'manual_user')['booked'], ts[3])
+        # a close time beyond the data does nothing yet (it is booked on the run that has that bar)
+        self.assertEqual(self.run_acc(entries, sr, manual={(self.A, ts[1]): (ts[-1] + H, 98.0, None)}), base)
+        # already gone by its own exit before the booking bar: nothing happens
+        sr[self.A].h[4] = 106.0                                               # the stop (entry + 5) is hit on bar 4
+        gone = self.run_acc({0: [(self.A, -1, 5.0)]}, sr)
+        self.assertEqual([t['reason'] for t in gone['trades']], ['stop'])
+        self.assertEqual(self.run_acc({0: [(self.A, -1, 5.0)]}, sr, manual={(self.A, ts[1]): (ts[8], 98.0, None)}), gone)
+
+    def test_after_the_close_the_coin_reopens_and_it_no_longer_counts_for_same_side_or_crowding(self):
+        sr = self.sr(); ts = sr[self.A].ts
+        close_a = {(self.A, ts[1]): (ts[5], 98.0, None)}
+        # same coin: a new short signal after the close opens a new position (new entry time), the manual close never touches it
+        entries = {0: [(self.A, -1, 5.0)], 7: [(self.A, -1, 5.0)]}
+        self.assertEqual([p['opened'] for p in self.run_acc(entries, sr)['positions']], [ts[1]])
+        r = self.run_acc(entries, sr, manual=close_a)
+        self.assertEqual([(p['inst'], p['opened']) for p in r['positions']], [(self.A, ts[8])])
+        # same-side count: with max_same_side = 1 the ETH short is skipped while BTC is open, and fills once BTC was closed by hand
+        entries = {0: [(self.A, -1, 5.0)], 7: [(self.B, -1, 5.0)]}
+        one = dict(X.ACCOUNT_RULES, max_same_side=1)
+        self.assertEqual([p['inst'] for p in self.run_acc(entries, sr, rules=one)['positions']], [self.A])
+        self.assertEqual([p['inst'] for p in self.run_acc(entries, sr, manual=close_a, rules=one)['positions']], [self.B])
+        # crowding (half from the 1st open same-side position here): full risk again after the manual close
+        crowd = dict(X.ACCOUNT_RULES, crowd_steps=((1, .5),), major_factor=1.0)
+        half = next(p for p in self.run_acc(entries, sr, rules=crowd)['positions'] if p['inst'] == self.B)
+        full = next(p for p in self.run_acc(entries, sr, manual=close_a, rules=crowd)['positions'] if p['inst'] == self.B)
+        self.assertAlmostEqual(half['risk'], .025); self.assertAlmostEqual(full['risk'], .05)
+
+    def test_paper_update_stamps_manual_from_once_and_publishes_the_exit(self):
+        sr = {self.A: series_from([100.0] * 30)}; ts = sr[self.A].ts
+        acc = dict(from_ts=T0, start_equity=10000.0, next=1, segs=[dict(id='a1', champion='n1', slot=0, genes=base_genes(risk=.05), species='momentum',
+                                                                       from_ts=T0, wind_ts=None, boosts=[], reason='carry')])
+        state = dict(nodes={}, team=[], paper=dict(account=acc, start_equity=10000.0))
+        key = f'{self.A}|{ts[1]}'
+        with mock.patch.object(P, 'MANUAL_CLOSES', {(self.A, ts[1]): (ts[3] + 1000, 99.0)}), \
+                mock.patch.object(X, 'signal_sets', side_effect=lambda g, series: ({0: [(self.A, -1, 5.0)]}, {})):
+            view, signals = P.update(state, sr, [], prev_last=ts[6])
+            self.assertEqual(acc['manual_from'], {key: ts[6]})
+            t = next(t for t in view['trades'] if t['reason'] == 'manual_user')
+            self.assertEqual((t['exit'], t['closed'], t['booked']), (99.0, ts[3] + 1000, ts[7]))
+            self.assertEqual(view['exits'], {key: 'manual_user'})
+            self.assertNotIn(self.A, signals)
+            P.update(state, sr, [], prev_last=ts[-1])
+            self.assertEqual(acc['manual_from'], {key: ts[6]})                # set once, never moved
+        # the shipped config: only these seven shorts, nothing else (ETH-USDT-SWAP|1795219200000 is not in it)
+        self.assertEqual(sorted(f'{i}|{o}' for i, o in P.MANUAL_CLOSES), sorted([
+            'NEAR-USDT-SWAP|1794700800000', 'ADA-USDT-SWAP|1794700800000', 'LTC-USDT-SWAP|1794700800000', 'KAITO-USDT-SWAP|1794816000000',
+            'ICP-USDT-SWAP|1794931200000', 'H-USDT-SWAP|1794384000000', 'DOGE-USDT-SWAP|1794499200000']))
+        self.assertEqual(P.MANUAL_CLOSES[('NEAR-USDT-SWAP', 1794700800000)], (1795213167000, 2.87))
+        self.assertEqual(P.MANUAL_CLOSES[('H-USDT-SWAP', 1794384000000)], (1795262400000, 0.01098))
+        self.assertEqual(P.MANUAL_CLOSES[('DOGE-USDT-SWAP', 1794499200000)], (1795262400000, 0.05372))

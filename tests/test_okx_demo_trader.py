@@ -933,6 +933,39 @@ class ExitRuleMirrorTests(unittest.TestCase):
         self.later(fake, state, {})
         self.assertEqual(state['mirrored'][self.key(state)]['closed_reason'], 'paper_closed')
 
+    def test_manual_user_paper_close_frees_the_coin_and_no_longer_counts_for_same_side_or_crowding(self):
+        """paper.MANUAL_CLOSES: the paper position disappears with exits {key: manual_user}; the mirror is closed with that
+        reason (when it was still open), and a later paper entry on the same coin is mirrored like any other: the done
+        mirror is neither a block (new key, no exchange position) nor counted for MAX_SAME_SIDE / CROWD_STEPS."""
+        self.addCleanup(setattr, odt, 'MAX_SAME_SIDE', odt.MAX_SAME_SIDE)
+        self.addCleanup(setattr, odt, 'CROWD_STEPS', odt.CROWD_STEPS)
+        fake, state = self.opened()
+        key = self.key(state)
+        m = self.later(fake, state, {}, exits={key: 'manual_user'})
+        self.assertEqual(fake.posts[0][0], '/api/v5/trade/close-position')
+        self.assertEqual(state['mirrored'][key]['closed_reason'], 'manual_user')
+        a = next(a for a in m.actions if a['action'] == 'close')
+        self.assertEqual((a['reason'], a['paper_reason']), ('manual_user', 'manual_user'))
+        # the next run: no exchange position any more, a fresh paper long on the same coin (new entry time)
+        fake.positions, fake.algos = [], []
+        fake.posts.clear()
+        odt.MAX_SAME_SIDE = 1                                   # one long already open would block it ...
+        odt.CROWD_STEPS = ((1, .5),)                            # ... or halve it; the done mirror does neither
+        fresh = {'BTC-USDT-SWAP': dict(long_btc(), opened=NOW_MS + 4 * 3600_000 - 10 * 60_000, strategy='evolved', risk=.05)}
+        m = self.later(fake, state, fresh)
+        opens = [x for x in m.actions if x['action'] == 'open']
+        self.assertEqual([x['inst'] for x in opens], ['BTC-USDT-SWAP'])
+        self.assertFalse([x for x in m.actions if x.get('reason') in ('same_side_count', 'exchange_position_exists_not_ours')])
+        new_key = f"BTC-USDT-SWAP|{fresh['BTC-USDT-SWAP']['opened']}"
+        self.assertEqual((state['mirrored'][key]['status'], state['mirrored'][new_key]['status']), ('done', 'open'))
+        self.assertAlmostEqual(opens[0]['risk_usdt'], round(min(.05 * odt.MAJOR_FACTOR, odt.MAX_TRADE_RISK) * m.equity, 2))   # full, not halved
+        # control: with that first mirror still open the same entry is skipped (same_side_count)
+        fake2, state2 = self.opened()
+        fake2.prices = dict(fake2.prices, **{'ETH-USDT-SWAP': 2300.0})
+        m2 = self.later(fake2, state2, dict(self.sig(), **{'ETH-USDT-SWAP': dict(long_btc(), entry=2300.0, stop=2250.0, strategy='evolved', risk=.05,
+                                                                                    opened=NOW_MS + 4 * 3600_000 - 10 * 60_000)}))
+        self.assertEqual([x['inst'] for x in m2.actions if x.get('reason') == 'same_side_count'], ['ETH-USDT-SWAP'])
+
     def test_exchange_closes_are_recorded_as_take_profit_stop_loss_or_trailing_stop(self):
         for trailing, close_px, want in ((False, '74190', 'take_profit'), (False, '68610', 'stop_loss'), (True, '71090', 'trailing_stop')):
             fake, state = self.opened()

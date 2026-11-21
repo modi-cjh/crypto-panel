@@ -72,7 +72,7 @@ const GENE_NAMES = { species: '物种', direction: '方向', tf: '周期', trail
 const USED = { momentum: ['lookback'], mean_revert: ['lookback', 'threshold'], vol_breakout: ['expand'], trend: ['fast', 'slow'], vol_surge: ['lookback', 'vol_mult'], rel_strength: ['lookback', 'rs_th'] };
 const TF_NAMES = { 1: '1 小时', 4: '4 小时', 24: '日线' };
 const HOW = { seed: '初始随机', immigrant: '随机移民', crossover: '交叉', mutation: '突变', niche: '物种保护', migrant: '旧系统迁入' };
-const REASON = { stop: '止损', target: '止盈', trailing_stop: '移动止损', reverse_signal: '反向信号平仓', time: '到期（旧规则）', switch: '换冠军平仓', liquidation: '强平', daily_halt: '日亏停手平仓', equity: '权益归零平仓' };
+const REASON = { stop: '止损', target: '止盈', trailing_stop: '移动止损', reverse_signal: '反向信号平仓', time: '到期（旧规则）', switch: '换冠军平仓', liquidation: '强平', daily_halt: '日亏停手平仓', equity: '权益归零平仓', manual_user: '手动平仓' };
 const SWITCH_WHY = { unqualified: '原成员连续不合格', entry_gate: '原成员未过上场门槛', leader: '升为第一名（信号优先）', demoted: '不再是第一名', first: '补入空位', challenger: '挑战者接替', breakdown: '原成员样本外失守', carry: '沿用原冠军', balance: '方向配额调整' };
 const DIRECTION = { both: '多空', long: '只做多', short: '只做空' };
 // Team members (the paper-trading champions); older dashboards only have a single champion.
