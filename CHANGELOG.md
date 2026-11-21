@@ -673,6 +673,12 @@
 - 已发布历史不变：`tools/analysis/check_history_identical.py` 在 paper-data e7d532b 快照上对比 master 与本分支，上一轮已发布最后一根（2026-11-21 12:00Z）及之前的 25 笔交易与 249 个曲线点完全相同。
 - 测试：`tests/test_evolve.py` `TrailRiskRuleTests`（默认值、0.5R 起步、保本、`trail_unit` 取小与回退、ETH 1.01R / 0.99R、系数组合、同组 / 不同方向 / 不同冠军 / 不同 K 线 / 同币先到先得、新席位首笔半风险与 24h 后满风险、席位链、离任半风险、`simulate()` 合并、`trail_risk_from` 前历史相同、只设一次、`seat_chains`）；旧的尺寸 / 强平机制测试改在 `PRIOR_ERA` 下运行；`tests/test_okx_demo_trader.py` `TrailRiskMirrorTests`（`live_dist` 持久化、ETH 例子启动移动止损、取小 / 回退纸面 dist / 实盘价更好时用纸面 dist、保本、默认 0.5R、`risk_factor` 缩放与缺省）。
 
+### 纸面改动从“下一个整点”生效（为每小时信号做准备，2026-11-22）
+- 做了什么：`tools/evolve/paper.py` 新增 NEXT-HOUR RULE。`update(..., now=)` 把本次运行的换席位 / 离任、第一名头衔、人工平仓的 `manual_from`、首次设置的 cutover 键都盖在 `effective_bar(now)` = floor(now, 1h) + 1h（C，K 线开盘时间）上；`run.py` 在价格检查前读时钟，`data.price_check` 的区间起止记为 C + 1h（成交 K 线）。新 cutover 键 `account['next_hour_from']`（第一次按新规则运行的 C，只设一次）。晚于最后一根的时间戳映射到虚拟下标 ≥ n（待生效），`next_hour_from` 之后的时间戳向上取整到整点 K 线，更早的保持原映射。待开信号排队改为与下一根重放一致：暂停按下一根成交 K 线判断（原来按“区间未结束”），下一根开盘入账的人工平仓不再占同向 / 每策略仓位数。`winding` 只在离任时间 ≤ 最后一根时为真；成员显示 `effective_from`、`trading` 要求已生效；`dashboard.json` 的 `paper.scheduled` 列出待生效改动，`paper.rules.next_hour_from`、`timing.effective_bar`。新增 `update(..., replay=True)`（只重放、不改 state，state 不一致时抛 `StateDrift`，缺的键 / 人工平仓按待生效处理）给 PR2 的服务器信号用。`tools/analysis/check_history_identical.py` 的 dump 可选 `now=<ms>` / `replay`，输出多了 `segs` / `scheduled` / `equity`。
+- 为什么：评估报告（hourly-signals-eval-2026-11-22 第 4.2 点）——GitHub 运行平均晚 57 分钟，原来这些改动的时间戳落在最后一根（常常已落后 1–2 根）上；服务器每小时算信号后，它们会改写服务器已经按旧规则交易过的 K 线，纸面与实盘分叉。改成 C 之后，服务器在 C 之前读到新旧 state 结果都一样，之后与 GitHub 下一次运行一致。
+- 已发布历史不变：在 paper-data aaaac42（2026-11-21 20:54Z，最后一根 19:00Z）快照上，master（c48db29）与本分支（不带 now / 带 now=20:54:31Z）重放，33 笔交易、256 / 257 个曲线点、席位时间戳、signals 全部相同，权益 10428.42 与已发布一致。
+- 测试：`tests/test_evolve.py` `NextHourRuleTests`（整点 / 整点后几秒 / :59 边界、不早于最后一根、换席位与第一名在 C 生效且服务器新旧 state 一致、与下一次 GitHub 重放一致、同一小时两次运行、price_off 记 C + 1h、人工平仓记 C 在 C + 1h 入账与未盖章时待生效、排队扣除下一根入账的人工平仓、cutover 键首次记 C 且不再移动、出场 / 移动止损分段、旧 state 兼容、旧时间戳映射不变、replay 拒绝不一致 state、确定性）；`RunTests` 检查 `next_hour_from` 与 `timing.effective_bar`。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

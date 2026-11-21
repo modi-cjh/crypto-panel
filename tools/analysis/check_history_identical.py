@@ -3,7 +3,9 @@
 evolution) of <repo> on a paper-data snapshot and a candle cache, and dump the trades / curve / positions. Compare two
 dumps with --compare a.json b.json <prev_last ms>: every trade closed (booked) at or before prev_last and every curve
 point at or before prev_last must be identical.
-usage: check_history_identical.py dump <repo> <paper dir> <candle cache> <out.json>
+Optional 6th dump argument (code with the NEXT-HOUR RULE only): `now=<ms>` runs paper.update as run.py does (changes
+stamped on the effective bar of that wall clock), `replay` as the hourly server does (update(replay=True), no stamps).
+usage: check_history_identical.py dump <repo> <paper dir> <candle cache> <out.json> [now=<ms> | replay]
        check_history_identical.py compare <a.json> <b.json>"""
 import copy
 import json
@@ -13,7 +15,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 
 
-def dump(repo, paper_dir, cache, out):
+def dump(repo, paper_dir, cache, out, mode=None):
     sys.path.insert(0, str(Path(repo) / 'tools' / 'evolve'))
     import execution as ex
     import paper as P
@@ -52,10 +54,11 @@ def dump(repo, paper_dir, cache, out):
         captured['res'] = orig(*a, **kw)
         return captured['res']
     P.simulate_account = spy
-    view, signals = P.update(st, series, [], uni.get('price_off', {}), prev_last=prev_last)
+    extra = dict(now=int(mode[4:])) if mode and mode.startswith('now=') else dict(replay=True) if mode == 'replay' else {}
+    view, signals = P.update(st, series, [], uni.get('price_off', {}), prev_last=prev_last, **extra)
     res = captured['res']
     Path(out).write_text(json.dumps(dict(prev_last=prev_last, last_bar=next(iter(series.values())).ts[-1], trades=res['trades'], curve=res['curve'],
-                                         account={k: v for k, v in st['paper']['account'].items() if k != 'segs'}, signals=signals), sort_keys=True, default=str))
+                                         account={k: v for k, v in st['paper']['account'].items() if k != 'segs'}, segs=st['paper']['account']['segs'], scheduled=view.get('scheduled'), equity=view['equity'], signals=signals), sort_keys=True, default=str))
     print(out, 'trades', len(res['trades']), 'curve', len(res['curve']), 'equity', view['equity'])
 
 
@@ -76,6 +79,6 @@ def compare(a, b):
 
 if __name__ == '__main__':
     if sys.argv[1] == 'dump':
-        dump(*sys.argv[2:6])
+        dump(*sys.argv[2:7])
     else:
         sys.exit(compare(*sys.argv[2:4]))
