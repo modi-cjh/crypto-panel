@@ -1,8 +1,32 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-21T03:50:00Z",
+ "updated_at": "2026-11-21T04:50:04Z",
  "trades": [
+  {
+   "inst": "FIL-USDT-SWAP",
+   "side": "long",
+   "contracts": 2114.0,
+   "leverage": 3.0,
+   "entry": 0.5233,
+   "exit": 0.4919,
+   "stop": 0.4921,
+   "target": 0.557,
+   "pnl": -6.74559,
+   "pnl_pct": -6.00038,
+   "roe_pct": -18.0011,
+   "r": -1.024,
+   "fee": -0.107307,
+   "funding": -0.000323,
+   "opened_at": "2026-11-20T17:50:04Z",
+   "closed_at": "2026-11-21T04:50:04Z",
+   "hold_minutes": 660,
+   "exit_type": "sl",
+   "outcome": "stop",
+   "reason": "stop_loss",
+   "strategy": "evolved",
+   "champion": "s18771"
+  },
   {
    "inst": "AVAX-USDT-SWAP",
    "side": "long",
@@ -354,22 +378,22 @@
  ],
  "stats": {
   "overall": {
-   "trades": 15,
-   "with_pnl": 15,
+   "trades": 16,
+   "with_pnl": 16,
    "wins": 9,
-   "losses": 6,
-   "win_rate": 60.0,
-   "pnl": -3.162601,
+   "losses": 7,
+   "win_rate": 56.25,
+   "pnl": -9.908191,
    "avg_win": 1.041817,
-   "avg_loss": 2.089826,
-   "payoff": 0.498519,
-   "profit_factor": 0.747778,
-   "avg_r": 0.228391,
+   "avg_loss": 2.754935,
+   "payoff": 0.378164,
+   "profit_factor": 0.486211,
+   "avg_r": 0.150116,
    "best": 1.837938,
    "worst": -6.999129,
    "tp": 1,
-   "sl": 4,
-   "max_drawdown_closed": 6.999129
+   "sl": 5,
+   "max_drawdown_closed": 13.744719
   },
   "by_strategy": [
    {
@@ -446,6 +470,22 @@
     "max_drawdown_closed": 0.0
    },
    {
+    "key": "s18771",
+    "trades": 2,
+    "with_pnl": 2,
+    "wins": 0,
+    "losses": 2,
+    "win_rate": 0.0,
+    "pnl": -13.744719,
+    "avg_loss": 6.872359,
+    "avg_r": -1.043,
+    "best": -6.74559,
+    "worst": -6.999129,
+    "tp": 0,
+    "sl": 2,
+    "max_drawdown_closed": 13.744719
+   },
+   {
     "key": "s14155",
     "trades": 1,
     "with_pnl": 1,
@@ -460,22 +500,6 @@
     "tp": 0,
     "sl": 0,
     "max_drawdown_closed": 0.198222
-   },
-   {
-    "key": "s18771",
-    "trades": 1,
-    "with_pnl": 1,
-    "wins": 0,
-    "losses": 1,
-    "win_rate": 0.0,
-    "pnl": -6.999129,
-    "avg_loss": 6.999129,
-    "avg_r": -1.062,
-    "best": -6.999129,
-    "worst": -6.999129,
-    "tp": 0,
-    "sl": 1,
-    "max_drawdown_closed": 6.999129
    }
   ],
   "equity_drawdown": {

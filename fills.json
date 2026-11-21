@@ -1,8 +1,19 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-21T03:50:00Z",
+ "updated_at": "2026-11-21T04:50:04Z",
  "fills": [
+  {
+   "ts": "2026-11-21T04:50:04Z",
+   "action": "closed_on_exchange",
+   "inst": "FIL-USDT-SWAP",
+   "reason": "stop_loss",
+   "strategy": "evolved",
+   "close_price": 0.4919,
+   "pnl": -6.74559,
+   "outcome": "stop",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-21T03:50:00Z",
    "action": "closed_on_exchange",
@@ -369,12 +380,6 @@
    "inst": "IMX-USDT-SWAP",
    "reason": "paper_closed",
    "strategy": "evolved",
-   "dry_run": false
-  },
-  {
-   "ts": "2026-11-17T21:50:04Z",
-   "action": "amend_stop",
-   "inst": "ICP-USDT-SWAP",
    "dry_run": false
   }
  ],
