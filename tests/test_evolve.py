@@ -147,13 +147,21 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(m[eight[-1]], -.0003)
         self.assertEqual({t: v for t, v in m.items() if t != eight[-1]}, {t: D.FUNDING_DEFAULT for t in eight[:-1]})
 
-    def test_time_exit_and_metrics(self):
-        closes = [100.0] * 40 + [110.0] + [111.0] * 10
+    def test_no_time_exit_any_more_and_metrics(self):
+        closes = [100.0] * 40 + [110.0] + [111.0] * 300            # held far past max_hold (4 bars) and MAX_HOLD_H
         s = series_from(closes)
         r = X.simulate(base_genes(max_hold=4), {'BTC-USDT-SWAP': s}, 30, s.n)
-        self.assertEqual(r['trades'][0]['reason'], 'time')
+        self.assertEqual(r['trades'], [])
+        self.assertEqual(len(r['positions']), 1)
         self.assertEqual(r['metrics']['trades'], len(r['trades']))
         self.assertGreaterEqual(r['metrics']['max_dd'], 0)
+        # the paper replay of bars on or before exit_from still has the old time exit, later bars do not
+        seg = [dict(id='m', genes=base_genes(max_hold=4), from_i=0)]
+        old = X.simulate_account(seg, {'BTC-USDT-SWAP': s}, 30, s.n, exit_from=s.n)
+        self.assertEqual([t['reason'] for t in old['trades']], ['time'])
+        self.assertEqual(old['trades'][0]['closed'], s.ts[41 + 4])
+        new = X.simulate_account(seg, {'BTC-USDT-SWAP': s}, 30, s.n)
+        self.assertEqual((new['trades'], len(new['positions'])), ([], 1))
 
     def test_no_look_ahead(self):
         closes = walk(600, 3)
@@ -224,13 +232,17 @@ class MergedGeneTests(unittest.TestCase):
             self.assertEqual(t['opened'] % (4 * H), 0)               # decided on a 4H close, filled at the next 1H open
 
     def test_trailing_stop_follows_the_best_price_and_never_loosens(self):
-        closes = [100.0] * 40 + [110.0] + [112.0, 116.0, 120.0, 118.0]
+        closes = [100.0] * 40 + [110.0] + [112.0, 113.5, 115.0, 114.0]     # +5 after the fill: past 1R, short of the 3R target
         s = series_from(closes)
-        fixed = X.simulate(base_genes(), {'BTC-USDT-SWAP': s}, 30, s.n)['positions'][0]
-        trail = X.simulate(base_genes(trail=1), {'BTC-USDT-SWAP': s}, 30, s.n)['positions'][0]
-        self.assertAlmostEqual(fixed['stop'], fixed['entry'] - X.stop_distance(base_genes(), s, 40))
-        self.assertGreater(trail['stop'], fixed['stop'])
-        self.assertAlmostEqual(trail['stop'], max(s.h[41:]) - (trail['entry'] - fixed['stop']))
+        dist = X.stop_distance(base_genes(), s, 40)
+        a = X.simulate(base_genes(), {'BTC-USDT-SWAP': s}, 30, s.n)['positions'][0]
+        b = X.simulate(base_genes(trail=1), {'BTC-USDT-SWAP': s}, 30, s.n)['positions'][0]
+        self.assertEqual(a, b)                                       # the trail gene no longer changes anything
+        best = max(s.h[41:])
+        self.assertGreaterEqual(best - a['entry'], X.TRAIL_START_R * dist)   # moved ≥ 1R: the trail is on
+        self.assertTrue(a['trailing'])
+        self.assertAlmostEqual(a['stop'], best - X.TRAIL_DIST_R * dist)
+        self.assertAlmostEqual(a['best'], best)
 
     def test_volume_surge_and_relative_strength_signals(self):
         closes = [100.0] * 60 + [101.0]
@@ -589,7 +601,7 @@ class EvolutionTests(unittest.TestCase):
         sr = self._two_sided_market(ups=22, downs=0)
         g = base_genes(risk=.01, max_hold=5)
         segs = [dict(id=f'm{i}', genes=g, from_i=0, wind_i=None, boosts=[]) for i in range(8)]
-        r = X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=dict(X.ACCOUNT_RULES, min_risk=.01))
+        r = X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=dict(X.ACCOUNT_RULES, min_risk=.01), exit_from=71)   # old exits (time)
         self.assertEqual(r['positions'], [])                         # the full long side still runs every position to its exit
         self.assertEqual([t['reason'] for t in r['trades']], ['time'] * 20)
 
@@ -1305,7 +1317,7 @@ class CrossReviewFixTests(unittest.TestCase):
     def run_both(self, inst, s, g, gate=False):
         """(simulate_account result, simulate result) with one long signal on bar 0 (stop 0.26 below the fill)."""
         ev = {0: [(inst, 1, .26)]}
-        patches = [mock.patch.object(X, 'entries', return_value=ev)]
+        patches = [mock.patch.object(X, 'signal_sets', return_value=(ev, {}))]
         if not gate:
             patches.append(mock.patch.object(X, 'cross_open_allowed', return_value=(True, None)))
         for p in patches: p.start()
@@ -1399,10 +1411,10 @@ class CrossReviewFixTests(unittest.TestCase):
         for r in (acc, one):
             self.assertEqual([t['reason'] for t in r['trades']], ['stop'])
             self.assertEqual(r['liquidations'], 0)
-        # without the liquidation the same bar is an ordinary time exit / target
+        # without the liquidation the position simply stays open (no time exit any more)
         acc, one = self.run_both(k, self.bars(k, 99.9), self.genes(max_hold=1), gate=True)
-        self.assertEqual([t['reason'] for t in acc['trades']], ['time'])
-        self.assertEqual([t['reason'] for t in one['trades']], ['time'])
+        self.assertEqual((acc['trades'], one['trades']), ([], []))
+        self.assertEqual((len(acc['positions']), len(one['positions'])), (1, 1))
 
     def test_a_gap_through_the_stop_still_fills_at_the_open(self):
         k = 'BTC-USDT-SWAP'
@@ -1618,3 +1630,166 @@ class RunTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ExitRuleTests(unittest.TestCase):
+    """2026-11-21 exits, the same for every strategy: stop + take-profit, reverse signal, trailing stop, no time exit."""
+    INST = 'BTC-USDT-SWAP'
+
+    def flat(self, n=12):
+        ts = [T0 + i * H for i in range(n)]
+        return X.Series(self.INST, ts, [100.0] * n, [100.1] * n, [99.99] * n, [100.0] * n)
+
+    def genes(self, name, **kw):
+        return dict(dict(name=name, risk=.05, leverage=10, target_rr=0, max_hold=240, tf=1, trail=0), **kw)
+
+    def account(self, sets, segs, s, **kw):
+        with mock.patch.object(X, 'signal_sets', side_effect=lambda g, series: sets[g['name']]):
+            return X.simulate_account(segs, {self.INST: s}, 0, s.n, **kw)
+
+    # ---- 1) take-profit on every position
+    def test_target_rr_range_excludes_zero_and_fix_maps_old_values(self):
+        self.assertEqual(G.GENES['target_rr'], ('float', 1.0, 6.0))
+        self.assertEqual((G.DEFAULT_TARGET_RR, X.DEFAULT_TARGET_RR), (3.0, 3.0))
+        for stored, want in ((0.0, 3.0), (0.3, 3.0), (None, 3.0), (0.5, 1.0), (0.8, 1.0), (2.37, 2.37), (6.0, 6.0), (9.0, 6.0)):
+            g = base_genes(); g['target_rr'] = stored
+            if stored is None:
+                del g['target_rr']
+            self.assertEqual(G.fix(g)['target_rr'], want, stored)
+            self.assertEqual(X.target_rr({'target_rr': stored}), want, stored)
+        rng = random.Random(3)
+        for _ in range(300):                                          # new genomes stay inside [1, 6]; a step below 1R is 1R, not 3R
+            g = G.mutate(G.random_genome(rng), rng, rate=1.0, scale=.6)
+            self.assertTrue(1.0 <= g['target_rr'] <= 6.0)
+        g = base_genes(target_rr=1.05)                                # a big downward step lands on the 1R bound
+        low = G.mutate(dict(g), type('R', (), {'random': lambda s: 0.0, 'gauss': lambda s, a, b: -5.0, 'choice': lambda s, xs: xs[0]})())
+        self.assertEqual(low['target_rr'], 1.0)
+        self.assertNotIn('无止盈', G.describe(base_genes(target_rr=0.0)))
+        self.assertIn('止盈 3.0R', G.describe(base_genes(target_rr=0.0)))
+
+    def test_every_position_has_a_take_profit_even_with_a_zero_gene(self):
+        closes = [100.0] * 40 + [110.0] + [111.0] * 5
+        s = series_from(closes)
+        g = base_genes(target_rr=0.0)
+        p = X.simulate(g, {self.INST: s}, 30, s.n)['positions'][0]
+        self.assertAlmostEqual(p['target'], p['entry'] + 3.0 * p['dist'])
+        a = X.simulate_account([dict(id='m', genes=g, from_i=0)], {self.INST: s}, 30, s.n)['positions'][0]
+        self.assertAlmostEqual(a['target'], a['entry'] + 3.0 * a['dist'])
+
+    # ---- 2) reverse signal: own (default) / team, account-level
+    def test_reverse_close_default_is_own_and_team_is_switchable(self):
+        self.assertEqual(X.ACCOUNT_RULES['reverse_close'], 'own')
+        s = self.flat()
+        sets = {'A': ({0: [(self.INST, 1, 5.0)]}, {0: {self.INST: 1}, 6: {self.INST: -1}}),   # A opens a long, turns short on bar 6
+                'B': ({}, {4: {self.INST: -1}})}                                                # B (seated) turns short on bar 4
+        segs = [dict(id='a', genes=self.genes('A'), from_i=0), dict(id='b', genes=self.genes('B'), from_i=0)]
+        own = self.account(sets, segs, s)
+        self.assertEqual([(t['reason'], t['closed'], t['exit']) for t in own['trades']], [('reverse_signal', s.ts[6], 100.0 * (1 - X.SLIP))])
+        team = self.account(sets, segs, s, rules=dict(X.ACCOUNT_RULES, reverse_close='team'))
+        self.assertEqual([(t['reason'], t['closed']) for t in team['trades']], [('reverse_signal', s.ts[4])])
+        # a member who has left the team no longer closes other members' positions under 'team'
+        gone = self.account(sets, [segs[0], dict(segs[1], wind_i=3)], s, rules=dict(X.ACCOUNT_RULES, reverse_close='team'))
+        self.assertEqual([t['closed'] for t in gone['trades']], [s.ts[6]])
+        # a same-direction signal is not a reverse
+        same = self.account({'A': ({0: [(self.INST, 1, 5.0)]}, {5: {self.INST: 1}}), 'B': ({}, {})}, segs, s)
+        self.assertEqual((same['trades'], len(same['positions'])), ([], 1))
+        with self.assertRaises(ValueError):
+            self.account(sets, segs, s, rules=dict(X.ACCOUNT_RULES, reverse_close='any'))
+        # the old era (bars on or before exit_from) has no reverse close
+        old = self.account(sets, segs, s, exit_from=s.n)
+        self.assertEqual((old['trades'], len(old['positions'])), ([], 1))
+
+    def test_reverse_signals_ignore_the_direction_gene_and_the_volatility_filter(self):
+        closes = [100.0] * 40 + [90.0] + [89.0] * 5                   # momentum breaks down on bar 40
+        s = series_from(closes)
+        for g in (base_genes(direction='long'), base_genes(vol_min=1.2, vol_max=1.21)):
+            ev, rv = X.signal_sets(g, {self.INST: s})
+            self.assertEqual(ev, {})                                   # no short entry for a long-only / filtered genome ...
+            self.assertEqual(rv[40], {self.INST: -1})                  # ... but the short signal still closes a long
+        ev, rv = X.signal_sets(base_genes(), {self.INST: s})
+        self.assertEqual(ev, X.entries(base_genes(), {self.INST: s}))
+        self.assertEqual(rv, X.reversals(base_genes(), {self.INST: s}))
+        # simulate() (the backtest) closes on the genome's own reverse signal at that bar's close
+        f = self.flat()
+        r = X.simulate(self.genes('A'), {self.INST: f}, 0, f.n, events={0: [(self.INST, 1, 5.0)]}, reverse={5: {self.INST: -1}})
+        self.assertEqual([(t['reason'], t['closed']) for t in r['trades']], [('reverse_signal', f.ts[5])])
+
+    # ---- 3) trailing stop for every position
+    def test_trailing_activates_at_one_r_and_only_moves_in_favour(self):
+        p = dict(side=1, entry=100.0, dist=2.0, stop=98.0)
+        X.trail_update(p, 101.9, 99.0)
+        self.assertEqual((p['stop'], p.get('trailing')), (98.0, None))       # < 1R: not yet
+        X.trail_update(p, 102.0, 99.0)
+        self.assertEqual((p['stop'], p['trailing']), (100.0, True))          # exactly 1R: breakeven
+        X.trail_update(p, 105.0, 101.0)
+        self.assertEqual(p['stop'], 103.0)                                    # best − 1R
+        X.trail_update(p, 104.0, 99.0)
+        self.assertEqual((p['stop'], p['best']), (103.0, 105.0))              # never loosens
+        q = dict(side=-1, entry=100.0, dist=2.0, stop=102.0)
+        X.trail_update(q, 101.0, 97.0)
+        self.assertEqual(q['stop'], 99.0)
+        X.trail_update(q, 103.0, 98.0)
+        self.assertEqual(q['stop'], 99.0)
+        self.assertEqual((X.TRAIL_START_R, X.TRAIL_DIST_R), (1.0, 1.0))
+
+    def test_a_trailed_stop_hit_is_recorded_as_trailing_stop(self):
+        closes = [100.0] * 40 + [110.0] + [112.0, 114.5, 116.0, 109.0, 109.0]
+        s = series_from(closes)
+        for r in (X.simulate(base_genes(), {self.INST: s}, 30, s.n),
+                  X.simulate_account([dict(id='m', genes=base_genes(), from_i=0)], {self.INST: s}, 30, s.n)):
+            self.assertEqual(r['trades'][0]['reason'], 'trailing_stop')
+            self.assertGreater(r['trades'][0]['exit'], r['trades'][0]['entry'])     # the profit was protected
+
+    # ---- 4) the switch point: closed history is never rewritten
+    def test_trades_closed_before_exit_rules_from_are_unchanged(self):
+        sr = {k: series_from(walk(900, n), k) for n, k in ((21, 'BTC-USDT-SWAP'), (22, 'ETH-USDT-SWAP'), (23, 'SOL-USDT-SWAP'))}
+        seg = [dict(id='m', genes=base_genes(max_hold=12, trail=1, target_rr=0.0, lookback=15), from_i=0,
+                    old_exit=dict(target_rr=0.0, trail=1, max_hold=12, tf=1))]
+        n = 900
+        old = X.simulate_account(seg, sr, 50, n, exit_from=n)        # every bar under the old exits
+        self.assertIn('time', [t['reason'] for t in old['trades']])
+        cut = 600
+        mixed = X.simulate_account(seg, sr, 50, n, exit_from=cut)
+        ts_cut = sr['BTC-USDT-SWAP'].ts[cut]
+        before = lambda r: [t for t in r['trades'] if t['closed'] <= ts_cut]
+        self.assertGreater(len(before(old)), 3)
+        self.assertEqual(before(mixed), before(old))
+        after = [t for t in mixed['trades'] if t['closed'] > ts_cut]
+        self.assertNotIn('time', [t['reason'] for t in after])
+        self.assertTrue(all(p['target'] for p in mixed['positions']))
+        self.assertNotEqual(mixed['trades'], old['trades'])
+
+    def test_positions_open_at_the_switch_get_a_target_and_the_trail(self):
+        closes = [100.0] * 40 + [110.0] + [111.0] * 10
+        s = series_from(closes)
+        seg = [dict(id='m', genes=base_genes(target_rr=3.0), from_i=0, old_exit=dict(target_rr=0.0, trail=0, max_hold=240, tf=1))]
+        old = X.simulate_account(seg, {self.INST: s}, 30, s.n, exit_from=s.n)['positions'][0]
+        self.assertIsNone(old['target'])                               # stored gene had no target: none in the old era
+        new = X.simulate_account(seg, {self.INST: s}, 30, s.n, exit_from=45)['positions'][0]
+        self.assertAlmostEqual(new['target'], new['entry'] + 3.0 * new['dist'])
+        self.assertEqual(new['opened'], old['opened'])
+
+    def test_paper_update_stamps_exit_rules_from_and_publishes_targets_and_exits(self):
+        acc = dict(from_ts=T0, start_equity=10000.0, segs=[], next=0)
+        closes = [100.0] * 40 + [110.0] + [111.0] * 30
+        sr = {self.INST: series_from(closes)}
+        state = dict(nodes={}, team=[], paper=dict(account=acc, start_equity=10000.0))
+        view, _ = P.update(state, sr, [], prev_last=sr[self.INST].ts[50])
+        self.assertEqual(acc['exit_rules_from'], sr[self.INST].ts[50])
+        self.assertEqual(view['rules']['reverse_close'], 'own')
+        self.assertEqual(view['exits'], {})
+        P.update(state, sr, [], prev_last=sr[self.INST].ts[-1])
+        self.assertEqual(acc['exit_rules_from'], sr[self.INST].ts[50])   # set once, never moved
+        acc2 = dict(from_ts=T0, start_equity=10000.0, segs=[], next=0)
+        state2 = dict(nodes={}, team=[], paper=dict(account=acc2, start_equity=10000.0))
+        P.update(state2, sr, [])
+        self.assertEqual(acc2['exit_rules_from'], sr[self.INST].ts[-1])  # unknown previous run: this run's last bar
+        # run.py reads the previous run's last bar from its dashboard.json
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / 'dashboard.json'
+            self.assertIsNone(R.previous_last_bar(path))
+            path.write_text(json.dumps(dict(paper=dict(curve=[[1, 2], [T0, 3]]))))
+            self.assertEqual(R.previous_last_bar(path), T0)
+        # a pending signal published for the OKX follow always carries tp and dist
+        sig = P._signal_from_pending(self.INST, 1, base_genes(target_rr=0.0), sr, sr[self.INST].ts[-1], 'm')
+        self.assertAlmostEqual(sig['tp'], sig['entry'] + 3.0 * sig['dist'])

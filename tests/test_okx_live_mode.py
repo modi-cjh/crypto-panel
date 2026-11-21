@@ -270,7 +270,7 @@ class MainTests(LiveModeBase):
         (lev_path, lev), (order_path, order) = bodies['live']
         self.assertEqual((lev['lever'], lev['mgnMode'], order['tdMode']), ('7', 'cross', 'cross'))   # leverage gene, cross
         self.assertEqual(order['attachAlgoOrds'][0]['slTriggerPx'], '68600')                          # stop always attached
-        self.assertNotIn('tpTriggerPx', order['attachAlgoOrds'][0])                                   # no TP when the gene has none
+        self.assertEqual(order['attachAlgoOrds'][0]['tpTriggerPx'], '74200')                          # TP always attached: no paper tp → entry + 3R
         # risk gene 3 % is raised to the 5 % floor, × major factor 2 = 10 % of 10 000 = 1 000 USDT at a 1 400 stop distance → 0.7142 BTC = 71.42 contracts (lot 0.01)
         self.assertEqual(order['sz'], '71.42')
         self.assertTrue((self.data / 'okx_demo' / 'state.json').exists()); self.assertTrue((self.data / 'okx_live' / 'state.json').exists())

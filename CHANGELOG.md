@@ -642,6 +642,19 @@
 - 不变：`CROWD_STEPS = ((10, .5),)`、杠杆 1–20×、同向最多 20 仓、同向合计风险不设上限、日亏 25% 停手、全仓、主流币 ×2、每笔交易所止损、扫描前 50 币、`TEAM_SIZE`、守擂 5 代。
 - 测试：`tests/test_okx_demo_trader.py` / `tests/test_okx_live_mode.py`（基因夹到 5–10%、12% / 20% 旧基因按 10%、缺风险 5%、3% 基因先抬到 5% 再 ×2、主流币 ×2 ≤ 10%、`LEADER_RISK = 10%`、`execution_profile` 5% / 10% / 10% / 10%；拥挤断言不变）；`tests/test_evolve.py`（`GENES['risk']` / `gene_bounds` 5–10%、夹紧 / 随机 / 突变不出界、`position_risk` / `simulate()` 上限 10%、`PRIOR_SIZING` 数值、`risk_cap_from` 前 12% 基因与主流币 20% 尺寸保持、之后压到 10%、纸面重放中已开仓位尺寸不变、`risk_rules_from` 不前移且 `risk_cap_from` 只设一次）；`tests/evolve.test.mjs` 与夹具。
 
+### 出场规则统一：止损 + 止盈、反向信号平仓、移动止损，取消持仓时间上限（实盘 / 模拟盘跟单 / 纸面 / 进化，2026-11-21）
+- 做了什么：所有策略同一套出场，没有按策略开关的路径（`tools/evolve/execution.py` 顶部 EXIT RULES）。
+  1. 止损 + 止盈：止损 = 入场 ∓ dist，止盈 = 入场 ± target_rr × dist（dist = stop_atr × 基因周期 ATR(14)）。`genome.GENES['target_rr']` (0, 6) → (1, 6)，不再允许 0；`fix()` 映射：缺失或 < 0.5（旧“无止盈”，实际存的是 0，如 s20554）→ `DEFAULT_TARGET_RR = 3R`，0.5–1 → 1R，> 6 → 6R；`mutate()` 先把步长夹在区间内，新基因不会落到 3R 的映射上。`execution.target_rr(g)` 同一映射。
+  2. 反向信号平仓：同一币种出现反方向信号，在该根 1H 收盘平仓（`reverse_signal`），之后反向开仓按普通信号处理。反向信号用物种原始信号（不经方向基因和波动过滤，否则只做多 / 被过滤的策略等于关掉此出场）。账户级规则 `ACCOUNT_RULES['reverse_close']`：`'own'`（默认，只看开单策略自己）/ `'team'`（现任冠军组合任一成员）。`simulate()`（单策略回测）就是 own。
+  3. 移动止损：每根 1H 收盘后 best = 入场后最高价（空单最低价）；best 达到入场 ± `TRAIL_START_R`(1) × dist 后，止损 = best ∓ `TRAIL_DIST_R`(1) × dist，只朝有利方向移动（`trail_update`）；启用后被打到记 `trailing_stop`。`trail` 基因不再使用。
+  4. 删除超时平仓：`simulate()` 与纸面新规则段都没有 `max_hold` / `MAX_HOLD_H` 平仓；`max_hold`、`trail` 基因保留在结构中（标“不再使用”）。
+- 纸面历史不改写：新增 `account['exit_rules_from']`（上一轮 dashboard.json 曲线最后一根，`run.previous_last_bar`；取不到时用本轮最后一根；`setdefault` 只设一次）。`simulate_account(exit_from=…)`：该根及之前按旧出场（席位保存时的 target_rr / trail / max_hold，`old_exit`），之后所有仓位（含之前开的）按新规则：没有止盈的在第一根新 K 线开盘补上止盈、启用移动止损、反向信号平仓、不再到期。进化候选评估直接用新规则。
+- 跟单（`tools/okx_demo_trader.py`，实盘与模拟盘共用）：开仓一定附带止损 + 止盈（信号无 tp 时按 3R）；每轮对每个跟单仓位确认交易所有止盈单，缺则补挂 reduce-only 条件单（`restore_target`），价格已过止盈则市价平（`take_profit`）；按 OKX 已收盘 1H K 线算 best，按同一规则 amend 交易所止损（或用纸面更紧的止损），只朝有利方向，价格已越过新止损则平仓（`trailing_stop`）；纸面平仓（signals.json 新增 `exits`：最近 24 小时平仓的 `inst|opened → 原因`）用 close-position + autoCxl，`closed_reason` 记 `reverse_signal` / `trailing_stop` / 否则 `paper_closed`；交易所触发的记 `take_profit` / `stop_loss` / `trailing_stop`。signals 新增 `dist`、`trailing`。
+- 粒度差异：纸面 / 回测逐根 1H 更新移动止损并在收盘判反向信号；实盘每小时 :50 UTC 运行一次才改交易所止损（可能晚最多 1 小时），反向信号要等 signals.json 每 4 小时更新后才平。
+- 为什么：用户 2026-11-21 决定持仓不设时间上限，改为三种出场，止盈由系统决定、所有策略统一。
+- 不变：风险 5–10%、`CROWD_STEPS`、杠杆 ≤ 20×、同向 20 仓、全仓、日亏 25%、主流币 ×2 封顶 10%。
+- 测试：`tests/test_evolve.py` `ExitRuleTests`（target_rr 范围与映射、每仓有止盈、own / team / 离任成员 / 旧段无反向、反向信号不受方向与波动过滤、移动止损 1R 激活与单向、`trailing_stop` 记录、`exit_rules_from` 前已平仓交易不变、切换时补止盈、`exit_rules_from` 只设一次）；`tests/test_okx_demo_trader.py` `ExitRuleMirrorTests`（开仓带止盈、补挂止盈、已过止盈平仓、K 线移动止损只上移、越过新止损平仓、反向信号平仓 autoCxl 与 closed_reason、交易所触发原因、无超时）。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

@@ -18,14 +18,19 @@ Rules (identical in every caller):
   (positions still open, full MM counted) equity less all stop fill costs must stay above total maintenance margin. Funding (`Series.funding`, {ts: rate}) is paid /
   received on every funding time a position is held: notional × rate (not margin × rate), longs pay positive rates, and
   is deducted from shared cash, so it can itself trigger a cross liquidation.
-- Stop and target are checked inside each later bar; if a bar touches both, the stop is assumed first (conservative);
-  a gap through the stop fills at the open. Positions also exit at the close after `max_hold` bars. Same-bar order:
+- Exits (2026-11-21 user, the same for every strategy — no per-strategy switch; see EXIT RULES below): a fixed stop
+  AND a take-profit on every position, a reverse signal on the same coin closes it, and a trailing stop protects the
+  profit. There is no time exit any more (MAX_HOLD_H / the max_hold gene only survive for the paper replay of bars
+  before account['exit_rules_from']). Stop and target are checked inside each later bar; if a bar touches both, the
+  stop is assumed first (conservative); a gap through the stop fills at the open. Same-bar order:
   open liquidation check → gap fills → adverse leg (each coin at its stop or adverse extreme, all together) liquidation
-  check → stops → extremes check → targets → close liquidation check → time exits (see `gap_exit`).
+  check → stops → extremes check → targets → close liquidation check → trailing-stop update → reverse-signal closes
+  (see `gap_exit`).
 - Equity is marked to market at every close; max drawdown is measured on that curve.
 - Timeframe gene `tf` (1 / 4 / 24 h): signals and the stop's ATR come from 4H / 1D bars built from the 1H bars (UTC
   aligned, complete bars only) and are decided when such a bar closes; fills, stops and targets still run on 1H bars.
-- Gene `trail` = 1: after each bar the stop follows the best price at the original stop distance (never loosens).
+- Gene `trail` is no longer used (kept in the genome so stored genomes / lineage stay valid): every position trails
+  under the same rule (`trail_update`). Gene `max_hold` is no longer used either.
 """
 import json
 import math
@@ -54,9 +59,58 @@ MARGIN_MODE = 'cross'        # paper and the OKX demo follower both use cross ma
 MARGIN_USE = .95     # an entry may use at most this share of the free margin
 MIN_STOP_DIST = .002 # stops closer than this (fraction of price) are skipped, as on OKX
 START_EQUITY = 10000.0
-MAX_HOLD_H = 720     # longest hold in hours, whatever the timeframe
+# Legacy time exit: only the paper replay of bars on or before account['exit_rules_from'] still closes a position after
+# min(max_hold × tf, MAX_HOLD_H) hours. simulate() (evolution / backtests) and every later paper bar have no time exit.
+MAX_HOLD_H = 720
 MAX_POSITIONS = 3    # open positions per strategy at the same time; extra signals wait until one closes
 HOUR = 3600_000
+
+# ----------------------------------------------------------------- EXIT RULES (2026-11-21, every strategy, every position)
+# 1) Fixed stop + take-profit: stop = entry ∓ dist, target = entry ± target_rr × dist, dist = stop_atr × ATR(14) of the
+#    genome's timeframe at the signal bar. target_rr is a gene in [1, 6] (genome.GENES; 0 = "no target" is gone, a stored
+#    0 maps to DEFAULT_TARGET_RR = 3R in genome.fix()). target_rr(g) below applies the same mapping to any dict.
+# 2) Reverse signal: a signal on the same coin in the other direction, decided on a bar's close, closes the position at
+#    that close (reason 'reverse_signal'); the opposite entry may then fill at the next open like any other signal.
+#    Whose signal counts is an ACCOUNT-level rule, ACCOUNT_RULES['reverse_close']:
+#      'own'  = only the strategy that opened the position (default; a strategy's own exit, so it does not depend on who
+#               else is seated and the backtest of one strategy (simulate) is exactly the same rule);
+#      'team' = any seated team member (candidate; to be compared out of sample before switching).
+# 3) Trailing stop (TRAIL_START_R / TRAIL_DIST_R): after every 1H close, best = highest high (long) / lowest low (short)
+#    since the fill; once best has moved TRAIL_START_R × dist in favour, stop = max(stop, best − TRAIL_DIST_R × dist)
+#    for a long (min(stop, best + TRAIL_DIST_R × dist) for a short) — it only moves in the position's favour. With 1R / 1R
+#    the stop reaches breakeven exactly when the trade is 1R up, then follows the best price 1R behind. The `trail` gene
+#    no longer switches this on or off. A stop hit after the trail activated is recorded as 'trailing_stop'.
+#    Granularity: paper / backtests update the trailing stop bar by bar on 1H candles; the live / demo follower
+#    (tools/okx_demo_trader.py, runs hourly at :50 UTC) recomputes it from OKX's closed 1H candles since its entry and
+#    amends the exchange stop once per run, so on the exchange the stop can lag the paper stop by up to an hour.
+# 4) No time exit (MAX_HOLD_H and max_hold are legacy, see above).
+DEFAULT_TARGET_RR = 3.0   # target for genomes that had none (target_rr 0): 3R, see genome.fix()
+TARGET_RR_RANGE = (1.0, 6.0)
+TRAIL_START_R = 1.0       # trailing starts once the best price is this many stop distances in profit
+TRAIL_DIST_R = 1.0        # then the stop follows the best price at this many stop distances
+REVERSE_CLOSE = ('own', 'team')
+
+
+def target_rr(g):
+    """The take-profit multiple every position uses: the gene kept inside TARGET_RR_RANGE; a missing / < .5 gene (the
+    old 'no target') is DEFAULT_TARGET_RR. Same mapping as genome.fix()."""
+    rr = g.get('target_rr')
+    if rr is None or rr < .5:
+        return DEFAULT_TARGET_RR
+    return min(TARGET_RR_RANGE[1], max(TARGET_RR_RANGE[0], float(rr)))
+
+
+def trail_update(p, h, l):
+    """Update p['best'] with this bar's extreme and move the stop under the trailing rule (only in the position's
+    favour). Sets p['trailing'] once the trail has activated. Returns the stop."""
+    d, dist = p['side'], p['dist']
+    p['best'] = max(p.get('best', p['entry']), h) if d == 1 else min(p.get('best', p['entry']), l)
+    if dist > 0 and (p['best'] - p['entry']) * d >= TRAIL_START_R * dist - 1e-12:
+        new = p['best'] - d * TRAIL_DIST_R * dist
+        if (new - p['stop']) * d > 0:
+            p['stop'] = new
+        p['trailing'] = True
+    return p['stop']
 
 
 # ----------------------------------------------------------------- indicators (cached per series)
@@ -255,23 +309,38 @@ def _raw_signals(g, x):
     return []
 
 
-def entries(g, series):
-    """All entry signals of genome g on every series, as {1H index i: [(inst, d, stop distance)]} in series order.
-    Equivalent to calling signal() and stop_distance() on every bar, but computed once per genome."""
-    tf, out = g.get('tf', 1), {}
+def signal_sets(g, series):
+    """(entries, reversals) of genome g on every series, from one pass over the species signals.
+    entries   = {1H index i: [(inst, d, stop distance)]} in series order: equivalent to calling signal() and
+                stop_distance() on every bar (direction gene and volatility filter applied);
+    reversals = {1H index i: {inst: d}}: every bar where the species fires, BEFORE the direction gene and the volatility
+                filter. These close an opposite position (EXIT RULES: reverse signal) — the filters only gate entries,
+                so a long-only or regime-filtered strategy still gets the same reverse exit as every other strategy."""
+    tf, out, rev = g.get('tf', 1), {}, {}
     want = {'long': 1, 'short': -1}.get(g['direction'])
     lo, hi, k = g['vol_min'], g['vol_max'], g['stop_atr']
     for inst, s in series.items():
         x = s.tf(tf)[0]
         cidx, vr, atr = s.close_index(tf), s.vol_ratio(), x.atr()
         for j, d in _raw_signals(g, x):
-            if want and d != want:
-                continue
             i = cidx[j]
-            if i < 2 or vr[i] < lo or vr[i] > hi:
+            if i < 2:
+                continue
+            rev.setdefault(i, {})[inst] = d
+            if want and d != want or vr[i] < lo or vr[i] > hi:
                 continue
             out.setdefault(i, []).append((inst, d, k * atr[j]))
-    return out
+    return out, rev
+
+
+def entries(g, series):
+    """All entry signals of genome g on every series, as {1H index i: [(inst, d, stop distance)]} (see signal_sets)."""
+    return signal_sets(g, series)[0]
+
+
+def reversals(g, series):
+    """{1H index i: {inst: d}}: the species' raw signals, used only for reverse-signal exits (see signal_sets)."""
+    return signal_sets(g, series)[1]
 
 
 def _species_signal(g, s, i):
@@ -564,9 +633,10 @@ def adverse_path_prices(pos, series, i):
 
 # ----------------------------------------------------------------- the engine
 def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, curve_every=24, events=None, stop_entries_at=None,
-             risk=None, lever_cap=None, extra_equity=None):
+             risk=None, lever_cap=None, extra_equity=None, reverse=None):
     """Run genome g over bar indexes [start, end) of every series (all series share the same timeline).
-    `events` = entries(g, series), when the caller already computed them.
+    `events` = entries(g, series) and `reverse` = reversals(g, series), when the caller already computed them (signal_sets).
+    Exits: the EXIT RULES above (stop + target, trailing stop, the genome's own reverse signals; no time exit).
     `stop_entries_at`: from this bar index on no new signals are taken; open positions run to their own exits
     (a member that lost its seat winds down instead of being closed at market).
     `risk` / `lever_cap` override the genome's risk gene and leverage gene (still kept inside MIN_TRADE_RISK–MAX_TRADE_RISK
@@ -578,18 +648,19 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     """
     insts = list(series)
     ts0 = series[insts[0]].ts
-    if events is None:
-        events = entries(g, series)
+    if events is None or reverse is None:
+        ev2, rv2 = signal_sets(g, series)
+        events = ev2 if events is None else events
+        reverse = rv2 if reverse is None else reverse
     cash, pos, trades, curve = equity, {}, [], []
     peak, max_dd, pending, dists = equity, 0.0, {}, {}
-    rr, trail = g['target_rr'], g.get('trail', 0)
+    rr = target_rr(g)
     risk = clamp_risk(g.get('risk') if risk is None else risk)
     desired_lever = LEVERAGE if lever_cap is None else lever_cap
     if lever_cap is None:
         desired_lever = g.get('leverage', DEFAULT_LEVERAGE)
     cap, extra = min(int(desired_lever), LEVERAGE), 0.0
     liquidations, insurance = 0, 0.0
-    hold = min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H)
     for i in range(start, end):
         if extra_equity is not None:
             extra = extra_equity.get(ts0[i], extra)
@@ -648,8 +719,8 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
             margin = qty * px / lever
             if qty <= 0 or margin > (mark - sum(p['margin'] for p in pos.values())) * MARGIN_USE:
                 continue
-            new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None,
-                         opened=s.ts[i], bar=i, fee=qty * px * FEE, dist=dist, lever=lever, margin=margin,
+            new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist,
+                         opened=s.ts[i], bar=i, best=px, fee=qty * px * FEE, dist=dist, lever=lever, margin=margin,
                          liq=liquidation_price(px, d, lever, mmr=mmr), funding=0.0, mmr=mmr)
             opens_now = marks_at(series, list(pos), i, 'o')
             ok, _why = cross_open_allowed(cash, pos, inst, new_p, opens_now)
@@ -668,22 +739,23 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
         if pos and not _liq_now(adverse_path_prices(pos, series, i)):   # b) adverse leg, before any stop fills
             for inst in list(pos):                                   # c) stops, then the rest at their extremes
                 if stop_hit(pos[inst], series[inst].h[i], series[inst].l[i]):
-                    _exit(inst, pos[inst]['stop'], 'stop')
+                    _exit(inst, pos[inst]['stop'], 'trailing_stop' if pos[inst].get('trailing') else 'stop')
             if pos and not _liq_now(adverse_prices(pos, series, i)):
                 for inst in list(pos):                               # d) targets
                     if target_hit(pos[inst], series[inst].h[i], series[inst].l[i]):
                         _exit(inst, pos[inst]['target'], 'target')
-        # 3) at the close: cross-liquidation check first, then time / switch exits, trailing stops, mark to market
+        # 3) at the close: cross-liquidation check first, then switch exits, trailing stops, reverse signals, mark to market
         closes = marks_at(series, list(pos), i, 'c')
         _liq_now(closes)
         for inst in list(pos):
             p, s = pos[inst], series[inst]
-            if i - p['bar'] >= hold:
-                _exit(inst, s.c[i], 'time')
-            elif close_at_end and i == end - 1:
+            if close_at_end and i == end - 1:
                 _exit(inst, s.c[i], 'switch')
-            elif trail:                                     # after the bar: follow the best price, never loosen
-                p['stop'] = max(p['stop'], s.h[i] - p['dist']) if p['side'] == 1 else min(p['stop'], s.l[i] + p['dist'])
+            else:                                           # after the bar: trail the best price, never loosen
+                trail_update(p, s.h[i], s.l[i])
+        for inst, d in reverse.get(i, {}).items():          # a reverse signal on this close closes the position at the close
+            if inst in pos and pos[inst]['side'] == -d:
+                _exit(inst, series[inst].c[i], 'reverse_signal')
         eq = cash + sum(p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items())
         peak = max(peak, eq); max_dd = max(max_dd, (peak - eq) / peak if peak > 0 else 0)
         if curve_every and (i - start) % curve_every == 0:
@@ -702,7 +774,8 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
                    win_rate=round(wins / len(trades) * 100, 1) if trades else 0.0,
                    profit_factor=round(gross_win / gross_loss, 3) if gross_loss > 0 else (None if not trades else 99.0))
     open_positions = [dict(inst=k, side=p['side'], entry=p['entry'], qty=p['qty'], stop=p['stop'], target=p['target'], opened=p['opened'],
-                           lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4))
+                           lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4), dist=p['dist'],
+                           best=p.get('best'), trailing=bool(p.get('trailing')))
                       for k, p in pos.items()]
     return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, metrics=metrics, pending=pending,
                 liquidations=liquidations, insurance=insurance)
@@ -739,7 +812,7 @@ MIN_TRADE_RISK = .05
 # ((10, .5),) entries 11–20 on one side risk half.
 MAX_SAME_SIDE_POSITIONS = 20   # 2026-11-18 user: at most 20 per side (was 15, before that 10, before that 6)
 ACCOUNT_RULES = dict(leader_risk=MAX_TRADE_RISK, leader_lever=LEVERAGE, lever=LEVERAGE, same_side_cap=None, daily_halt=.25,   # 2026-11-15 user: no same-side total-risk cap, daily halt 25 %
-                    
+                     reverse_close='own',   # 2026-11-21: whose reverse signal closes a position, 'own' | 'team' (EXIT RULES above)
                      day_shift=7 * HOUR, majors=MAJORS, major_factor=2.0, max_risk=MAX_TRADE_RISK, min_risk=MIN_TRADE_RISK,
                      min_lever=MIN_LEVERAGE, margin_mode=MARGIN_MODE, max_same_side=MAX_SAME_SIDE_POSITIONS)
 CROWD_STEPS = ((10, .5),)     # same-side positions already open → risk factor for the next entry: <10 full, ≥10 half (2026-11-20; was ((6, .25), (3, .5)))
@@ -785,7 +858,7 @@ def position_risk(base, inst, same_side_open=0, rules=None):
 
 
 def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None, side_cap_from=None,
-                     risk_from=None, risk_cap_from=None):
+                     risk_from=None, risk_cap_from=None, exit_from=None):
     """ONE shared-equity account traded by several strategies at once, with cross (全仓) liquidation: the paper account of the champion team.
 
     segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
@@ -794,7 +867,15 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     leader size for its whole life.
 
     Same bar rules as simulate() (signal on a close, fill at the next open with slippage and fee, stop before target,
-    gaps fill at the open, time exit, trailing stop, whole contract lots, funding). What is shared:
+    gaps fill at the open, the EXIT RULES above, whole contract lots, funding). What is shared:
+    - exit eras, so the replay never rewrites trades that already closed: exit_from = a bar index
+      (account['exit_rules_from'] in paper.py). On bars up to and including it the OLD exits apply: target only when the
+      seat's stored gene had one (`old_exit` = the gene values as stored, target_rr < .5 = none), trailing only for
+      trail = 1 (immediately, at the stop distance), a time exit after min(max_hold × tf, MAX_HOLD_H) hours, no reverse
+      close. On every later bar the NEW exits apply to every position, including ones opened earlier: a position without
+      a target gets entry ± target_rr × dist (the gene, 0 mapped to DEFAULT_TARGET_RR) at the open of the first new bar,
+      trailing under TRAIL_START_R / TRAIL_DIST_R, reverse-signal closes (rules['reverse_close']), no time exit.
+      None = new exits on every bar;
     - size = account equity × risk ÷ stop distance (risk = the strategy's risk gene for every seat, including the
       leader, kept inside rules['min_risk']–rules['max_risk'] = 5–10 %), then clamped to rules['max_risk'] (10 %) after
       crowding and the major-coin factor. Sizing eras, so the replay never resizes positions that were already filled:
@@ -834,8 +915,21 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     """
     insts = list(series)
     ts0 = series[insts[0]].ts
-    ev = {s['id']: entries(s['genes'], series) for s in segs}
+    sets = {s['id']: signal_sets(s['genes'], series) for s in segs}
+    ev = {k: v[0] for k, v in sets.items()}
+    rev = {k: v[1] for k, v in sets.items()}
     by_id = {s['id']: s for s in segs}
+    mode = rules.get('reverse_close', 'own')
+    if mode not in REVERSE_CLOSE:
+        raise ValueError(f"reverse_close must be one of {REVERSE_CLOSE}, not {mode!r}")
+    old_era = lambda i: exit_from is not None and i <= exit_from     # bars that keep the exits they were traded with
+
+    def old_exit(sid):
+        """The seat's exit genes as stored (before the 2026-11-21 rules): target_rr (< .5 = none), trail, max_hold, tf."""
+        g, o = by_id[sid]['genes'], by_id[sid].get('old_exit') or {}
+        return dict(target_rr=o.get('target_rr', g['target_rr']), trail=o.get('trail', g.get('trail', 0)),
+                    max_hold=o.get('max_hold', g['max_hold']), tf=o.get('tf', g.get('tf', 1)))
+    upgraded = exit_from is None
     boosted = lambda s, i: any(a <= i and (b is None or i < b) for a, b in s.get('boosts') or ())
     cash, pos, trades, curve, pending = equity, {}, [], [], []
     liquidations, insurance, adjustments = 0, 0.0, []
@@ -871,6 +965,12 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         return False
 
     for i in range(start, end):
+        if not upgraded and not old_era(i):
+            # first bar under the new exits: every open position gets a take-profit (gaps / hits from this bar on)
+            upgraded = True
+            for p in pos.values():
+                if not p['target']:
+                    p['target'] = p['entry'] + p['side'] * target_rr(by_id[p['seg']]['genes']) * p['dist']
         # 0) funding (shared cash; may itself trigger cross liquidation)
         for inst, p in pos.items():
             f = series[inst].funding
@@ -921,11 +1021,15 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             margin = qty * px / lever
             if qty <= 0 or margin > (mark - sum(p['margin'] for p in pos.values())) * MARGIN_USE:
                 continue
-            rr = g['target_rr']
+            if old_era(i):                                    # filled under the old exits: its target / trail / time exit as then
+                o = old_exit(sid)
+                rr = o['target_rr'] if o['target_rr'] >= .5 else 0
+                old = dict(hold=min(o['max_hold'] * o['tf'], MAX_HOLD_H), trail=o['trail'])
+            else:
+                rr, old = target_rr(g), dict(hold=None, trail=0)
             new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None, opened=ts0[i], bar=i,
-                         fee=qty * px * FEE, dist=dist, lever=lever, margin=margin, funding=0.0, seg=sid, boost=boost, risk=r,
-                         hold=min(g['max_hold'] * g.get('tf', 1), MAX_HOLD_H), trail=g.get('trail', 0),
-                         liq=liquidation_price(px, d, lever, mmr=mmr), mmr=mmr)
+                         fee=qty * px * FEE, dist=dist, lever=lever, margin=margin, funding=0.0, seg=sid, boost=boost, risk=r, best=px,
+                         liq=liquidation_price(px, d, lever, mmr=mmr), mmr=mmr, **old)
             opens_now = marks_at(series, list(pos), i, 'o')
             ok, _why = cross_open_allowed(cash, pos, inst, new_p, opens_now)
             if not ok:
@@ -942,19 +1046,31 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         if pos and not liq_now(adverse_path_prices(pos, series, i), i):   # b) adverse leg, before any stop fills
             for inst in list(pos):                                   # c) stops, then the rest at their extremes
                 if stop_hit(pos[inst], series[inst].h[i], series[inst].l[i]):
-                    close(inst, pos[inst]['stop'], 'stop', i)
+                    close(inst, pos[inst]['stop'], 'trailing_stop' if pos[inst].get('trailing') else 'stop', i)
             if pos and not liq_now(adverse_prices(pos, series, i), i):
                 for inst in list(pos):                               # d) targets
                     if target_hit(pos[inst], series[inst].h[i], series[inst].l[i]):
                         close(inst, pos[inst]['target'], 'target', i)
-        # 3) at the close: cross-liquidation check first, then time exits and trailing stops; daily halt, curve
+        # 3) at the close: cross-liquidation check first, then trailing stops and reverse signals (old era: time exits and
+        #    the trail gene instead); daily halt, curve
         liq_now(marks_at(series, list(pos), i, 'c'), i)
-        for inst in list(pos):
-            p, s = pos[inst], series[inst]
-            if i - p['bar'] >= p['hold']:
-                close(inst, s.c[i], 'time', i)
-            elif p['trail']:
-                p['stop'] = max(p['stop'], s.h[i] - p['dist']) if p['side'] == 1 else min(p['stop'], s.l[i] + p['dist'])
+        if old_era(i):
+            for inst in list(pos):
+                p, s = pos[inst], series[inst]
+                p['best'] = max(p['best'], s.h[i]) if p['side'] == 1 else min(p['best'], s.l[i])
+                if p['hold'] is not None and i - p['bar'] >= p['hold']:
+                    close(inst, s.c[i], 'time', i)
+                elif p['trail']:
+                    p['stop'] = max(p['stop'], s.h[i] - p['dist']) if p['side'] == 1 else min(p['stop'], s.l[i] + p['dist'])
+        else:
+            for inst in list(pos):
+                trail_update(pos[inst], series[inst].h[i], series[inst].l[i])
+            seated = [x['id'] for x in segs if x['from_i'] <= i and (x.get('wind_i') is None or i < x['wind_i'])] if mode == 'team' else []
+            for inst in list(pos):
+                p = pos[inst]
+                who = [p['seg']] if mode == 'own' else [p['seg']] + seated
+                if any(rev[w].get(i, {}).get(inst) == -p['side'] for w in who):
+                    close(inst, series[inst].c[i], 'reverse_signal', i)
         unreal = {k: p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items()}
         eq = cash + sum(unreal.values())
         d_now = (ts0[i] + rules['day_shift']) // (24 * HOUR)
@@ -990,7 +1106,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     metrics = dict(ret=round((eq / equity - 1) * 100, 3), max_dd=round(max_dd * 100, 3), trades=len(trades),
                    win_rate=round(wins / len(trades) * 100, 1) if trades else 0.0)
     open_positions = [dict(inst=k, side=p['side'], entry=p['entry'], qty=p['qty'], stop=p['stop'], target=p['target'], opened=p['opened'],
-                           lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4), seg=p['seg'], boost=p['boost'], risk=p['risk'])
+                           lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4), seg=p['seg'], boost=p['boost'], risk=p['risk'],
+                           dist=p['dist'], best=p['best'], trailing=bool(p.get('trailing')))
                       for k, p in pos.items()]
     return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, pending=pending, pnl=pnl, halted=halted, metrics=metrics, liquidations=liquidations,
                 insurance=insurance, adjustments=adjustments)
