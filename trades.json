@@ -1,8 +1,32 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-21T02:50:01Z",
+ "updated_at": "2026-11-21T03:50:00Z",
  "trades": [
+  {
+   "inst": "AVAX-USDT-SWAP",
+   "side": "long",
+   "contracts": 24.5,
+   "leverage": 3.0,
+   "entry": 6.488,
+   "exit": 6.209004,
+   "stop": 6.22,
+   "target": 6.859,
+   "pnl": -6.999129,
+   "pnl_pct": -4.30018,
+   "roe_pct": -12.9005,
+   "r": -1.062,
+   "fee": -0.155551,
+   "funding": 0.016321,
+   "opened_at": "2026-11-20T17:50:04Z",
+   "closed_at": "2026-11-21T03:50:00Z",
+   "hold_minutes": 600,
+   "exit_type": "sl",
+   "outcome": "stop",
+   "reason": "stop_loss",
+   "strategy": "evolved",
+   "champion": "s18771"
+  },
   {
    "inst": "ICP-USDT-SWAP",
    "side": "short",
@@ -330,22 +354,22 @@
  ],
  "stats": {
   "overall": {
-   "trades": 14,
-   "with_pnl": 14,
+   "trades": 15,
+   "with_pnl": 15,
    "wins": 9,
-   "losses": 5,
-   "win_rate": 64.2857,
-   "pnl": 3.836528,
+   "losses": 6,
+   "win_rate": 60.0,
+   "pnl": -3.162601,
    "avg_win": 1.041817,
-   "avg_loss": 1.107965,
-   "payoff": 0.940298,
-   "profit_factor": 1.69254,
-   "avg_r": 0.320561,
+   "avg_loss": 2.089826,
+   "payoff": 0.498519,
+   "profit_factor": 0.747778,
+   "avg_r": 0.228391,
    "best": 1.837938,
-   "worst": -2.388202,
+   "worst": -6.999129,
    "tp": 1,
-   "sl": 3,
-   "max_drawdown_closed": 3.926187
+   "sl": 4,
+   "max_drawdown_closed": 6.999129
   },
   "by_strategy": [
    {
@@ -436,6 +460,22 @@
     "tp": 0,
     "sl": 0,
     "max_drawdown_closed": 0.198222
+   },
+   {
+    "key": "s18771",
+    "trades": 1,
+    "with_pnl": 1,
+    "wins": 0,
+    "losses": 1,
+    "win_rate": 0.0,
+    "pnl": -6.999129,
+    "avg_loss": 6.999129,
+    "avg_r": -1.062,
+    "best": -6.999129,
+    "worst": -6.999129,
+    "tp": 0,
+    "sl": 1,
+    "max_drawdown_closed": 6.999129
    }
   ],
   "equity_drawdown": {
