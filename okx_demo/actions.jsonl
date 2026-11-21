@@ -218,3 +218,8 @@
 {"ts": "2026-11-20T21:01:21Z", "action": "amend_stop", "inst": "NEAR-USDT-SWAP", "dry_run": false, "old": 3.865896198162936, "new": 3.8198961981629362}
 {"ts": "2026-11-20T21:01:21Z", "action": "amend_stop", "inst": "ADA-USDT-SWAP", "dry_run": false, "old": 0.17163508723618356, "new": 0.17103508723618355}
 {"ts": "2026-11-20T21:01:21Z", "action": "amend_stop", "inst": "ICP-USDT-SWAP", "dry_run": false, "old": 2.2875153000160355, "new": 2.2705153000160356}
+{"ts": "2026-11-21T01:25:59Z", "action": "close", "inst": "BTC-USDT-SWAP", "dry_run": false, "strategy": "evolved", "reason": "paper_closed", "paper_reason": "target"}
+{"ts": "2026-11-21T01:25:59Z", "action": "restore_target", "inst": "DOGE-USDT-SWAP", "dry_run": false, "target": "0.0492892"}
+{"ts": "2026-11-21T01:25:59Z", "action": "amend_stop", "inst": "DOGE-USDT-SWAP", "dry_run": false, "old": 0.07089946440569317, "new": 0.057564566405693164}
+{"ts": "2026-11-21T01:25:59Z", "action": "restore_target", "inst": "ICP-USDT-SWAP", "dry_run": false, "target": "1.379"}
+{"ts": "2026-11-21T01:25:59Z", "action": "skip", "inst": "ETH-USDT-SWAP", "dry_run": false, "reason": "insufficient_margin", "margin": 1505.1093, "available": 1204.6972}

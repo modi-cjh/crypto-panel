@@ -646,6 +646,10 @@
   [
    1795208481616,
    8530.72
+  ],
+  [
+   1795224359716,
+   8684.21
   ]
  ],
  "mirrored": {
@@ -1278,11 +1282,12 @@
    "entry": 71693.2,
    "clOrdId": "evbtc1794499200",
    "opened_at": 1794503691664,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s13164",
-   "ordId": "4093684304085237760"
+   "ordId": "4093684304085237760",
+   "closed_reason": "paper_closed"
   },
   "DOGE-USDT-SWAP|1794499200000": {
    "inst": "DOGE-USDT-SWAP",
@@ -1290,8 +1295,8 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "13.66",
-   "stop": 0.07089946440569317,
-   "target": null,
+   "stop": 0.057564566405693164,
+   "target": 0.049289198782920506,
    "leverage": 10,
    "entry": 0.06563,
    "clOrdId": "evdoge1794499200",
@@ -1300,7 +1305,10 @@
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s13164",
-   "ordId": "4093684339183173632"
+   "ordId": "4093684339183173632",
+   "dist": 0.005402566405693164,
+   "best": 0.052162,
+   "trailing": true
   },
   "BNB-USDT-SWAP|1794528000000": {
    "inst": "BNB-USDT-SWAP",
@@ -1492,7 +1500,9 @@
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s18637",
-   "ordId": "4100461525416263680"
+   "ordId": "4100461525416263680",
+   "dist": 1.0578961981615889,
+   "best": 2.258
   },
   "ADA-USDT-SWAP|1794700800000": {
    "inst": "ADA-USDT-SWAP",
@@ -1510,7 +1520,9 @@
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s18637",
-   "ordId": "4100461549609009152"
+   "ordId": "4100461549609009152",
+   "dist": 0.03333508723594582,
+   "best": 0.138
   },
   "LTC-USDT-SWAP|1794700800000": {
    "inst": "LTC-USDT-SWAP",
@@ -1528,7 +1540,9 @@
    "leader": false,
    "mgnMode": "isolated",
    "champion": "s18637",
-   "ordId": "4100461573197774848"
+   "ordId": "4100461573197774848",
+   "dist": 7.9696591541761626,
+   "best": 39.204
   },
   "ENA-USDT-SWAP|1794470400000": {
    "inst": "ENA-USDT-SWAP",
@@ -1583,7 +1597,7 @@
    "strategy": "evolved",
    "contracts": "15844.5",
    "stop": 2.2705153000160356,
-   "target": null,
+   "target": 1.3789972999518936,
    "leverage": 1,
    "entry": 2.253,
    "clOrdId": "evicp1794931200",
@@ -1592,7 +1606,9 @@
    "leader": false,
    "mgnMode": "cross",
    "champion": "s20554",
-   "ordId": "4108185302442950656"
+   "ordId": "4108185302442950656",
+   "dist": 0.30151530001603544,
+   "best": 1.974
   },
   "KAITO-USDT-SWAP|1794816000000": {
    "inst": "KAITO-USDT-SWAP",
@@ -1630,7 +1646,9 @@
    "leader": false,
    "mgnMode": "cross",
    "champion": "s18771",
-   "ordId": "4116868993822212096"
+   "ordId": "4116868993822212096",
+   "dist": 0.26963327797044995,
+   "best": 6.611
   },
   "FIL-USDT-SWAP|1795190400000": {
    "inst": "FIL-USDT-SWAP",
@@ -1648,7 +1666,9 @@
    "leader": false,
    "mgnMode": "cross",
    "champion": "s18771",
-   "ordId": "4116869028316168192"
+   "ordId": "4116869028316168192",
+   "dist": 0.02736698332048586,
+   "best": 0.5387
   }
  },
  "paused": false,
@@ -1779,6 +1799,13 @@
    "funding": 4.633835559345108,
    "close_price": 6.983378303198887,
    "fee": -0.4995748
+  },
+  "2026-11-21T01:25:59Z|BTC-USDT-SWAP": {
+   "pnl": 257.97888047616095,
+   "price_pnl": 250.77596,
+   "funding": 8.50423129616093,
+   "close_price": 59091.6,
+   "fee": -1.30131082
   }
  },
  "largest_close": {
