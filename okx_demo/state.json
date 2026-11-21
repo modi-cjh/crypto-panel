@@ -650,6 +650,10 @@
   [
    1795224359716,
    8684.21
+  ],
+  [
+   1795237618840,
+   7713.48
   ]
  ],
  "mirrored": {
@@ -1295,7 +1299,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "13.66",
-   "stop": 0.057564566405693164,
+   "stop": 0.05599146640569316,
    "target": 0.049289198782920506,
    "leverage": 10,
    "entry": 0.06563,
@@ -1307,7 +1311,7 @@
    "champion": "s13164",
    "ordId": "4093684339183173632",
    "dist": 0.005402566405693164,
-   "best": 0.052162,
+   "best": 0.0505889,
    "trailing": true
   },
   "BNB-USDT-SWAP|1794528000000": {
@@ -1522,7 +1526,7 @@
    "champion": "s18637",
    "ordId": "4100461549609009152",
    "dist": 0.03333508723594582,
-   "best": 0.138
+   "best": 0.1338
   },
   "LTC-USDT-SWAP|1794700800000": {
    "inst": "LTC-USDT-SWAP",
@@ -1542,7 +1546,7 @@
    "champion": "s18637",
    "ordId": "4100461573197774848",
    "dist": 7.9696591541761626,
-   "best": 39.204
+   "best": 37.7126
   },
   "ENA-USDT-SWAP|1794470400000": {
    "inst": "ENA-USDT-SWAP",
@@ -1596,7 +1600,7 @@
    "posSide": "short",
    "strategy": "evolved",
    "contracts": "15844.5",
-   "stop": 2.2705153000160356,
+   "stop": 2.1695153000160357,
    "target": 1.3789972999518936,
    "leverage": 1,
    "entry": 2.253,
@@ -1608,7 +1612,8 @@
    "champion": "s20554",
    "ordId": "4108185302442950656",
    "dist": 0.30151530001603544,
-   "best": 1.974
+   "best": 1.873,
+   "trailing": true
   },
   "KAITO-USDT-SWAP|1794816000000": {
    "inst": "KAITO-USDT-SWAP",
@@ -1642,13 +1647,15 @@
    "entry": 6.527,
    "clOrdId": "evavax1795190400",
    "opened_at": 1795194653344,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
    "champion": "s18771",
    "ordId": "4116868993822212096",
    "dist": 0.26963327797044995,
-   "best": 6.611
+   "best": 6.611,
+   "closed_reason": "stop_loss",
+   "realized_pnl": -437.03924945926866
   },
   "FIL-USDT-SWAP|1795190400000": {
    "inst": "FIL-USDT-SWAP",
@@ -1662,13 +1669,22 @@
    "entry": 0.5176,
    "clOrdId": "evfil1795190400",
    "opened_at": 1795194653344,
-   "status": "open",
+   "status": "done",
    "leader": false,
    "mgnMode": "cross",
    "champion": "s18771",
    "ordId": "4116869028316168192",
    "dist": 0.02736698332048586,
-   "best": 0.5387
+   "best": 0.5387,
+   "closed_reason": "stop_loss",
+   "realized_pnl": -499.8163094181735
+  },
+  "ETH-USDT-SWAP|1795219200000": {
+   "inst": "ETH-USDT-SWAP",
+   "status": "skipped",
+   "side": -1,
+   "posSide": "net",
+   "reason": "too_old"
   }
  },
  "paused": false,

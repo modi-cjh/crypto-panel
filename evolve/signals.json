@@ -1,11 +1,11 @@
 {
- "updated_at": "2026-11-21T01:25:15Z",
+ "updated_at": "2026-11-21T05:06:01Z",
  "champion": "s23387",
  "team": [
   "s18771",
   "s23178",
   "s20401",
-  "s26000",
+  "s28523",
   "s23735",
   "s27799",
   "s23387",
@@ -67,7 +67,7 @@
   "H-USDT-SWAP": {
    "side": -1,
    "entry": 0.032703458000000005,
-   "stop": 0.020973135901267176,
+   "stop": 0.020483135901267175,
    "tp": 0.0019440502961984782,
    "dist": 0.010253135901267176,
    "trailing": true,
@@ -79,25 +79,10 @@
    "leverage": 10,
    "leader": true
   },
-  "ENA-USDT-SWAP": {
-   "side": -1,
-   "entry": 0.142051584,
-   "stop": 0.112775335700315,
-   "tp": 0.09432817760914952,
-   "dist": 0.017675335700314994,
-   "trailing": true,
-   "opened": 1794470400000,
-   "strategy": "evolved",
-   "champion": "s13215",
-   "rank": 100,
-   "risk": 0.05,
-   "leverage": 10,
-   "leader": true
-  },
   "DOGE-USDT-SWAP": {
    "side": -1,
    "entry": 0.065496898,
-   "stop": 0.057912566405693165,
+   "stop": 0.05636256640569316,
    "tp": 0.049289198782920506,
    "dist": 0.005402566405693164,
    "trailing": true,
@@ -153,7 +138,7 @@
   "KAITO-USDT-SWAP": {
    "side": -1,
    "entry": 0.17436512,
-   "stop": 0.17332142307902546,
+   "stop": 0.16622142307902546,
    "tp": 0.11520085076292362,
    "dist": 0.019721423079025465,
    "trailing": true,
@@ -167,7 +152,7 @@
   "ICP-USDT-SWAP": {
    "side": -1,
    "entry": 2.2835432,
-   "stop": 2.2705153000160356,
+   "stop": 2.1695153000160357,
    "tp": 1.3789972999518936,
    "dist": 0.30151530001603544,
    "trailing": true,
@@ -177,34 +162,6 @@
    "rank": 100,
    "risk": 0.05,
    "leverage": 1
-  },
-  "AVAX-USDT-SWAP": {
-   "side": 1,
-   "entry": 6.4892976,
-   "stop": 6.21966432202955,
-   "tp": 6.858695190819517,
-   "dist": 0.26963327797044995,
-   "trailing": false,
-   "opened": 1795190400000,
-   "strategy": "evolved",
-   "champion": "s18771",
-   "rank": 8,
-   "risk": 0.05,
-   "leverage": 3
-  },
-  "FIL-USDT-SWAP": {
-   "side": 1,
-   "entry": 0.5195038799999999,
-   "stop": 0.49213689667951405,
-   "tp": 0.5569966471490655,
-   "dist": 0.02736698332048586,
-   "trailing": false,
-   "opened": 1795190400000,
-   "strategy": "evolved",
-   "champion": "s18771",
-   "rank": 8,
-   "risk": 0.05,
-   "leverage": 3
   },
   "ETH-USDT-SWAP": {
    "side": -1,
@@ -223,6 +180,9 @@
  },
  "exits": {
   "CRV-USDT-SWAP|1794441600000": "target",
-  "BTC-USDT-SWAP|1794499200000": "target"
+  "BTC-USDT-SWAP|1794499200000": "target",
+  "AVAX-USDT-SWAP|1795190400000": "stop",
+  "ENA-USDT-SWAP|1794470400000": "target",
+  "FIL-USDT-SWAP|1795190400000": "stop"
  }
 }
