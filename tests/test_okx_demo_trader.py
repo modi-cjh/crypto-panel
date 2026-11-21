@@ -884,6 +884,7 @@ class ExitRuleMirrorTests(unittest.TestCase):
         self.assertEqual(fake.posts[0][0], '/api/v5/trade/close-position'); self.assertTrue(fake.posts[0][1]['autoCxl'])
         self.assertEqual(state['mirrored'][self.key(state)]['closed_reason'], 'take_profit')
 
+    @mock.patch.object(odt, 'TRAIL', dict(start_r=1.0, dist_r=1.0, be_r=None))   # the 1R / 1R mechanics (PR #110 values)
     def test_trailing_stop_from_closed_1h_candles_moves_only_in_favour(self):
         fake, state = self.opened(tp=76000.0)
         fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1', slTriggerPx='68600', tpTriggerPx='76000')]
@@ -988,3 +989,83 @@ class ExitRuleMirrorTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TrailRiskMirrorTests(unittest.TestCase):
+    """execution TRAIL & RISK RULES on the OKX follow (live and demo share Mirror): R unit = min(paper dist, live dist),
+    breakeven / trail from the shared trail_stop_level, and the paper's risk_factor on new entries."""
+    ONE_R = dict(start_r=1.0, dist_r=1.0, be_r=None)
+
+    def setUp(self):
+        odt.configure_evolved()
+        self.addCleanup(lambda: (setattr(odt, 'ACTIVE_PROFILE', None), odt.configure_volume_test(datetime(2026, 1, 1, tzinfo=timezone.utc))))
+
+    def sig(self, **kw):
+        return {'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved', risk=.05, **kw)}
+
+    def opened(self, avg='69950'):
+        """Paper entry 70000 / stop 68600 / dist 1400; the live fill is at avgPx 69950 → live dist 1350."""
+        fake = FakeOKX(); _, state = run(fake, paper(**self.sig()))
+        fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3', mgnMode='cross', avgPx=avg)]
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1', slTriggerPx='68600', tpTriggerPx='76000')]
+        fake.posts.clear()
+        return fake, state, next(iter(state['mirrored'].values()))
+
+    def later(self, fake, state, best, hours=3):
+        fake.candles = {'BTC-USDT-SWAP': [[str(NOW_MS + 3600_000), '70000', str(best), '69900', '70500', '1', '1', '1', '1']]}
+        fake.prices = {'BTC-USDT-SWAP': 70500.0}
+        odt.Mirror(fake, state, dict(paper(**self.sig(tp=76000.0, dist=1400.0)), exits={}), NOW + timedelta(hours=hours), False).run('run')
+
+    def test_live_dist_is_persisted_at_entry(self):
+        fake = FakeOKX(); _, state = run(fake, paper(**self.sig()))
+        m = next(iter(state['mirrored'].values()))
+        self.assertEqual((m['init_stop'], m['live_dist'], m['dist'], m['risk_factor']), (68600.0, 1400.0, 1400.0, 1.0))
+
+    def test_eth_case_one_r_by_the_live_entry_and_stop_starts_the_trail(self):
+        # best 71330: 1380 from the live entry = 1.022 R by the live dist (1350) but 0.986 R by the paper dist (1400)
+        with mock.patch.object(odt, 'TRAIL', self.ONE_R):
+            fake, state, m = self.opened()
+            self.later(fake, state, 71330)
+        self.assertEqual(fake.posts, [('/api/v5/trade/amend-algos', {'instId': 'BTC-USDT-SWAP', 'algoId': 'a1', 'newSlTriggerPx': '69980'})])
+        self.assertEqual((m['stop'], m['trailing'], m['trail_unit']), (69980.0, True, 1350.0))   # 71330 − 1350: just above the live entry
+
+    def test_min_of_paper_and_live_dist_and_fallback_to_paper_dist(self):
+        self.assertEqual(odt.trail_unit(1400.0, 1350.0), 1350.0)
+        self.assertEqual(odt.trail_unit(1300.0, 1350.0), 1300.0)        # the paper one when it is smaller
+        self.assertEqual(odt.trail_unit(1400.0, None), 1400.0)
+        self.assertEqual(odt.trail_unit(1400.0, 0), 1400.0)
+        # an older state entry without init_stop / live_dist: R = the paper dist, 0.986 R → no trail
+        with mock.patch.object(odt, 'TRAIL', self.ONE_R):
+            fake, state, m = self.opened()
+            m.pop('init_stop'); m.pop('live_dist')
+            self.later(fake, state, 71330)
+        self.assertEqual(fake.posts, [])
+        self.assertEqual(m['trail_unit'], 1400.0)
+        # a live fill BETTER than the paper entry: the paper dist is the smaller unit
+        with mock.patch.object(odt, 'TRAIL', self.ONE_R):
+            fake, state, m = self.opened(avg='70100')                  # live dist 1500
+            self.later(fake, state, 71520)                              # 1420 from the live entry: ≥ 1400 (paper) R
+        self.assertEqual(fake.posts[0][1]['newSlTriggerPx'], '70120')     # 71520 − 1400
+
+    def test_breakeven_step_moves_the_exchange_stop_to_the_live_entry(self):
+        with mock.patch.object(odt, 'TRAIL', dict(start_r=1.0, dist_r=1.0, be_r=.5)):
+            fake, state, m = self.opened()
+            self.later(fake, state, 70700)                              # 750 ≥ 0.5 × 1350
+        self.assertEqual(fake.posts, [('/api/v5/trade/amend-algos', {'instId': 'BTC-USDT-SWAP', 'algoId': 'a1', 'newSlTriggerPx': '69950'})])
+        self.assertTrue(m['trailing'])
+
+    def test_default_half_r_start_tightens_the_stop(self):
+        fake, state, m = self.opened()
+        self.later(fake, state, 70700)                                  # 750 ≥ 0.5 × 1350 → stop = 70700 − 1350
+        self.assertEqual(odt.TRAIL['start_r'], .5)
+        self.assertEqual(fake.posts[0][1]['newSlTriggerPx'], '69350')
+
+    def test_paper_risk_factor_scales_the_entry_and_missing_means_one(self):
+        def risk_of(**kw):
+            fake = FakeOKX(); m, _ = run(fake, paper(**self.sig(**kw)))
+            return next(a for a in m.actions if a['action'] == 'open')['risk_usdt']
+        full = risk_of()
+        self.assertAlmostEqual(risk_of(risk_factor=.5), full / 2, places=1)
+        self.assertAlmostEqual(risk_of(risk_factor=.25), full / 4, places=1)
+        self.assertEqual(risk_of(risk_factor=None), full)
+        self.assertEqual(risk_of(risk_factor=3), full)                  # never above the normal risk

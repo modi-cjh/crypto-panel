@@ -662,6 +662,17 @@
 - 跟单（`okx_demo_trader.py`）：`PAPER_EXIT_REASONS` 加 `manual_user`，纸面手动平仓时跟单仓位的 `closed_reason` 记 `manual_user`；看板原因文字“手动平仓”（`evolve.mjs` / `live.mjs` / `okx.mjs`）。
 - 测试：`tests/test_evolve.py` `ManualCloseTests`（只平精确那一仓、价格与 pnl、已发布 K 线不变、超出数据不动、已被止损的不动、同币重新开仓、同向计数与拥挤不再计入、`manual_from` 只设一次、`exits`、配置内容）；`tests/test_okx_demo_trader.py`（`manual_user` 原因、同币新仓照常跟、不计入同向 / 拥挤）。
 
+### 移动止损 0.5R 起步、实盘按自身止损距离判断 R、同冠军同 K 线合并风险、新任 / 离任席位半风险（实盘 / 模拟盘跟单 / 纸面 / 进化，2026-11-21）
+- 做了什么：`tools/evolve/execution.py` 新增 TRAIL & RISK RULES 一节，四处共用一份实现：
+  1. `trail_stop_level()`（`trail_update()` 与跟单 `trail_stop()` 都调用它）：`TRAIL_START_R` 1.0 → 0.5（`TRAIL_DIST_R` 仍 1），`BREAKEVEN_R = None`（保本一档已实现、默认关闭）。跟单的 R = `trail_unit(纸面 dist, 实盘 dist)` 取较小者，实盘 dist = |OKX avgPx（或开仓价）− `init_stop`|；开仓时另存 `live_dist`；旧记录两者都没有时回退纸面 dist。
+  2. `same_bar_groups()` + `entry_risk_factor()`：同一席位在同一根信号 K 线（都在下一根开盘成交）的同向开仓，每笔风险 ÷ n（n = 成交开始时仍可开的同组信号数，同币被排序在前的席位占用后不再计入，最多为该席位的空余仓位数；按信号计不按成交计，偏保守）。席位离任中（成交 K 线 ≥ `wind_i`）或在座不足 `NEW_SEAT_HOURS = 24` 小时的第一根开仓 K 线，风险 ×`NEW_SEAT_FACTOR = .5`。系数乘在 5–10% / 拥挤 / 主流币 / 10% 上限之后，结果可以低于 5%（有意为之，风险区间只约束基因）。`simulate()`（单策略适应度）只用同 K 线合并（没有席位概念）。
+  3. `paper.py`：`seat_chains()` 把同一冠军首尾相接的分段算作一个席位（`tenure_ts` / `chain`）；新增 `account['trail_risk_from']`（上一轮已发布的最后一根，`setdefault` 只设一次）：该根及之前用 `PRIOR_TRAIL`（1R/1R）且开仓不乘系数，之后所有持仓用新移动止损、新开仓乘系数。signals.json 每个持仓 / 待开信号新增 `risk_factor`、`seat_from`、`winding`；已平仓交易只有系数 ≠ 1 时才多 `risk_factor` 字段。
+  4. `okx_demo_trader.py`（实盘与模拟盘共用）：开仓风险 × 信号 `risk_factor`（缺省 1、夹到 0–1），记 `risk_factor` / `live_dist`；移动止损按上面的 R 与实盘入场价。
+- 为什么：用户采纳实盘亏损报告（2026-11-21）的建议 2、3（建议 1 降风险被否决：5–10%、日亏 25%、杠杆、扫描数等都不变）。ETH 空单按实盘入场 / 止损已到 1.01R、按纸面 dist 只有 0.99R，移动止损没启动；AVAX + FIL 是同一冠军同一根 K 线的两笔满风险多单；ETH 来自刚离任的 s27131。
+- 依据（`tools/analysis/trail_risk_replay.py`，证据 `/workspace/modi/trail-risk-2026-11-21/`）：样本外 2025-06-03 → 2025-11-30、42 币。移动止损单独比较，0.5R 在现任团队、换席合成团队、单策略适应度三种口径下收益 / 回撤都最好；0.5R 保本只在 7 天近期样本更好、在换席样本外最差，因此不开。半风险窗口 24h 优于 48h。现行 → 新规则：现任团队 -74.8% / 回撤 95.1% → -13.8% / 79.7%，换席团队 -86.9% / 95.9% → -37.6% / 80.1%，日亏 ≥25% 天数 2 / 4 → 0 / 0。样本外整体仍亏损（团队过拟合），新规则只是少亏。
+- 已发布历史不变：`tools/analysis/check_history_identical.py` 在 paper-data e7d532b 快照上对比 master 与本分支，上一轮已发布最后一根（2026-11-21 12:00Z）及之前的 25 笔交易与 249 个曲线点完全相同。
+- 测试：`tests/test_evolve.py` `TrailRiskRuleTests`（默认值、0.5R 起步、保本、`trail_unit` 取小与回退、ETH 1.01R / 0.99R、系数组合、同组 / 不同方向 / 不同冠军 / 不同 K 线 / 同币先到先得、新席位首笔半风险与 24h 后满风险、席位链、离任半风险、`simulate()` 合并、`trail_risk_from` 前历史相同、只设一次、`seat_chains`）；旧的尺寸 / 强平机制测试改在 `PRIOR_ERA` 下运行；`tests/test_okx_demo_trader.py` `TrailRiskMirrorTests`（`live_dist` 持久化、ETH 例子启动移动止损、取小 / 回退纸面 dist / 实盘价更好时用纸面 dist、保本、默认 0.5R、`risk_factor` 缩放与缺省）。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

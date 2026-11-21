@@ -27,6 +27,13 @@ account['manual_from'][key] = the last bar of the previous run (set once per clo
 already published replay unchanged: the close is booked at the open of the first bar at or after its time AND after that
 stamp (`closed` = its real time). From then on the coin takes new entries like any other and the position no longer
 counts for the same-side count / crowding.
+Trail & risk rules (2026-11-21, execution.py TRAIL & RISK RULES: trailing start / breakeven, same-champion same-bar
+risk share, new / winding seat half risk) work the same way: account['trail_risk_from'] = the last bar of the previous
+run (set once, never moved). Bars up to it trail with execution.PRIOR_TRAIL and fills up to it get no risk factor; later
+bars trail every open position under execution.TRAIL and later fills get execution.entry_risk_factor(). The seat's
+tenure (`tenure_ts`) is the start of the champion's continuous seat: a segment that starts exactly when the previous
+segment of the same champion was wound continues its seat (`chain`). signals.json carries each position's
+`risk_factor` (and `seat_from`, `winding`) so the OKX follow sizes the same way.
 The OKX follow (tools/okx_demo_trader.py, demo and live) uses the
 same 5–10 % / 10 % / half-at-10 steps and 1–20× genes on cross margin, clamped to each coin's OKX max leverage (no new
 entry if the spec is missing).
@@ -42,6 +49,7 @@ paper['legacy'] and the shared account starts from the slots' total equity. The 
 serves that one-time conversion.
 """
 from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, same_side_full, clamp_risk, target_rr
+from execution import entry_risk_factor, same_bar_groups
 from evolution import TEAM_SIZE, entry_gate
 from genome import fix
 
@@ -89,6 +97,22 @@ def _leader_view(leader, nodes=None):
                 risk=(clamp_risk(g.get('risk'), ACCOUNT_RULES['min_risk'], ACCOUNT_RULES['max_risk']) if g else ACCOUNT_RULES['max_risk']),
                 leverage=int(g.get('leverage', DEFAULT_LEVERAGE) if g else ACCOUNT_RULES['leader_lever']),
                 max_risk=ACCOUNT_RULES['max_risk'], max_leverage=ACCOUNT_RULES['leader_lever'])
+
+
+def seat_chains(segs):
+    """({seg id: seat chain}, {seg id: seat start ts}) for execution TRAIL & RISK RULES c: a segment that starts exactly
+    when the previous segment of the same champion was wound (a slot move, a re-seat in the same run) continues that
+    seat; any other segment starts a new seat at its from_ts. segs in account order (dicts with id, champion, from_ts,
+    wind_ts)."""
+    chain, tenure, last = {}, {}, {}
+    for g in segs:
+        prev = last.get(g['champion'])
+        if prev is not None and prev['wind_ts'] is not None and prev['wind_ts'] == g['from_ts']:
+            chain[g['id']], tenure[g['id']] = chain[prev['id']], tenure[prev['id']]
+        else:
+            chain[g['id']], tenure[g['id']] = g['id'], g['from_ts']
+        last[g['champion']] = g
+    return chain, tenure
 
 
 def _index(series, ts):
@@ -368,7 +392,9 @@ def update(state, series, changes, price_off=None, prev_last=None):
     # genes are re-clamped to the current bands for new entries; old_risk = the risk gene as stored when the seat was
     # taken (fix() under the band of that time), used for fills on or before risk_rules_from / risk_cap_from so the
     # replay keeps their size (each era clamps it into its own band).
+    chain, tenure = seat_chains(acc['segs'])
     segs = [dict(id=g['id'], genes=fix(dict(g['genes'])), from_i=idx(g['from_ts']), wind_i=idx(g['wind_ts']) if g['wind_ts'] is not None else None,
+                 chain=chain[g['id']], tenure_ts=tenure[g['id']],
                  boosts=[(idx(a), idx(b) if b is not None else None) for a, b in g['boosts']],
                  **({'old_risk': g['genes']['risk']} if g['genes'].get('risk') is not None else {}),
                  # the exit genes as stored (old fix(): target_rr 0 = no target), for bars on or before exit_rules_from
@@ -380,6 +406,8 @@ def update(state, series, changes, price_off=None, prev_last=None):
     acc.setdefault('risk_cap_from', last_ts)          # the 5–10 % / 10 % / half-at-10 sizing starts with the first run that has it
     # the new exits start right after the bars the previous run already published (closed trades stay as they were)
     acc.setdefault('exit_rules_from', min(prev_last, last_ts) if prev_last is not None else last_ts)
+    # the trail / risk rules (TRAIL & RISK RULES) likewise start right after the bars already published (set once)
+    acc.setdefault('trail_risk_from', min(prev_last, last_ts) if prev_last is not None else last_ts)
     # each manual close starts after the bars the previous run already published (set once per close, never moved)
     mfrom = acc.setdefault('manual_from', {})
     for inst, opened in MANUAL_CLOSES:
@@ -387,7 +415,8 @@ def update(state, series, changes, price_off=None, prev_last=None):
     manual = {(inst, int(opened)): (at, px, idx(mfrom[f'{inst}|{int(opened)}'])) for (inst, opened), (at, px) in MANUAL_CLOSES.items()}
     res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked,
                            side_cap_from=idx(acc['side_cap_from']), risk_from=idx(acc['risk_rules_from']),
-                           risk_cap_from=idx(acc['risk_cap_from']), exit_from=idx(acc['exit_rules_from']), manual=manual)
+                           risk_cap_from=idx(acc['risk_cap_from']), exit_from=idx(acc['exit_rules_from']), manual=manual,
+                           trail_risk_from=idx(acc['trail_risk_from']))
     by = {g['id']: g for g in acc['segs']}
     rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     who = lambda sid: by[sid]['champion']
@@ -404,6 +433,16 @@ def update(state, series, changes, price_off=None, prev_last=None):
             continue
         seen.add(inst); held[sid] += 1; sides[d] += 1; queue.append((sid, inst, d, dist, b))
     pending = [dict(inst=inst, side=d, champion=who(sid)) for sid, inst, d, dist, b in queue]
+    # risk factor of the queued entries (fill at the next open), the same rule the next replay applies to them
+    seg_by = {x['id']: x for x in segs}
+    groups = same_bar_groups(sorted(res['pending'], key=lambda x: not x[4]), {p['inst'] for p in res['positions']},
+                             {g['id']: sum(1 for p in res['positions'] if p['seg'] == g['id']) for g in acc['segs']},
+                             eligible=lambda k: k not in off_now)
+
+    def queue_factor(sid, d):
+        fb = res.get('first_fill', {}).get(seg_by[sid]['chain'])
+        return entry_risk_factor(groups.get((sid, d), 1), seat_age_h=(last_ts + HOUR - seg_by[sid]['tenure_ts']) / HOUR,
+                                 first=fb is None or fb == s.n, winding=False)
     members = []
     for g in acc['segs']:
         if g['wind_ts'] is None:
@@ -420,10 +459,13 @@ def update(state, series, changes, price_off=None, prev_last=None):
         signals[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], dist=p['dist'], trailing=p['trailing'],
                                   opened=p['opened'], strategy='evolved',
                                   champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1,
+                                  risk_factor=round(p.get('risk_factor', 1.0), 6), seat_from=seg_by[p['seg']]['tenure_ts'],
+                                  winding=by[p['seg']]['wind_ts'] is not None,
                                   **_size(by[p['seg']]['genes'], leader=p['boost']))   # the base risk: the mirror applies the majors / crowding steps itself
     for sid, inst, d, dist, b in queue:
         g = by[sid]
         signals.setdefault(inst, dict(_signal_from_pending(inst, d, g['genes'], series, last_ts, g['champion']), rank=rank.get(g['champion'], 99) + 1,
+                                      risk_factor=round(queue_factor(sid, d), 6), seat_from=seg_by[sid]['tenure_ts'], winding=False,
                                       **_size(g['genes'], leader=b)))
     legacy = paper.get('legacy') or {}
     seats = [dict(champion=g['champion'], slot=g['slot'], species=g['species'], reason=g['reason'], from_ts=g['from_ts'], to_ts=g['wind_ts']) for g in acc['segs']]
@@ -437,6 +479,9 @@ def update(state, series, changes, price_off=None, prev_last=None):
                 liquidations=res.get('liquidations', 0), insurance=round(res.get('insurance', 0.0), 2),
                 adjustments=[dict(a, amount=round(a['amount'], 2)) for a in res.get('adjustments') or []][-20:],
                 rules=dict(reverse_close=ACCOUNT_RULES['reverse_close'], exit_rules_from=acc['exit_rules_from'],
+                           trail_risk_from=acc['trail_risk_from'], trail=dict(ACCOUNT_RULES['trail']),
+                           same_bar_share=ACCOUNT_RULES['same_bar_share'], new_seat_h=ACCOUNT_RULES['new_seat_h'],
+                           new_seat_factor=ACCOUNT_RULES['new_seat_factor'],
                            same_side_cap=ACCOUNT_RULES['same_side_cap'], max_same_side=ACCOUNT_RULES['max_same_side'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
                            leader_risk=ACCOUNT_RULES['leader_risk'], leader_lever=ACCOUNT_RULES['leader_lever'],
                            max_risk=ACCOUNT_RULES['max_risk'], min_risk=ACCOUNT_RULES['min_risk'],

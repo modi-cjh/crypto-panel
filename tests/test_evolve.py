@@ -40,6 +40,11 @@ def base_genes(**kw):
     return g
 
 
+# The trail / risk rules of the era before account['trail_risk_from'] (execution TRAIL & RISK RULES): tests of other
+# mechanics (sizing eras, liquidation order) run under them so a same-bar share or a new-seat half does not interfere.
+PRIOR_ERA = dict(trail=X.PRIOR_TRAIL, **X.PRIOR_RISK)
+
+
 class ExecutionTests(unittest.TestCase):
     def test_precomputed_entries_match_bar_by_bar_signals_for_every_species_and_timeframe(self):
         rnd = random.Random(7)
@@ -522,6 +527,7 @@ class EvolutionTests(unittest.TestCase):
             self.assertEqual(len(a['trades']), len(b['trades'])); self.assertEqual(a['curve'], b['curve'])
             self.assertAlmostEqual(b['pnl']['x'], b['equity'] - 5000.0, places=6)
 
+    @mock.patch.dict(X.ACCOUNT_RULES, PRIOR_ERA)   # sizing mechanics of the earlier eras: no trail/risk factors
     def test_shared_account_rules_one_position_per_coin_crowding_cap_leader_and_wind_down(self):
         sr = self._breakout_market(coins=13)
         g = base_genes(risk=.01)
@@ -615,6 +621,7 @@ class EvolutionTests(unittest.TestCase):
         P.update(state, sr, [])
         self.assertEqual(acc['side_cap_from'], T0)
 
+    @mock.patch.dict(X.ACCOUNT_RULES, PRIOR_ERA)   # sizing mechanics of the earlier eras: no trail/risk factors
     def test_majors_risk_twice_as_much_in_the_shared_account(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 30
         sr = {k: series_from(list(closes), k) for k in ('BTC-USDT-SWAP', 'PEPE-USDT-SWAP')}
@@ -661,6 +668,7 @@ class EvolutionTests(unittest.TestCase):
         lo = X.simulate(base_genes(risk=.02, leverage=20, stop_atr=5.0), sr, 30, 71, equity=10000.0)['positions'][0]
         self.assertAlmostEqual(lo['qty'] * (lo['entry'] - lo['stop']) / 10000.0, .05, delta=.001)
 
+    @mock.patch.dict(X.ACCOUNT_RULES, PRIOR_ERA)   # sizing mechanics of the earlier eras: no trail/risk factors
     def test_risk_from_keeps_the_size_of_fills_made_before_the_sizing_change(self):
         sr = self._breakout_market(coins=12)
         g = base_genes(risk=.12, leverage=20, stop_atr=5.0)                    # new band; the seat's stored gene was 2 %
@@ -678,6 +686,7 @@ class EvolutionTests(unittest.TestCase):
         # risk_from=41 wins over a later risk_cap_from: fills on or before risk_from are always the legacy era
         self.assertEqual(size(X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=rules, risk_from=41, risk_cap_from=50)), size(old))
 
+    @mock.patch.dict(X.ACCOUNT_RULES, PRIOR_ERA)   # sizing mechanics of the earlier eras: no trail/risk factors
     def test_risk_cap_from_keeps_the_size_of_fills_made_under_the_5_to_20_percent_rules(self):
         sr = self._breakout_market(coins=12)
         g = base_genes(risk=.12, leverage=20, stop_atr=5.0)                    # a seat stored under the 5–20 % band at 12 %
@@ -719,6 +728,7 @@ class EvolutionTests(unittest.TestCase):
         P.update(state, sr, [])
         self.assertEqual((acc['risk_rules_from'], acc['risk_cap_from']), (T0, sr['U0-USDT-SWAP'].ts[-1]))
 
+    @mock.patch.dict(X.ACCOUNT_RULES, PRIOR_ERA)   # sizing mechanics of the earlier eras: no trail/risk factors
     def test_paper_replay_keeps_the_size_of_positions_filled_under_the_5_to_20_percent_rules(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 30                    # breakout on bar 40, fills on bar 41
         sr = {k: series_from(list(closes), k) for k in ('BTC-USDT-SWAP', 'PEPE-USDT-SWAP')}
@@ -1291,7 +1301,7 @@ class CrossReviewFixTests(unittest.TestCase):
     ZEC = 'ZEC-USDT-SWAP'
 
     def setUp(self):
-        self.raised = [mock.patch.object(X, 'LEVERAGE', 100), mock.patch.dict(X.ACCOUNT_RULES, lever=100, leader_lever=100)]
+        self.raised = [mock.patch.object(X, 'LEVERAGE', 100), mock.patch.dict(X.ACCOUNT_RULES, lever=100, leader_lever=100, **PRIOR_ERA)]
         for p in self.raised:
             p.start()
         self.addCleanup(lambda: [p.stop() for p in self.raised])
@@ -1716,21 +1726,22 @@ class ExitRuleTests(unittest.TestCase):
 
     # ---- 3) trailing stop for every position
     def test_trailing_activates_at_one_r_and_only_moves_in_favour(self):
+        # the PR #110 rule (1R / 1R), still used for bars before account['trail_risk_from']
         p = dict(side=1, entry=100.0, dist=2.0, stop=98.0)
-        X.trail_update(p, 101.9, 99.0)
+        X.trail_update(p, 101.9, 99.0, X.PRIOR_TRAIL)
         self.assertEqual((p['stop'], p.get('trailing')), (98.0, None))       # < 1R: not yet
-        X.trail_update(p, 102.0, 99.0)
+        X.trail_update(p, 102.0, 99.0, X.PRIOR_TRAIL)
         self.assertEqual((p['stop'], p['trailing']), (100.0, True))          # exactly 1R: breakeven
-        X.trail_update(p, 105.0, 101.0)
+        X.trail_update(p, 105.0, 101.0, X.PRIOR_TRAIL)
         self.assertEqual(p['stop'], 103.0)                                    # best − 1R
-        X.trail_update(p, 104.0, 99.0)
+        X.trail_update(p, 104.0, 99.0, X.PRIOR_TRAIL)
         self.assertEqual((p['stop'], p['best']), (103.0, 105.0))              # never loosens
         q = dict(side=-1, entry=100.0, dist=2.0, stop=102.0)
-        X.trail_update(q, 101.0, 97.0)
+        X.trail_update(q, 101.0, 97.0, X.PRIOR_TRAIL)
         self.assertEqual(q['stop'], 99.0)
-        X.trail_update(q, 103.0, 98.0)
+        X.trail_update(q, 103.0, 98.0, X.PRIOR_TRAIL)
         self.assertEqual(q['stop'], 99.0)
-        self.assertEqual((X.TRAIL_START_R, X.TRAIL_DIST_R), (1.0, 1.0))
+        self.assertEqual((X.PRIOR_TRAIL['start_r'], X.PRIOR_TRAIL['dist_r'], X.PRIOR_TRAIL['be_r']), (1.0, 1.0, None))
 
     def test_a_trailed_stop_hit_is_recorded_as_trailing_stop(self):
         closes = [100.0] * 40 + [110.0] + [112.0, 114.5, 116.0, 109.0, 109.0]
@@ -1892,3 +1903,182 @@ class ManualCloseTests(unittest.TestCase):
         self.assertEqual(P.MANUAL_CLOSES[('NEAR-USDT-SWAP', 1794700800000)], (1795213167000, 2.87))
         self.assertEqual(P.MANUAL_CLOSES[('H-USDT-SWAP', 1794384000000)], (1795262400000, 0.01098))
         self.assertEqual(P.MANUAL_CLOSES[('DOGE-USDT-SWAP', 1794499200000)], (1795262400000, 0.05372))
+
+
+class TrailRiskRuleTests(unittest.TestCase):
+    """execution TRAIL & RISK RULES (2026-11-21): trailing start / breakeven, same-champion same-bar same-direction risk
+    share, new / winding seat half risk, and the paper cutover account['trail_risk_from']."""
+    A, B, C = 'AAA-USDT-SWAP', 'BBB-USDT-SWAP', 'CCC-USDT-SWAP'
+    OLD = -10 ** 15            # a seat held since long ago (the new-seat rule does not apply)
+
+    def sr(self, n=60):
+        ts = [T0 + i * H for i in range(n)]
+        return {k: X.Series(k, ts, [100.0] * n, [100.1] * n, [99.99] * n, [100.0] * n) for k in (self.A, self.B, self.C)}
+
+    def genes(self, name):
+        return dict(name=name, risk=.05, leverage=10, target_rr=3.0, max_hold=240, tf=1, trail=0)
+
+    def seg(self, name, **kw):
+        return dict(dict(id=name, genes=self.genes(name), from_i=0, tenure_ts=self.OLD), **kw)
+
+    def run_acc(self, sets, segs, sr=None, **kw):
+        sr = sr or self.sr()
+        with mock.patch.object(X, 'signal_sets', side_effect=lambda g, series: (sets.get(g['name'], {}), {})):
+            return X.simulate_account(segs, sr, 0, next(iter(sr.values())).n, **kw)
+
+    def risks(self, r):
+        return {p['inst']: (round(p['risk'], 6), round(p['risk_factor'], 6)) for p in r['positions']}
+
+    # ---- a) trailing / breakeven
+    def test_defaults(self):
+        self.assertEqual((X.TRAIL_START_R, X.TRAIL_DIST_R, X.BREAKEVEN_R), (.5, 1.0, None))
+        self.assertEqual(X.TRAIL, dict(start_r=.5, dist_r=1.0, be_r=None))
+        self.assertEqual((X.SAME_BAR_SHARE, X.NEW_SEAT_HOURS, X.NEW_SEAT_FACTOR), (True, 24, .5))
+        self.assertEqual(X.PRIOR_TRAIL, dict(start_r=1.0, dist_r=1.0, be_r=None))
+        for k in ('trail', 'same_bar_share', 'new_seat_h', 'new_seat_factor'):
+            self.assertIn(k, X.ACCOUNT_RULES)
+        self.assertEqual((X.MIN_TRADE_RISK, X.MAX_TRADE_RISK, X.ACCOUNT_RULES['daily_halt']), (.05, .10, .25))   # unchanged
+
+    def test_half_r_start_then_trails_one_r_behind(self):
+        lvl = lambda side, best, stop, t=None: X.trail_stop_level(side, 100.0, best, stop, 2.0, t)
+        self.assertEqual(lvl(1, 100.9, 98.0), (98.0, False))           # 0.45 R
+        self.assertEqual(lvl(1, 101.0, 98.0), (99.0, True))            # 0.5 R: stop = best − 1R (loss halved)
+        self.assertEqual(lvl(1, 102.0, 99.0), (100.0, True))           # 1 R: breakeven
+        self.assertEqual(lvl(1, 101.0, 100.0), (100.0, True))          # never loosens
+        self.assertEqual(lvl(-1, 99.0, 102.0), (101.0, True))
+        self.assertEqual(lvl(1, 101.9, 98.0, X.PRIOR_TRAIL), (98.0, False))   # the old 1 R start
+        self.assertEqual(X.trail_stop_level(1, 100.0, 105.0, 98.0, 0.0), (98.0, False))   # no unit: nothing
+
+    def test_breakeven_step(self):
+        be = dict(start_r=1.0, dist_r=1.0, be_r=.5)
+        self.assertEqual(X.trail_stop_level(1, 100.0, 100.9, 98.0, 2.0, be), (98.0, False))
+        self.assertEqual(X.trail_stop_level(1, 100.0, 101.0, 98.0, 2.0, be), (100.0, True))    # 0.5 R → entry
+        self.assertEqual(X.trail_stop_level(-1, 100.0, 99.0, 102.0, 2.0, be), (100.0, True))
+        self.assertEqual(X.trail_stop_level(1, 100.0, 103.0, 98.0, 2.0, be), (101.0, True))    # then the trail
+        p = dict(side=1, entry=100.0, dist=2.0, stop=98.0)
+        X.trail_update(p, 101.2, 99.5, be)
+        self.assertEqual((p['stop'], p['trailing'], p['best']), (100.0, True, 101.2))
+
+    def test_trail_unit_min_and_fallback(self):
+        self.assertEqual(X.trail_unit(88.316, 86.25), 86.25)
+        self.assertEqual(X.trail_unit(88.316, None), 88.316)
+        self.assertEqual(X.trail_unit(None, 86.25), 86.25)
+        self.assertEqual(X.trail_unit(0, 0), 0.0)
+        # ETH 2026-11-21: best 1536.28 from the live entry 1623.71 = 1.014 R by the live dist, 0.99 R by the paper dist
+        one = X.PRIOR_TRAIL
+        self.assertFalse(X.trail_stop_level(-1, 1623.71, 1536.28, 1709.96, 88.316, one)[1])
+        stop, on = X.trail_stop_level(-1, 1623.71, 1536.28, 1709.96, X.trail_unit(88.316, 1709.96 - 1623.71), one)
+        self.assertTrue(on)
+        self.assertAlmostEqual(stop, 1536.28 + 86.25, places=6)        # 1622.53: just below the live entry (short)
+
+    # ---- b, c) the risk factor
+    def test_entry_risk_factor(self):
+        f = X.entry_risk_factor
+        self.assertEqual(f(1), 1.0)
+        self.assertEqual(f(2), .5)
+        self.assertAlmostEqual(f(3), 1 / 3)
+        self.assertEqual(f(1, seat_age_h=10, first=True), .5)
+        self.assertEqual(f(1, seat_age_h=10, first=False), 1.0)        # only the first entry bar
+        self.assertEqual(f(1, seat_age_h=24, first=True), 1.0)         # held 24 h: full
+        self.assertEqual(f(1, seat_age_h=500, winding=True), .5)       # winding: half
+        self.assertEqual(f(2, seat_age_h=1, first=True), .25)          # AVAX + FIL from a new seat: a quarter each
+        self.assertEqual(f(2, rules=dict(same_bar_share=False, new_seat_h=None)), 1.0)
+        self.assertEqual(f(1, seat_age_h=30, first=True, rules=dict(new_seat_h=48)), .5)
+
+    def test_same_bar_groups(self):
+        pend = [('a', self.A, 1, 5.0, False), ('a', self.B, 1, 5.0, False), ('a', self.C, -1, 5.0, False),
+                ('b', self.A, 1, 5.0, False), ('b', self.C, 1, 5.0, False)]
+        # b's A and C were signalled first by a (fill order): one position per coin, so b has no group
+        self.assertEqual(X.same_bar_groups(pend, set(), {}), {('a', 1): 2, ('a', -1): 1})
+        self.assertEqual(X.same_bar_groups(pend, {self.A}, {}), {('a', 1): 1, ('a', -1): 1})
+        self.assertEqual(X.same_bar_groups(pend[3:], set(), {}), {('b', 1): 2})
+        self.assertEqual(X.same_bar_groups(pend[:2], set(), {'a': 2}), {('a', 1): 1})          # one free slot of 3
+        self.assertEqual(X.same_bar_groups(pend[:2], set(), {}, eligible=lambda k: k != self.B), {('a', 1): 1})
+        self.assertEqual(X.same_bar_groups([('a', self.A, 1, 0.0)], set(), {}), {})
+
+    def test_same_champion_same_bar_same_direction_share_one_risk(self):
+        r = self.run_acc({'a': {0: [(self.A, 1, 5.0), (self.B, 1, 5.0)]}}, [self.seg('a')])
+        self.assertEqual(self.risks(r), {self.A: (.025, .5), self.B: (.025, .5)})
+        total = sum(p['risk'] for p in r['positions'])
+        self.assertAlmostEqual(total, .05)                              # the group ≤ one position's normal risk
+
+    def test_different_direction_champion_or_bar_are_not_grouped(self):
+        full = (.05, 1.0)
+        r = self.run_acc({'a': {0: [(self.A, 1, 5.0), (self.B, -1, 5.0)]}}, [self.seg('a')])
+        self.assertEqual(self.risks(r), {self.A: full, self.B: full})
+        r = self.run_acc({'a': {0: [(self.A, 1, 5.0)]}, 'b': {0: [(self.B, 1, 5.0)]}}, [self.seg('a'), self.seg('b')])
+        self.assertEqual(self.risks(r), {self.A: full, self.B: full})
+        r = self.run_acc({'a': {0: [(self.A, 1, 5.0)], 3: [(self.B, 1, 5.0)]}}, [self.seg('a')])
+        self.assertEqual(self.risks(r), {self.A: full, self.B: full})
+        # a coin taken first by another seat in the same pass does not count for the later seat's group
+        r = self.run_acc({'a': {0: [(self.A, 1, 5.0)]}, 'b': {0: [(self.A, 1, 5.0), (self.B, 1, 5.0)]}}, [self.seg('a'), self.seg('b')])
+        self.assertEqual(self.risks(r), {self.A: full, self.B: full})
+
+    def test_new_seat_first_entry_half_then_full(self):
+        sr = self.sr(); ts = sr[self.A].ts
+        sets = {'a': {0: [(self.A, 1, 5.0)], 5: [(self.B, 1, 5.0)]}}
+        r = self.run_acc(sets, [self.seg('a', tenure_ts=ts[0])], sr)
+        self.assertEqual(self.risks(r), {self.A: (.025, .5), self.B: (.05, 1.0)})   # 1 h old: first half, second full
+        r = self.run_acc(sets, [self.seg('a', tenure_ts=ts[1] - 24 * H)], sr)
+        self.assertEqual(self.risks(r), {self.A: (.05, 1.0), self.B: (.05, 1.0)})   # 24 h at the fill: full
+        r = self.run_acc(sets, [self.seg('a', tenure_ts=ts[0])], sr, rules=dict(X.ACCOUNT_RULES, new_seat_h=None))
+        self.assertEqual(self.risks(r), {self.A: (.05, 1.0), self.B: (.05, 1.0)})   # rule off
+        # first entry bar of a new seat with two entries: shared AND halved
+        r = self.run_acc({'a': {0: [(self.A, 1, 5.0), (self.B, 1, 5.0)]}}, [self.seg('a', tenure_ts=ts[0])], sr)
+        self.assertEqual(self.risks(r), {self.A: (.0125, .25), self.B: (.0125, .25)})
+
+    def test_a_seat_chain_keeps_its_first_fill(self):
+        sr = self.sr(); ts = sr[self.A].ts
+        segs = [self.seg('a', tenure_ts=ts[0], chain='s', wind_i=4), self.seg('b', tenure_ts=ts[0], chain='s', from_i=4)]
+        r = self.run_acc({'a': {0: [(self.A, 1, 5.0)]}, 'b': {5: [(self.B, 1, 5.0)]}}, segs, sr)
+        self.assertEqual(self.risks(r)[self.B], (.05, 1.0))            # the seat already traded: not its first entry
+
+    def test_winding_seat_entry_is_half(self):
+        r = self.run_acc({'a': {0: [(self.A, 1, 5.0)]}}, [self.seg('a', wind_i=1)])
+        self.assertEqual(self.risks(r), {self.A: (.025, .5)})           # filled on the bar the seat was wound
+        r = self.run_acc({'a': {0: [(self.A, 1, 5.0)]}}, [self.seg('a', wind_i=2)])
+        self.assertEqual(self.risks(r), {self.A: (.05, 1.0)})
+
+    def test_simulate_shares_the_same_bar_risk_of_one_genome(self):
+        sr = self.sr()
+        g = self.genes('a')
+        ev = {0: [(self.A, 1, 5.0), (self.B, 1, 5.0)]}
+        r = X.simulate(g, sr, 0, 60, events=ev, reverse={})
+        q = {p['inst']: p['qty'] for p in r['positions']}
+        off = X.simulate(g, sr, 0, 60, events=ev, reverse={}, rules=dict(X.ACCOUNT_RULES, same_bar_share=False))
+        self.assertAlmostEqual(q[self.A] * 2, next(p['qty'] for p in off['positions'] if p['inst'] == self.A), delta=1e-6)
+
+    # ---- the paper cutover
+    def test_trail_risk_from_keeps_history_identical(self):
+        sr = {k: series_from(walk(900, n), k) for n, k in ((21, 'BTC-USDT-SWAP'), (22, 'ETH-USDT-SWAP'), (23, 'SOL-USDT-SWAP'))}
+        ts = sr['BTC-USDT-SWAP'].ts
+        segs = [dict(id='m', genes=base_genes(lookback=15), from_i=0, tenure_ts=ts[0]),
+                dict(id='k', genes=base_genes(lookback=25, species='momentum'), from_i=200, tenure_ts=ts[200])]
+        prior = dict(X.ACCOUNT_RULES, **PRIOR_ERA)
+        old = X.simulate_account(segs, sr, 50, 900, rules=prior)
+        self.assertEqual(X.simulate_account(segs, sr, 50, 900, trail_risk_from=899), old)   # cutover at the end = before
+        cut = 600
+        mixed = X.simulate_account(segs, sr, 50, 900, trail_risk_from=cut)
+        before = lambda r: [t for t in r['trades'] if t['closed'] <= ts[cut]]
+        self.assertGreater(len(before(old)), 3)
+        self.assertEqual(before(mixed), before(old))
+        self.assertEqual(mixed['curve'][:cut - 50 + 1], old['curve'][:cut - 50 + 1])
+        self.assertTrue(all('risk_factor' not in t for t in before(mixed)))     # old trades keep their published fields
+        self.assertNotEqual(mixed['trades'], old['trades'])
+
+    def test_paper_update_stamps_trail_risk_from_once_and_publishes_the_rules(self):
+        acc = dict(from_ts=T0, start_equity=10000.0, segs=[], next=0)
+        sr = {'BTC-USDT-SWAP': series_from([100.0] * 70)}
+        state = dict(nodes={}, team=[], paper=dict(account=acc, start_equity=10000.0))
+        view, _ = P.update(state, sr, [], prev_last=sr['BTC-USDT-SWAP'].ts[50])
+        self.assertEqual(acc['trail_risk_from'], sr['BTC-USDT-SWAP'].ts[50])
+        P.update(state, sr, [], prev_last=sr['BTC-USDT-SWAP'].ts[-1])
+        self.assertEqual(acc['trail_risk_from'], sr['BTC-USDT-SWAP'].ts[50])   # never moved
+        self.assertEqual((view['rules']['trail'], view['rules']['new_seat_h'], view['rules']['same_bar_share']), (X.TRAIL, 24, True))
+
+    def test_seat_chains(self):
+        segs = [dict(id='a1', champion='x', from_ts=0, wind_ts=10), dict(id='a2', champion='x', from_ts=10, wind_ts=None),
+                dict(id='a3', champion='y', from_ts=5, wind_ts=8), dict(id='a4', champion='y', from_ts=20, wind_ts=None)]
+        chain, tenure = P.seat_chains(segs)
+        self.assertEqual(chain, dict(a1='a1', a2='a1', a3='a3', a4='a4'))     # a re-seat after a gap is a new seat
+        self.assertEqual(tenure, dict(a1=0, a2=0, a3=5, a4=20))
