@@ -20,9 +20,10 @@ Each run, against <data>/combined/state.json:
     mean-reversion target) attached as exchange-side algo orders;
   - exits (2026-11-21, the same for every strategy; execution.py EXIT RULES): every mirrored position keeps BOTH an
     exchange stop and an exchange take-profit (a missing take-profit is placed again at the paper target, else at
-    entry ± DEFAULT_TARGET_RR × stop distance); the trailing stop (TRAIL_START_R / TRAIL_DIST_R × the paper stop distance,
-    from OKX's closed 1H candles since the entry, or the paper's own trailed stop when that is tighter) is applied by
-    amending the exchange stop once per run, only in the position's favour. Granularity: paper moves the stop on every 1H
+    entry ± DEFAULT_TARGET_RR × stop distance); the trailing stop / breakeven (execution TRAIL & RISK RULES a:
+    execution.trail_stop_level with R = trail_unit(paper dist, live dist) = the smaller of the paper stop distance and
+    |live entry − live initial stop|, from OKX's closed 1H candles since the entry, or the paper's own trailed stop when
+    that is tighter) is applied by amending the exchange stop once per run, only in the position's favour. Granularity: paper moves the stop on every 1H
     bar, this program once per run (hourly at :50 UTC on the live server), so the exchange stop can lag by up to an hour;
   - when the paper position is gone (paper stop / target / reverse signal / trailing stop), the mirrored position is
     closed with close-position + autoCxl (its resting algos are cancelled); the paper's reason, published in
@@ -56,7 +57,7 @@ from runtime_guard import entries_allowed, atomic_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
 from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, cross_open_allowed, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FEE, MAX_SAME_SIDE_POSITIONS, same_side_full  # noqa: E402
-from execution import DEFAULT_TARGET_RR, TRAIL_START_R, TRAIL_DIST_R  # noqa: E402
+from execution import DEFAULT_TARGET_RR, TRAIL_START_R, TRAIL_DIST_R, TRAIL, trail_stop_level, trail_unit  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -545,6 +546,17 @@ class Mirror:
             if inst in MAJORS:
                 r *= MAJOR_FACTOR
             r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 10 %
+        # TRAIL & RISK RULES b, c (execution.entry_risk_factor, decided by the paper account): same-champion same-bar share
+        # and new / winding seat half risk. Missing (older signals.json) = 1. May take the risk below 5 % (intended).
+        factor = 1.0
+        if evolved and p.get('risk_factor') is not None:
+            try:
+                factor = min(1.0, max(0.0, float(p['risk_factor'])))
+            except (TypeError, ValueError):
+                factor = 1.0
+        r *= factor
+        if r <= 0:
+            return self.log('skip', inst, reason='zero_risk_factor')
         risk = r * self.equity
         same_risk = 0.0
         for existing_key, m in (self.s['mirrored'].items() if SAME_SIDE_CAP is not None else ()):   # only needed for a same-side risk cap
@@ -648,11 +660,13 @@ class Mirror:
             return self.log('error', inst, step='order', detail=first_error(r), size=fmt(contracts))
         self.s['mirrored'][key] = dict(inst=inst, side=side, posSide=pos_side or 'net', strategy=p.get('strategy'), contracts=fmt(contracts),
                                        stop=p['stop'], target=tp, leverage=lever, entry=px, init_stop=p['stop'], dist=paper_dist(p, px), best=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader, mgnMode=MARGIN_MODE, champion=p.get('champion'),
+                                       live_dist=abs(px - float(p['stop'])), risk_factor=factor,
                                        ordId=(r.get('data') or [{}])[0].get('ordId'))
         self.new_order_risk[key] = float(contracts) * sp['ctVal'] * abs(px - p['stop'])
         self.available -= margin
         self.log('open', inst, side=side, strategy=p.get('strategy'), contracts=fmt(contracts), price=px, stop=algo['slTriggerPx'],
-                 target=algo.get('tpTriggerPx'), leverage=lever, risk_usdt=round(risk, 2), **({'leader': True} if leader else {}))
+                 target=algo.get('tpTriggerPx'), leverage=lever, risk_usdt=round(risk, 2), **({'leader': True} if leader else {}),
+                 **({'risk_factor': round(factor, 4)} if factor != 1.0 else {}))
 
     def fill_result(self, inst, pos_side='net', since_ms=0, until_ms=None):
         """Realised result of the latest close of `inst` from OKX position history (read only), or None."""
@@ -800,23 +814,46 @@ class Mirror:
         m['best'] = best
         return best
 
+    def live_entry(self, m):
+        """The live position's own entry: OKX avgPx when the position is loaded, else the price stored at entry."""
+        held = self.held(m['inst'], m['side'])
+        try:
+            avg = float((held or {}).get('avgPx') or 0)
+        except (TypeError, ValueError):
+            avg = 0.0
+        return avg or float(m.get('entry') or 0)
+
+    def live_dist(self, m):
+        """|live entry − live initial stop| (TRAIL & RISK RULES a), 0 when unknown. The initial stop is `init_stop` (stored
+        at entry since 2026-11-21); `live_dist` is the distance stored at entry (ticker price − stop). State entries
+        without either (older ones) return 0, and the trail falls back to the paper dist."""
+        entry, stop0 = self.live_entry(m), float(m.get('init_stop') or 0)
+        if entry and stop0 and (entry - stop0) * m['side'] > 0:
+            return (entry - stop0) * m['side']
+        try:
+            return float(m.get('live_dist') or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
     def trail_stop(self, key, m, p):
-        """Trailing stop on the exchange (execution.trail_update, once per run): once the best price since the entry is
-        TRAIL_START_R × dist in profit, the stop is best ∓ TRAIL_DIST_R × dist; the paper's own stop is used when it is
-        tighter. The exchange stop only moves in the position's favour (amend-algos); if the price is already beyond the
-        new stop, the position is closed at market (trailing_stop)."""
+        """Trailing stop / breakeven on the exchange (execution.trail_stop_level, once per run), with R = trail_unit(paper
+        dist, live dist) = the smaller of the two and the live entry: once the best price since the entry is BREAKEVEN_R
+        × R in profit the stop goes to the entry, once it is TRAIL_START_R × R in profit the stop is best ∓ TRAIL_DIST_R × R;
+        the paper's own stop is used when it is tighter. The exchange stop only moves in the position's favour
+        (amend-algos); if the price is already beyond the new stop, the position is closed at market (trailing_stop)."""
         if not self.mirror_algos(m, 'sl'):
             return                                                 # opened / stop restored in this run: trail from the next run
-        dist, entry = self.mirror_dist(m, p), float(m.get('entry') or 0)
+        paper_d, live_d = self.mirror_dist(m, p), self.live_dist(m)
+        unit, entry = trail_unit(paper_d, live_d), self.live_entry(m)
         want, trailing = float(m['stop']), False
         if p and p.get('stop') and (float(p['stop']) - want) * m['side'] > 0:
             want, trailing = float(p['stop']), bool(p.get('trailing'))
-        if dist and entry:
+        if unit and entry:
             best = self.best_price(m)
-            if (best - entry) * m['side'] >= TRAIL_START_R * dist - 1e-12:
-                t = best - m['side'] * TRAIL_DIST_R * dist
-                if (t - want) * m['side'] >= 0:
-                    want, trailing = t, True
+            t, on = trail_stop_level(m['side'], entry, best, want, unit, TRAIL)
+            if on and (t - want) * m['side'] > 0:
+                want, trailing = t, True
+            m['trail_unit'] = unit
         if (want - m['stop']) * m['side'] <= 0 or abs(want - m['stop']) / m['stop'] <= AMEND_TOLERANCE:
             return
         if trailing:

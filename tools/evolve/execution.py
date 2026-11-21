@@ -86,9 +86,106 @@ HOUR = 3600_000
 # 4) No time exit (MAX_HOLD_H and max_hold are legacy, see above).
 DEFAULT_TARGET_RR = 3.0   # target for genomes that had none (target_rr 0): 3R, see genome.fix()
 TARGET_RR_RANGE = (1.0, 6.0)
-TRAIL_START_R = 1.0       # trailing starts once the best price is this many stop distances in profit
 TRAIL_DIST_R = 1.0        # then the stop follows the best price at this many stop distances
 REVERSE_CLOSE = ('own', 'team')
+
+# ----------------------------------------------------------------- TRAIL & RISK RULES (2026-11-21, claude/trail-champion-risk)
+# One implementation for the evolve backtest (simulate), the paper account (simulate_account) and the OKX follow
+# (tools/okx_demo_trader.py, live and demo share it). Chosen by the out-of-sample replay in tools/analysis/trail_risk_replay.py
+# (evidence: /workspace/modi/trail-risk-2026-11-21/SUMMARY.md).
+# a) Trailing stop / breakeven (trail_stop_level): with `unit` = the position's stop distance (R),
+#      favourable move >= BREAKEVEN_R × unit  → stop = max(stop, entry) for a long (min for a short): breakeven;
+#      favourable move >= TRAIL_START_R × unit → stop = best ∓ TRAIL_DIST_R × unit (only in the position's favour).
+#    BREAKEVEN_R None = no breakeven step. Either step sets the position's `trailing` flag (a later stop hit is recorded
+#    as 'trailing_stop': the stop was moved by the protection rule).
+#    R on the OKX follow = trail_unit(paper dist, live dist) = min of the two (the smaller unit reaches 1R first and
+#    protects the position that was actually opened: the live entry fills at a different price than the paper one, so
+#    the same paper stop is a different distance from it; motivating case ETH 2026-11-21: 1.01R by the live entry/stop,
+#    0.99R by the paper dist, the trail never started). Paper and backtests have only one distance (their own).
+# b) Same-champion same-bar cap (entry_risk_factor / same_bar_groups): entries of ONE seat (paper segment / backtest
+#    genome) decided on the SAME signal bar (the 1H close they were decided on; they all fill at the next open) in the
+#    SAME direction share one position's risk: each gets its normal risk ÷ n. n = that group's signals that are eligible
+#    when the fills start (coin not already held, not blocked, positive stop distance), at most the seat's free position
+#    slots (MAX_POSITIONS − its open positions). Different bar, direction or seat = different groups.
+# c) New / winding seat half risk: an entry gets × NEW_SEAT_FACTOR when its seat is winding (lost its seat; fill bar >=
+#    wind_i), or when it is the seat's FIRST entry bar (all entries of that bar) and the seat has been held for less than
+#    NEW_SEAT_HOURS at the fill (tenure = from the seat's start; consecutive segments of the same champion count as one
+#    seat). Only seats exist in the paper account, so (c) is a paper / OKX-follow rule; simulate() (a single genome's
+#    fitness backtest, no seat) applies (a) and (b) only.
+#    The factors multiply the normal per-trade risk AFTER the 5–10 % band, crowding, major doubling and the 10 % cap:
+#    the result may be below 5 % (intended; the band bounds the gene, these rules only ever make a trade smaller).
+#    The paper publishes the factor of every position in signals.json (`risk_factor`); the OKX follow multiplies its own
+#    risk by it (missing = 1, older signals). Paper: these rules only apply after account['trail_risk_from'] (bars / fills
+#    on or before it keep PRIOR_TRAIL and no factor), so already closed history replays unchanged.
+# Chosen 2026-11-21 by the OOS replay (2025-06-03 → 2025-11-30; SUMMARY.md): 0.5R had the best return / max drawdown for
+# the static team, the seat-churn team and the single-genome fitness engine. A 0.5R breakeven step was better only on the
+# 7-day recent sample and worse in the churn OOS, so it stays off. With TRAIL_DIST_R = 1 a 0.5R start first halves the
+# loss (stop = entry ∓ 0.5R), reaches breakeven at 1R and then trails 1R behind the best price.
+TRAIL_START_R = .5        # trailing starts once the best price is this many stop distances in profit (was 1.0, PRIOR_TRAIL)
+BREAKEVEN_R = None        # breakeven step: None = off
+PRIOR_TRAIL = dict(start_r=1.0, dist_r=1.0, be_r=None)    # PR #110 trail (bars on or before account['trail_risk_from']); never edit
+TRAIL = dict(start_r=TRAIL_START_R, dist_r=TRAIL_DIST_R, be_r=BREAKEVEN_R)
+SAME_BAR_SHARE = True     # (b) on
+NEW_SEAT_HOURS = 24       # (c) window; None = off. 24 h beat 48 h in the churn OOS (return / drawdown, worst day, ≥ 25 % days)
+NEW_SEAT_FACTOR = .5
+PRIOR_RISK = dict(same_bar_share=False, new_seat_h=None)   # sizing before account['trail_risk_from']; never edit
+
+
+def trail_unit(paper_dist, live_dist=None):
+    """R for the trailing stop / breakeven: the smaller positive one of the paper stop distance and the live one
+    (|live entry − live initial stop|); only the paper one when the live one is missing (older state entries)."""
+    vals = [float(d) for d in (paper_dist, live_dist) if d is not None and float(d) > 0]
+    return min(vals) if vals else 0.0
+
+
+def trail_stop_level(side, entry, best, stop, unit, trail=None):
+    """(new stop, protected) under TRAIL & RISK RULES (a): breakeven step, then trailing; only in the position's favour.
+    `trail` = dict(start_r, dist_r, be_r), default TRAIL. protected = a step is active (the `trailing` flag)."""
+    t = TRAIL if trail is None else trail
+    new, on = stop, False
+    if unit and unit > 0:
+        fav = (best - entry) * side
+        be = t.get('be_r')
+        if be is not None and fav >= be * unit - 1e-12:
+            if (entry - new) * side > 0:
+                new = entry
+            on = True
+        if fav >= t['start_r'] * unit - 1e-12:
+            x = best - side * t['dist_r'] * unit
+            if (x - new) * side > 0:
+                new = x
+            on = True
+    return new, on
+
+
+def entry_risk_factor(group_n=1, seat_age_h=None, first=True, winding=False, rules=None):
+    """Multiplier of an entry's normal risk (TRAIL & RISK RULES b, c): 1 / group_n when rules['same_bar_share'] and the
+    seat has n > 1 same-bar same-direction entries; × rules['new_seat_factor'] when the seat is winding, or this is its
+    first entry bar and it has been seated less than rules['new_seat_h'] hours (None = off). Never above 1."""
+    rules = ACCOUNT_RULES if rules is None else rules
+    f = 1.0
+    if rules.get('same_bar_share', SAME_BAR_SHARE) and group_n and group_n > 1:
+        f /= group_n
+    h = rules.get('new_seat_h', NEW_SEAT_HOURS)
+    if h is not None and (winding or (first and seat_age_h is not None and seat_age_h < h)):
+        f *= rules.get('new_seat_factor', NEW_SEAT_FACTOR)
+    return min(1.0, f)
+
+
+def same_bar_groups(pending, held, held_by_seat, eligible=None):
+    """{(seat, side): n} for entries decided on one bar (TRAIL & RISK RULES b). pending = [(seat, inst, side, dist, ...)];
+    held = coins already open on the account; held_by_seat = {seat: open positions}; eligible(inst) -> bool for other
+    entry blocks (e.g. price_off). `pending` must be in fill order: a coin signalled by several seats counts only for the
+    first. n is capped at the seat's free slots (MAX_POSITIONS − open). n counts eligible SIGNALS, not fills: an entry
+    later skipped for margin / lot size / the liquidation gate still counts, so the group may use less than one
+    position's risk (conservative), never more."""
+    out, claimed = {}, set()
+    for x in pending:                 # in fill order: a coin goes to the first seat that signals it (one per account)
+        sid, inst, d, dist = x[0], x[1], x[2], x[3]
+        if dist and dist > 0 and inst not in held and inst not in claimed and (eligible is None or eligible(inst)):
+            claimed.add(inst)
+            out[(sid, d)] = out.get((sid, d), 0) + 1
+    return {k: min(n, max(0, MAX_POSITIONS - held_by_seat.get(k[0], 0))) for k, n in out.items()}
 
 
 def target_rr(g):
@@ -100,15 +197,14 @@ def target_rr(g):
     return min(TARGET_RR_RANGE[1], max(TARGET_RR_RANGE[0], float(rr)))
 
 
-def trail_update(p, h, l):
-    """Update p['best'] with this bar's extreme and move the stop under the trailing rule (only in the position's
-    favour). Sets p['trailing'] once the trail has activated. Returns the stop."""
+def trail_update(p, h, l, trail=None):
+    """Update p['best'] with this bar's extreme and move the stop under the trailing / breakeven rule (trail_stop_level,
+    only in the position's favour; `trail` default TRAIL). Sets p['trailing'] once a step has activated. Returns the stop."""
     d, dist = p['side'], p['dist']
     p['best'] = max(p.get('best', p['entry']), h) if d == 1 else min(p.get('best', p['entry']), l)
-    if dist > 0 and (p['best'] - p['entry']) * d >= TRAIL_START_R * dist - 1e-12:
-        new = p['best'] - d * TRAIL_DIST_R * dist
-        if (new - p['stop']) * d > 0:
-            p['stop'] = new
+    new, on = trail_stop_level(d, p['entry'], p['best'], p['stop'], dist, trail)
+    p['stop'] = new
+    if on:
         p['trailing'] = True
     return p['stop']
 
@@ -633,7 +729,7 @@ def adverse_path_prices(pos, series, i):
 
 # ----------------------------------------------------------------- the engine
 def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, curve_every=24, events=None, stop_entries_at=None,
-             risk=None, lever_cap=None, extra_equity=None, reverse=None):
+             risk=None, lever_cap=None, extra_equity=None, reverse=None, rules=None):
     """Run genome g over bar indexes [start, end) of every series (all series share the same timeline).
     `events` = entries(g, series) and `reverse` = reversals(g, series), when the caller already computed them (signal_sets).
     Exits: the EXIT RULES above (stop + target, trailing stop, the genome's own reverse signals; no time exit).
@@ -644,8 +740,14 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
     and `extra_equity` ({ts: USDT}, carried forward) is equity outside this run that sizing and the margin check may
     count on (legacy slot accounting in paper.py).
 
+    `rules` (default ACCOUNT_RULES): only 'trail' (dict(start_r, dist_r, be_r), default TRAIL) and 'same_bar_share' are
+    read here (TRAIL & RISK RULES a, b: same-bar same-direction entries of this genome share one position's risk). The
+    seat rule (c) does not apply to a single-genome backtest.
+
     Returns dict(equity, trades, curve, positions, metrics). `positions` are still open at `end` unless close_at_end.
     """
+    rules = ACCOUNT_RULES if rules is None else rules
+    trail = rules.get('trail', TRAIL)
     insts = list(series)
     ts0 = series[insts[0]].ts
     if events is None or reverse is None:
@@ -697,6 +799,7 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
         if _liq_now(opens):
             pending, dists = {}, {}
         # 1) fills at this bar's open for signals decided on the previous close
+        groups = same_bar_groups([(None, k, d, dists.get(k, 0.0)) for k, d in pending.items()], pos, {None: len(pos)})
         for inst, d in pending.items():
             s = series[inst]
             dist = dists.get(inst, 0.0)
@@ -706,7 +809,7 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
             if dist / px < MIN_STOP_DIST:
                 continue
             mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items()) + extra
-            qty = mark * risk / dist
+            qty = mark * risk * entry_risk_factor(groups.get((None, d), 1), rules=dict(same_bar_share=rules.get('same_bar_share', SAME_BAR_SHARE), new_seat_h=None)) / dist
             if s.spec:
                 ct, lot, mn = s.spec
                 qty = math.floor(qty / ct / lot + 1e-9) * lot
@@ -752,7 +855,7 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
             if close_at_end and i == end - 1:
                 _exit(inst, s.c[i], 'switch')
             else:                                           # after the bar: trail the best price, never loosen
-                trail_update(p, s.h[i], s.l[i])
+                trail_update(p, s.h[i], s.l[i], trail)
         for inst, d in reverse.get(i, {}).items():          # a reverse signal on this close closes the position at the close
             if inst in pos and pos[inst]['side'] == -d:
                 _exit(inst, series[inst].c[i], 'reverse_signal')
@@ -814,7 +917,9 @@ MAX_SAME_SIDE_POSITIONS = 20   # 2026-11-18 user: at most 20 per side (was 15, b
 ACCOUNT_RULES = dict(leader_risk=MAX_TRADE_RISK, leader_lever=LEVERAGE, lever=LEVERAGE, same_side_cap=None, daily_halt=.25,   # 2026-11-15 user: no same-side total-risk cap, daily halt 25 %
                      reverse_close='own',   # 2026-11-21: whose reverse signal closes a position, 'own' | 'team' (EXIT RULES above)
                      day_shift=7 * HOUR, majors=MAJORS, major_factor=2.0, max_risk=MAX_TRADE_RISK, min_risk=MIN_TRADE_RISK,
-                     min_lever=MIN_LEVERAGE, margin_mode=MARGIN_MODE, max_same_side=MAX_SAME_SIDE_POSITIONS)
+                     min_lever=MIN_LEVERAGE, margin_mode=MARGIN_MODE, max_same_side=MAX_SAME_SIDE_POSITIONS,
+                     # TRAIL & RISK RULES (above): trail / breakeven, same-bar share, new / winding seat half risk
+                     trail=TRAIL, same_bar_share=SAME_BAR_SHARE, new_seat_h=NEW_SEAT_HOURS, new_seat_factor=NEW_SEAT_FACTOR)
 CROWD_STEPS = ((10, .5),)     # same-side positions already open → risk factor for the next entry: <10 full, ≥10 half (2026-11-20; was ((6, .25), (3, .5)))
 # Paper-account sizing eras. simulate_account() replays the account from its start every run, so fills that already
 # happened keep the sizing of their era and positions that were filled (open ones included) keep their original size:
@@ -858,7 +963,7 @@ def position_risk(base, inst, same_side_open=0, rules=None):
 
 
 def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None, side_cap_from=None,
-                     risk_from=None, risk_cap_from=None, exit_from=None, manual=None):
+                     risk_from=None, risk_cap_from=None, exit_from=None, manual=None, trail_risk_from=None):
     """ONE shared-equity account traded by several strategies at once, with cross (全仓) liquidation: the paper account of the champion team.
 
     segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
@@ -917,6 +1022,16 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
       the bar it was booked on. It is booked like any other close (cash, pnl, daily halt, curve), so from bar k on the
       coin may take a new entry like any coin and the position no longer counts for the same-side count / crowding /
       margin. Nothing happens when that position is not open at bar k (it already left by its own exit);
+    - TRAIL & RISK RULES (see the block above; account['trail_risk_from'] in paper.py): trail_risk_from = a bar index.
+      Bars on or before it trail with PRIOR_TRAIL (1R / 1R, no breakeven) and fills on or before it get no risk factor
+      (PRIOR_RISK), so the replay of what was already published does not change. Later bars trail every open position
+      with rules['trail'] (default TRAIL), and later fills get entry_risk_factor(): the seat's same-bar same-direction
+      group (same_bar_groups over that bar's pending entries) shares one position's risk (rules['same_bar_share']), and
+      a winding seat (fill bar >= wind_i), or the first entry bar of a seat seated less than rules['new_seat_h'] hours
+      (seg 'tenure_ts' = the seat's start in ms, default ts[from_i]; seg 'chain' = the seat key shared by consecutive
+      segments of one champion, default the id; its first fill is tracked over the whole replay) risks
+      × rules['new_seat_factor']. The factor multiplies the risk after the band / crowding / majors / 10 % cap (it may go
+      below 5 %), and is kept as the position's `risk_factor`. None = the new rules on every bar;
     Returns dict(equity, curve, trades, positions, pending, pnl={seg id: realised + floating}, halted, metrics,
     liquidations = number of cross liquidations of the whole account, insurance = total insurance-fund compensation,
     adjustments = [dict(ts, kind='insurance', amount)]). Trades and pnl keep the full loss, so
@@ -939,6 +1054,11 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         return dict(target_rr=o.get('target_rr', g['target_rr']), trail=o.get('trail', g.get('trail', 0)),
                     max_hold=o.get('max_hold', g['max_hold']), tf=o.get('tf', g.get('tf', 1)))
     upgraded = exit_from is None
+    new_era = lambda i: trail_risk_from is None or i > trail_risk_from     # TRAIL & RISK RULES apply
+    trail_new = rules.get('trail', TRAIL)
+    risk_new = dict(same_bar_share=rules.get('same_bar_share', SAME_BAR_SHARE), new_seat_h=rules.get('new_seat_h', NEW_SEAT_HOURS),
+                    new_seat_factor=rules.get('new_seat_factor', NEW_SEAT_FACTOR))
+    first_fill = {}     # {seat chain: bar of its first fill} (TRAIL & RISK RULES c)
     boosted = lambda s, i: any(a <= i and (b is None or i < b) for a, b in s.get('boosts') or ())
     cash, pos, trades, curve, pending = equity, {}, [], [], []
     liquidations, insurance, adjustments = 0, 0.0, []
@@ -956,7 +1076,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         others_real += gain - snap.pop(inst, 0.0)              # today's part: the result minus what it was worth at the day's start
         trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=fill, opened=p['opened'], closed=ts0[i] if closed is None else closed,
                            pnl=net, funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why, seg=p['seg'], boost=p['boost'],
-                           liq=p.get('liq'), **extra))
+                           liq=p.get('liq'), **({'risk_factor': p['risk_factor']} if p.get('risk_factor', 1.0) != 1.0 else {}), **extra))
 
     manual_at = {}      # {bar index k: [(inst, opened, at, price)]}: the bar whose open books each manual close
     for (m_inst, m_opened), (m_at, m_px, m_from) in (manual or {}).items():
@@ -1005,6 +1125,9 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         if liq_now(marks_at(series, list(pos), i, 'o'), i):
             pending = []
         # 1) fills at this open: the leader's signals first, then the segments in their order
+        is_blocked = lambda k: bool(blocked) and any(a <= i and (b is None or i < b) for a, b in blocked.get(k, ()))
+        groups = same_bar_groups(sorted(pending, key=lambda x: not x[4]), pos, {sid: sum(1 for p in pos.values() if p['seg'] == sid) for sid in by_id},
+                                 eligible=lambda k: not is_blocked(k)) if new_era(i) and not halted else {}
         for sid, inst, d, dist, boost in sorted(pending, key=lambda x: not x[4]):
             s, g = series[inst], by_id[sid]['genes']
             if dist <= 0 or inst in pos or sum(1 for p in pos.values() if p['seg'] == sid) >= MAX_POSITIONS or halted:
@@ -1024,6 +1147,16 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 r = position_risk(by_id[sid].get('old_risk', g['risk']), inst, n_same, {**rules, **PRIOR_SIZING})
             else:
                 r = position_risk(g['risk'], inst, n_same, rules)
+            factor = 1.0
+            if new_era(i):                                    # TRAIL & RISK RULES b, c
+                seg = by_id[sid]
+                chain = seg.get('chain', sid)
+                fb = first_fill.get(chain)
+                factor = entry_risk_factor(groups.get((sid, d), 1),
+                                           seat_age_h=(ts0[i] - seg.get('tenure_ts', ts0[seg['from_i']])) / HOUR,
+                                           first=fb is None or fb == i,
+                                           winding=seg.get('wind_i') is not None and i >= seg['wind_i'], rules=risk_new)
+                r *= factor
             qty = mark * r / dist
             if s.spec:
                 ct, lot, mn = s.spec
@@ -1049,13 +1182,14 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 rr, old = target_rr(g), dict(hold=None, trail=0)
             new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None, opened=ts0[i], bar=i,
                          fee=qty * px * FEE, dist=dist, lever=lever, margin=margin, funding=0.0, seg=sid, boost=boost, risk=r, best=px,
-                         liq=liquidation_price(px, d, lever, mmr=mmr), mmr=mmr, **old)
+                         liq=liquidation_price(px, d, lever, mmr=mmr), mmr=mmr, risk_factor=factor, **old)
             opens_now = marks_at(series, list(pos), i, 'o')
             ok, _why = cross_open_allowed(cash, pos, inst, new_p, opens_now)
             if not ok:
                 continue
             cash -= new_p['fee']
             pos[inst] = new_p
+            first_fill.setdefault(by_id[sid].get('chain', sid), i)
         pending = []
         liq_now(marks_at(series, list(pos), i, 'o'), i)
         # 2) exits inside this bar, in the same-bar event order (see gap_exit); no per-position isolated liquidation
@@ -1083,8 +1217,9 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 elif p['trail']:
                     p['stop'] = max(p['stop'], s.h[i] - p['dist']) if p['side'] == 1 else min(p['stop'], s.l[i] + p['dist'])
         else:
+            trail_now = trail_new if new_era(i) else PRIOR_TRAIL
             for inst in list(pos):
-                trail_update(pos[inst], series[inst].h[i], series[inst].l[i])
+                trail_update(pos[inst], series[inst].h[i], series[inst].l[i], trail_now)
             seated = [x['id'] for x in segs if x['from_i'] <= i and (x.get('wind_i') is None or i < x['wind_i'])] if mode == 'team' else []
             for inst in list(pos):
                 p = pos[inst]
@@ -1127,7 +1262,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                    win_rate=round(wins / len(trades) * 100, 1) if trades else 0.0)
     open_positions = [dict(inst=k, side=p['side'], entry=p['entry'], qty=p['qty'], stop=p['stop'], target=p['target'], opened=p['opened'],
                            lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4), seg=p['seg'], boost=p['boost'], risk=p['risk'],
-                           dist=p['dist'], best=p['best'], trailing=bool(p.get('trailing')))
+                           dist=p['dist'], best=p['best'], trailing=bool(p.get('trailing')), risk_factor=p.get('risk_factor', 1.0))
                       for k, p in pos.items()]
     return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, pending=pending, pnl=pnl, halted=halted, metrics=metrics, liquidations=liquidations,
-                insurance=insurance, adjustments=adjustments)
+                insurance=insurance, adjustments=adjustments, first_fill=first_fill)
