@@ -35,7 +35,7 @@ const ACTIONS = { open: '开仓', close: '平仓', amend_stop: '上移止损', c
 const SKIPS = { paper_entry_too_old: '信号太旧，价格已离开入场区间', stop_too_close_or_crossed: '价格已接近或越过止损', target_already_reached: '价格已到止盈',
   size_below_minimum: '仓位小于最小下单量', insufficient_margin: '保证金不足', exchange_position_exists_not_ours: '交易所已有非本程序的仓位',
   no_price: '取不到价格', demo_price_off: '模拟盘价格偏离真实行情超过 1%', no_instrument_spec: '取不到合约信息', same_side_risk: '达到同向风险上限', same_side_count: '同方向持仓数已达上限', existing_risk_unknown: '现有仓位风险暂时无法确认' };
-const CLOSES = { stop_missing_price_beyond_stop: '止损单缺失且价格已越过止损，直接平仓', paper_closed: '策略信号平仓', daily_halt: '日亏停手平仓', manual_flatten: '手动全部平仓', execution_test: '模拟成交测试 · 成交后立即平仓' };
+const CLOSES = { stop_missing_price_beyond_stop: '止损单缺失且价格已越过止损，直接平仓', paper_closed: '策略信号平仓', reverse_signal: '反向信号平仓', trailing_stop: '移动止损平仓', take_profit: '止盈平仓', stop_loss: '止损平仓', daily_halt: '日亏停手平仓', manual_flatten: '手动全部平仓', execution_test: '模拟成交测试 · 成交后立即平仓' };
 
 export function validOkx(d) {
   return d !== null && typeof d === 'object' && stamp(d.updated_at) && finite(d.equity) && Array.isArray(d.positions) &&

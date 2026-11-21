@@ -7,7 +7,7 @@ becomes the paper-trading champion.
 """
 import random
 
-from execution import simulate, entries
+from execution import simulate, entries, signal_sets
 from genome import random_genome, crossover, mutate, fix, SPECIES
 import data as D
 
@@ -250,14 +250,14 @@ def evaluate(genes, series, split):
     [mid, end). 'qualified' = passes the out-of-sample gate and, when there is a final window, the final gate too."""
     start, cut, mid, end = split if len(split) == 4 else (*split, split[-1])
     genes = fix(genes)
-    ev = entries(genes, series)
-    tr = simulate(genes, series, start, cut, curve_every=24, events=ev)
-    te = simulate(genes, series, cut, mid, curve_every=24, events=ev)
+    ev, rv = signal_sets(genes, series)
+    tr = simulate(genes, series, start, cut, curve_every=24, events=ev, reverse=rv)
+    te = simulate(genes, series, cut, mid, curve_every=24, events=ev, reverse=rv)
     m = te['metrics']
     out = dict(test=m, test_ok=passes(m, GATE), test_curve=downsample(te['curve']))
     out['qualified'] = out['test_ok']
     if end > mid:
-        fi = simulate(genes, series, mid, end, curve_every=24, events=ev)
+        fi = simulate(genes, series, mid, end, curve_every=24, events=ev, reverse=rv)
         out.update(final=fi['metrics'], final_ok=passes(fi['metrics'], FINAL_GATE), final_curve=downsample(fi['curve']))
         out['qualified'] = out['test_ok'] and out['final_ok']
     folds = fold_scores(tr, next(iter(series.values())).ts, start, cut)

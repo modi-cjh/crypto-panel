@@ -21,14 +21,16 @@ GENES = {
     'vol_mult': ('float', 1.5, 6.0),     # volume surge: volume > vol_mult × average of the previous `lookback` bars
     'rs_th': ('float', .02, .3),         # relative strength: (coin − BTC) return over `lookback` bars crosses ±rs_th
     'stop_atr': ('float', .8, 5.0),      # stop distance in ATR(14)
-    'target_rr': ('float', 0.0, 6.0),    # target as multiple of stop distance; < .5 means no target
-    'max_hold': ('int', 4, 240),         # bars of the genome's timeframe (capped at MAX_HOLD_H hours)
-    'trail': ('choice', [0, 1], None),   # 1: the stop trails the best price at the stop distance after every bar
+    'target_rr': ('float', 1.0, 6.0),    # take-profit = entry ± target_rr × stop distance; every position has one (2026-11-21:
+                                         # was 0–6 with < .5 = no target; fix() maps a stored 0 to DEFAULT_TARGET_RR = 3R)
+    'max_hold': ('int', 4, 240),         # NOT USED since 2026-11-21 (no time exit); kept so stored genomes / lineage stay valid
+    'trail': ('choice', [0, 1], None),   # NOT USED since 2026-11-21: every position trails (execution.trail_update); kept for stored genomes
     'risk': ('float', .05, .10),         # equity at risk per trade, chosen by the strategy itself (5–10 %; 5–20 % in PR #107, 2–10 % before)
     'leverage': ('int', 1, 20),          # leverage the strategy wants (sets initial margin on cross); clamped to the coin's OKX max
     'vol_min': ('float', .3, 1.2),       # trade only when ATR% ÷ its baseline is inside [vol_min, vol_max]
     'vol_max': ('float', 1.0, 4.0),
 }
+DEFAULT_TARGET_RR = 3.0   # = execution.DEFAULT_TARGET_RR (kept here so genome stays import-free)
 DECIMALS = {'vol_mult': 2, 'rs_th': 3, 'threshold': 2, 'expand': 2, 'stop_atr': 2, 'target_rr': 2, 'risk': 4, 'vol_min': 2, 'vol_max': 2}
 
 
@@ -42,9 +44,14 @@ def fix(g):
     Genomes saved before a gene existed get its neutral default (1H, no trailing, 10× leverage), so they
     behave as before except out-of-range risk/leverage is clamped into the current 5–10 % / 1–20× bands (a gene saved
     under the old 2–10 % band below 5 % becomes 5 %; one saved under the 5–20 % band above 10 % becomes 10 %).
-    A missing risk gene becomes 5 %."""
+    A missing risk gene becomes 5 %.
+    target_rr (2026-11-21, every position has a take-profit): a missing gene or one below .5 — the old 'no target', in
+    practice a stored 0 — becomes DEFAULT_TARGET_RR (3R); .5–1 becomes 1R (the new lower bound); above 6 becomes 6R.
+    New genomes never reach the mapping: random_genome draws inside [1, 6] and mutate() clamps its step to the range."""
     if g.get('risk') is None:
         g['risk'] = GENES['risk'][1]
+    if g.get('target_rr') is None or g['target_rr'] < .5:
+        g['target_rr'] = DEFAULT_TARGET_RR
     for k, v in DEFAULTS.items():
         g.setdefault(k, v)
     for k, (kind, lo, hi) in GENES.items():
@@ -56,8 +63,6 @@ def fix(g):
         g['slow'] = min(GENES['slow'][2], g['fast'] + 6)
     if g['vol_max'] <= g['vol_min'] + .2:
         g['vol_max'] = round(min(GENES['vol_max'][2], g['vol_min'] + .3), 2)
-    if g['target_rr'] < .5:
-        g['target_rr'] = 0.0
     return g
 
 
@@ -86,7 +91,7 @@ def mutate(g, rng, rate=.25, scale=.2):
         if kind == 'choice':
             g[k] = rng.choice(lo)
         else:
-            g[k] = g[k] + rng.gauss(0, scale * (hi - lo))
+            g[k] = min(hi, max(lo, g[k] + rng.gauss(0, scale * (hi - lo))))   # clamp here, so a step below 1R is 1R, not the 3R default
     return fix(g)
 
 
@@ -99,8 +104,8 @@ def describe(g):
             'vol_surge': f"成交量 > 前 {g['lookback']} 根均量 {g['vol_mult']} 倍 顺 K 线方向",
             'rel_strength': f"{g['lookback']} 根涨幅比 BTC 强 / 弱 {g['rs_th'] * 100:.1f}%"}[sp]
     side = {'both': '多空', 'long': '只做多', 'short': '只做空'}[g['direction']]
-    tgt = f"止盈 {g['target_rr']}R" if g['target_rr'] else '无止盈'
+    rr = g.get('target_rr')
+    tgt = f"止盈 {rr if rr is not None and rr >= .5 else DEFAULT_TARGET_RR}R"
     tf = TF_NAMES[g.get('tf', 1)]
-    stop = '移动止损' if g.get('trail') else '止损'
-    return (f"{SPECIES_NAMES[sp]} · {tf} · {core} · {side} · {stop} {g['stop_atr']}×ATR · {tgt} · "
-            f"最长 {g['max_hold']} 根 · 风险 {g['risk'] * 100:.1f}% · 杠杆 {int(g.get('leverage', 10))}×")
+    return (f"{SPECIES_NAMES[sp]} · {tf} · {core} · {side} · 止损 {g['stop_atr']}×ATR · {tgt} · 移动止损 · 反向信号平仓 · "
+            f"风险 {g['risk'] * 100:.1f}% · 杠杆 {int(g.get('leverage', 10))}×")

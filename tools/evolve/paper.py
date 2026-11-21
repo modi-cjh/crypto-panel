@@ -14,7 +14,14 @@ so fills that already happened (including positions still open) keep their origi
 - fills after it and on or before account['risk_cap_from'] (the first run with the 5–10 % band): execution.PRIOR_SIZING
   (5–20 %, cap 20 %, half at 10) with their seat's stored risk gene;
 - later fills: the current ACCOUNT_RULES (5–10 %, cap 10 %, half at 10).
-Both stamps are set once (setdefault) and never moved. The OKX follow (tools/okx_demo_trader.py, demo and live) uses the
+Both stamps are set once (setdefault) and never moved.
+Exit rules (2026-11-21, execution.py EXIT RULES: stop + take-profit on every position, reverse-signal close per
+ACCOUNT_RULES['reverse_close'], trailing stop for every position, no time exit) work the same way:
+account['exit_rules_from'] = the last bar of the previous run (the last bar the published history covers; this run's last
+bar when unknown), set once. Bars up to it replay with the old exits (target only when the stored gene had one, trail
+gene, max_hold / MAX_HOLD_H time exit), so trades that already closed are never rewritten; later bars use the new exits
+for every position, including ones opened earlier (they get a take-profit and the trailing stop at the first new bar).
+The OKX follow (tools/okx_demo_trader.py, demo and live) uses the
 same 5–10 % / 10 % / half-at-10 steps and 1–20× genes on cross margin, clamped to each coin's OKX max leverage (no new
 entry if the spec is missing).
 Each run replays the account from its start bar with the full seat history, so the result is exactly what the engine
@@ -28,11 +35,12 @@ Before this, the account was five separate slots of 1/5 each; that history (curv
 paper['legacy'] and the shared account starts from the slots' total equity. The slot code below `_legacy_update` only
 serves that one-time conversion.
 """
-from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, same_side_full, clamp_risk
+from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, same_side_full, clamp_risk, target_rr
 from evolution import TEAM_SIZE, entry_gate
 from genome import fix
 
 HOUR = 3600_000
+EXIT_WINDOW = 24 * HOUR      # closes this recent are published with their reason, so the OKX follow can log why it closes
 # Caps (not a fixed leader size): published on the dashboard and used as leverage/risk ceilings.
 LEADER_RISK, LEADER_LEVERAGE = ACCOUNT_RULES['leader_risk'], ACCOUNT_RULES['leader_lever']
 _CTX = dict(extra={})        # per update(): {slot index: {ts: equity of the other slots}} for boosted segments
@@ -167,8 +175,8 @@ def _idle_equity(slot):
 
 def _signal_from_pending(inst, d, genes, series, last_ts, member):
     sr = series[inst]
-    dist, px, rr = stop_distance(genes, sr, sr.n - 1), sr.c[-1], genes['target_rr']
-    return dict(side=d, entry=px, stop=px - d * dist, tp=px + d * rr * dist if rr > 0 else None, opened=last_ts + HOUR,
+    dist, px, rr = stop_distance(genes, sr, sr.n - 1), sr.c[-1], target_rr(genes)
+    return dict(side=d, entry=px, stop=px - d * dist, tp=px + d * rr * dist, dist=dist, opened=last_ts + HOUR,
                 strategy='evolved', leverage=int(fix(dict(genes)).get('leverage', DEFAULT_LEVERAGE)), champion=member, pending=True)
 
 
@@ -278,8 +286,9 @@ def _convert(state, series, last_ts):
     return state['paper']
 
 
-def update(state, series, changes, price_off=None):
+def update(state, series, changes, price_off=None, prev_last=None):
     """price_off: data.price_check ranges {inst: [[from_ts, to_ts or None]]} — coins that take no new entry in those ranges.
+    prev_last: the last bar of the previous run (its published curve), used once to stamp account['exit_rules_from'].
     Apply this run's seat and leader changes, replay the shared account, and return (dashboard view, mirror signals)."""
     nodes, s = state['nodes'], next(iter(series.values()))
     last_ts = s.ts[-1]
@@ -336,15 +345,19 @@ def update(state, series, changes, price_off=None):
     # replay keeps their size (each era clamps it into its own band).
     segs = [dict(id=g['id'], genes=fix(dict(g['genes'])), from_i=idx(g['from_ts']), wind_i=idx(g['wind_ts']) if g['wind_ts'] is not None else None,
                  boosts=[(idx(a), idx(b) if b is not None else None) for a, b in g['boosts']],
-                 **({'old_risk': g['genes']['risk']} if g['genes'].get('risk') is not None else {})) for g in acc['segs']]
+                 **({'old_risk': g['genes']['risk']} if g['genes'].get('risk') is not None else {}),
+                 # the exit genes as stored (old fix(): target_rr 0 = no target), for bars on or before exit_rules_from
+                 old_exit={k: g['genes'][k] for k in ('target_rr', 'trail', 'max_hold', 'tf') if g['genes'].get(k) is not None}) for g in acc['segs']]
     blocked = {inst: [(idx(a), idx(b) if b is not None else None) for a, b in rs] for inst, rs in (price_off or {}).items()}
     off_now = {inst for inst, rs in (price_off or {}).items() if rs and rs[-1][1] is None}
     acc.setdefault('side_cap_from', last_ts)          # the same-side count starts with the first run that has it
     acc.setdefault('risk_rules_from', last_ts)        # the 5–20 % / 20 % / half-at-10 sizing (PR #107) started with the first run that had it
     acc.setdefault('risk_cap_from', last_ts)          # the 5–10 % / 10 % / half-at-10 sizing starts with the first run that has it
+    # the new exits start right after the bars the previous run already published (closed trades stay as they were)
+    acc.setdefault('exit_rules_from', min(prev_last, last_ts) if prev_last is not None else last_ts)
     res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked,
                            side_cap_from=idx(acc['side_cap_from']), risk_from=idx(acc['risk_rules_from']),
-                           risk_cap_from=idx(acc['risk_cap_from']))
+                           risk_cap_from=idx(acc['risk_cap_from']), exit_from=idx(acc['exit_rules_from']))
     by = {g['id']: g for g in acc['segs']}
     rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     who = lambda sid: by[sid]['champion']
@@ -374,7 +387,8 @@ def update(state, series, changes, price_off=None):
     # Mirror signals: one per coin (the account holds one position per coin). 'rank' orders the mirror's entries.
     signals = {}
     for p in res['positions']:
-        signals[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], opened=p['opened'], strategy='evolved',
+        signals[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], dist=p['dist'], trailing=p['trailing'],
+                                  opened=p['opened'], strategy='evolved',
                                   champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1,
                                   **_size(by[p['seg']]['genes'], leader=p['boost']))   # the base risk: the mirror applies the majors / crowding steps itself
     for sid, inst, d, dist, b in queue:
@@ -392,7 +406,8 @@ def update(state, series, changes, price_off=None):
                 # account_start + Σ members' pnl (incl. wound-down seats) + insurance = equity
                 liquidations=res.get('liquidations', 0), insurance=round(res.get('insurance', 0.0), 2),
                 adjustments=[dict(a, amount=round(a['amount'], 2)) for a in res.get('adjustments') or []][-20:],
-                rules=dict(same_side_cap=ACCOUNT_RULES['same_side_cap'], max_same_side=ACCOUNT_RULES['max_same_side'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
+                rules=dict(reverse_close=ACCOUNT_RULES['reverse_close'], exit_rules_from=acc['exit_rules_from'],
+                           same_side_cap=ACCOUNT_RULES['same_side_cap'], max_same_side=ACCOUNT_RULES['max_same_side'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
                            leader_risk=ACCOUNT_RULES['leader_risk'], leader_lever=ACCOUNT_RULES['leader_lever'],
                            max_risk=ACCOUNT_RULES['max_risk'], min_risk=ACCOUNT_RULES['min_risk'],
                            min_lever=ACCOUNT_RULES.get('min_lever', 1), margin_mode=ACCOUNT_RULES.get('margin_mode', 'cross'),
@@ -404,5 +419,7 @@ def update(state, series, changes, price_off=None):
                 trades=sorted(trades, key=lambda t: t['closed'], reverse=True)[:50],
                 positions=positions, pending=pending,
                 leader=_leader_view(leader, nodes) if leader else None,
-                members=sorted(members, key=lambda m: m['rank']), segments=(seats + (legacy.get('segments') or []))[:30])
+                members=sorted(members, key=lambda m: m['rank']), segments=(seats + (legacy.get('segments') or []))[:30],
+                # recent closes and why ({inst|opened: reason}); run.py moves this into signals.json for the OKX follow
+                exits={f"{t['inst']}|{int(t['opened'])}": t['reason'] for t in res['trades'] if t['closed'] >= last_ts - EXIT_WINDOW})
     return view, signals

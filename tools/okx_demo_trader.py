@@ -18,8 +18,16 @@ Each run, against <data>/combined/state.json:
     sized by the strategy's risk at the paper stop (evolved mode: cross margin, the strategy's own 5–10 % risk gene;
     half from the 10th position already open on that side; the legacy modes: cross, 1 %), with the stop (and the
     mean-reversion target) attached as exchange-side algo orders;
-  - when the paper stop trails, the exchange stop is amended;
-  - when the paper position is gone, the mirrored position is closed;
+  - exits (2026-11-21, the same for every strategy; execution.py EXIT RULES): every mirrored position keeps BOTH an
+    exchange stop and an exchange take-profit (a missing take-profit is placed again at the paper target, else at
+    entry ± DEFAULT_TARGET_RR × stop distance); the trailing stop (TRAIL_START_R / TRAIL_DIST_R × the paper stop distance,
+    from OKX's closed 1H candles since the entry, or the paper's own trailed stop when that is tighter) is applied by
+    amending the exchange stop once per run, only in the position's favour. Granularity: paper moves the stop on every 1H
+    bar, this program once per run (hourly at :50 UTC on the live server), so the exchange stop can lag by up to an hour;
+  - when the paper position is gone (paper stop / target / reverse signal / trailing stop), the mirrored position is
+    closed with close-position + autoCxl (its resting algos are cancelled); the paper's reason, published in
+    signals.json 'exits', is kept as closed_reason (reverse_signal, trailing_stop, else paper_closed). Reverse signals are
+    seen when signals.json is republished (every 4 h), so this close can come up to ~4 h after the paper close;
   - if the exchange stop already closed a mirrored position, it is marked done and never reopened.
 Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; in demo mode
 the process refuses to send any request without `x-simulated-trading: 1`. Evolved mode uses cross margin (全仓), the strategy's own risk (5–10 %) and leverage
@@ -48,6 +56,7 @@ from runtime_guard import entries_allowed, atomic_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
 from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, cross_open_allowed, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FEE, MAX_SAME_SIDE_POSITIONS, same_side_full  # noqa: E402
+from execution import DEFAULT_TARGET_RR, TRAIL_START_R, TRAIL_DIST_R  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -84,6 +93,10 @@ LATE_BAND = (.5, 1.5)             # older entries are still followed while the p
 MIN_STOP_DIST = .002              # skip entries whose stop is already too close to the current price
 AMEND_TOLERANCE = .003            # amend the exchange stop when the paper stop moved more than 0.3% (0.1% logged a move every run)
 UTC7 = timezone(timedelta(hours=7))
+# Paper close reason (signals.json 'exits') → closed_reason of the mirrored position; anything else is paper_closed.
+PAPER_EXIT_REASONS = {'reverse_signal': 'reverse_signal', 'trailing_stop': 'trailing_stop'}
+# Which resting exchange order closed a mirror (outcome()) → closed_reason.
+EXCHANGE_EXIT_REASONS = {'target': 'take_profit', 'stop': 'stop_loss', 'liquidation': 'liquidation'}
 TAG = {'mean_reversion': 'mr', 'breakout_long': 'bl', 'breakout_daily': 'bd', 'evolved': 'ev'}
 EVOLVED_INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
 SCAN_LIMIT = 50           # coins scanned for new entries: the first 50 of the evolution's list (most traded first); same as evolve.data.UNIVERSE_SIZE
@@ -360,6 +373,15 @@ def decision_snapshot(data):
     return dict(strategy_updated_at=updated,strategy_decisions=sorted(rows,key=lambda r:r['ts'],reverse=True)[:50])
 
 
+def paper_dist(p, px=None):
+    """Stop distance of a paper signal: 'dist' (published since 2026-11-21), else |entry − stop|, else |px − stop|."""
+    d = p.get('dist')
+    if d:
+        return float(d)
+    ref = p.get('entry') or px
+    return abs(float(ref) - float(p['stop'])) if ref else 0.0
+
+
 class Mirror:
     def __init__(self, client, state, paper, now, dry_run=False):
         self.c, self.s, self.paper, self.now, self.dry = client, state, paper, now, dry_run
@@ -499,8 +521,9 @@ class Mirror:
         dist = (px - p['stop']) / px * side
         if dist < MIN_STOP_DIST:
             return self.log('skip', inst, reason='stop_too_close_or_crossed', price=px, stop=p['stop'])
-        if p.get('tp') and (p['tp'] - px) * side <= 0:
-            return self.log('skip', inst, reason='target_already_reached', price=px, target=p['tp'])
+        tp = p.get('tp') or px + side * DEFAULT_TARGET_RR * paper_dist(p, px)   # every position has a take-profit
+        if (tp - px) * side <= 0:
+            return self.log('skip', inst, reason='target_already_reached', price=px, target=tp)
         sp = self.spec(inst)
         if not sp['ctVal']:
             return self.log('skip', inst, reason='no_instrument_spec')
@@ -615,9 +638,8 @@ class Mirror:
         if not ok(r):
             return self.log('error', inst, step='set_leverage', detail=first_error(r))
         tick = sp['tickSz']
-        algo = dict(slTriggerPx=fmt(quantize(p['stop'], tick, ROUND_HALF_UP)), slOrdPx='-1', slTriggerPxType='last')
-        if p.get('tp'):
-            algo.update(tpTriggerPx=fmt(quantize(p['tp'], tick, ROUND_HALF_UP)), tpOrdPx='-1', tpTriggerPxType='last')
+        algo = dict(slTriggerPx=fmt(quantize(p['stop'], tick, ROUND_HALF_UP)), slOrdPx='-1', slTriggerPxType='last',
+                    tpTriggerPx=fmt(quantize(tp, tick, ROUND_HALF_UP)), tpOrdPx='-1', tpTriggerPxType='last')
         cl = f"{TAG.get(p.get('strategy'), 'px')}{inst.split('-')[0].lower()}{int(p['opened']) // 1000}"[:32]
         order = dict(instId=inst, tdMode=MARGIN_MODE, side='buy' if side == 1 else 'sell', ordType='market', sz=fmt(contracts),
                      clOrdId=cl, attachAlgoOrds=[algo], **({'posSide': pos_side} if pos_side else {}))
@@ -625,7 +647,7 @@ class Mirror:
         if not ok(r):
             return self.log('error', inst, step='order', detail=first_error(r), size=fmt(contracts))
         self.s['mirrored'][key] = dict(inst=inst, side=side, posSide=pos_side or 'net', strategy=p.get('strategy'), contracts=fmt(contracts),
-                                       stop=p['stop'], target=p.get('tp'), leverage=lever, entry=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader, mgnMode=MARGIN_MODE, champion=p.get('champion'),
+                                       stop=p['stop'], target=tp, leverage=lever, entry=px, init_stop=p['stop'], dist=paper_dist(p, px), best=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader, mgnMode=MARGIN_MODE, champion=p.get('champion'),
                                        ordId=(r.get('data') or [{}])[0].get('ordId'))
         self.new_order_risk[key] = float(contracts) * sp['ctVal'] * abs(px - p['stop'])
         self.available -= margin
@@ -657,7 +679,7 @@ class Mirror:
             kind = 'target' if res['pnl'] >= 0 else 'stop'
         return dict({k: v for k, v in res.items() if k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee')}, outcome=kind)
 
-    def close(self, key, m, reason):
+    def close(self, key, m, reason, **extra_log):
         body = dict(instId=m['inst'], mgnMode=self.mgn_mode(m), autoCxl=True, **({'posSide': m['posSide']} if m['posSide'] != 'net' else {}))
         r = self.post('/api/v5/trade/close-position', body)
         if not ok(r):
@@ -671,7 +693,7 @@ class Mirror:
             res = None
         extra = {k: res[k] for k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee')} if res else {}
         self.book_leader(m, res)
-        self.log('close', m['inst'], strategy=m.get('strategy'), reason=reason, **extra)
+        self.log('close', m['inst'], strategy=m.get('strategy'), reason=reason, **extra, **extra_log)
 
     def ensure_stop(self, key, m, p):
         """Every open position must have its stop resting on the exchange. If none is found for a position opened in an
@@ -697,8 +719,115 @@ class Mirror:
             self.log('restore_stop', m['inst'], stop=body['slTriggerPx']); m['stop'] = stop
         return True
 
+    def mirror_algos(self, m, kind):
+        """This mirror's resting algos that carry a stop (kind 'sl') or a take-profit (kind 'tp')."""
+        return [a for a in self.algos if a['instId'] == m['inst'] and (a.get('posSide', 'net') == m['posSide'] or m['posSide'] == 'net')
+                and a.get(f'{kind}TriggerPx') not in (None, '', '0')]
+
+    def ensure_target(self, key, m, p):
+        """Every mirrored position must have a take-profit resting on the exchange, as well as its stop. Target = the paper
+        target (signals 'tp'), else the one stored at entry, else entry ± DEFAULT_TARGET_RR × the stop distance. Missing:
+        place a reduce-only conditional TP order (or close at market when the price is already past it, take_profit);
+        resting but away from the paper target by more than AMEND_TOLERANCE: amend it. Returns False when it closed."""
+        if int(m.get('opened_at') or 0) >= self.now_ms:
+            return True                                            # opened in this run with its TP attached
+        dist = self.mirror_dist(m, p)
+        entry = float(m.get('entry') or 0)
+        tp = float((p or {}).get('tp') or m.get('target') or (entry + m['side'] * DEFAULT_TARGET_RR * dist if entry and dist else 0))
+        if not tp:
+            self.log('error', m['inst'], step='ensure_target', detail='target unknown')
+            return True
+        tick = self.spec(m['inst'])['tickSz']
+        resting = self.mirror_algos(m, 'tp')
+        if resting:
+            cur = float(resting[0]['tpTriggerPx'])
+            if (p or {}).get('tp') and abs(tp - cur) / cur > AMEND_TOLERANCE:
+                r = self.post('/api/v5/trade/amend-algos', dict(instId=m['inst'], algoId=resting[0]['algoId'],
+                                                                 newTpTriggerPx=fmt(quantize(tp, tick, ROUND_HALF_UP))))
+                if not ok(r):
+                    self.log('error', m['inst'], step='amend_target', detail=first_error(r))
+                else:
+                    self.log('amend_target', m['inst'], old=cur, new=tp); m['target'] = tp
+            else:
+                m.setdefault('target', cur)
+            return True
+        px = self.price(m['inst'])
+        if px and (px - tp) * m['side'] >= 0:
+            self.close(key, m, 'take_profit')
+            return False
+        held = self.held(m['inst'], m['side'])
+        body = dict(instId=m['inst'], tdMode=self.mgn_mode(m), side='sell' if m['side'] == 1 else 'buy', ordType='conditional',
+                    sz=fmt(Decimal(str(abs(float((held or {}).get('pos') or m.get('contracts') or 0))))),
+                    tpTriggerPx=fmt(quantize(tp, tick, ROUND_HALF_UP)), tpOrdPx='-1', tpTriggerPxType='last',
+                    **({'posSide': m['posSide']} if m['posSide'] != 'net' else {'reduceOnly': True}))
+        r = self.post('/api/v5/trade/order-algo', body)
+        if not ok(r):
+            self.log('error', m['inst'], step='restore_target', detail=first_error(r))
+        else:
+            self.log('restore_target', m['inst'], target=body['tpTriggerPx']); m['target'] = tp
+        return True
+
+    def mirror_dist(self, m, p):
+        """The paper stop distance of this position (|entry − initial stop|): signals 'dist', else the one stored at entry,
+        else |entry − initial stop| of the mirror (records from before 2026-11-21 only have the current stop)."""
+        d = (p or {}).get('dist') or m.get('dist')
+        if not d:
+            entry, stop = float(m.get('entry') or 0), float(m.get('init_stop') or m.get('stop') or 0)
+            # only a stop still on the losing side of the entry is a usable distance (a stop already trailed past the
+            # entry is not); otherwise wait for signals.json to publish 'dist' (next paper run, ≤ 4 h)
+            d = (entry - stop) * m['side'] if entry and stop and (entry - stop) * m['side'] > 0 else 0
+        if d:
+            m['dist'] = float(d)
+        return float(d or 0)
+
+    def best_price(self, m):
+        """Best price since the entry, from OKX's CLOSED 1H candles that started after the mirror opened (the same bars the
+        paper trail uses) and the best already stored. Returns the stored best when the candles cannot be read."""
+        best = float(m.get('best') or m.get('entry') or 0)
+        opened = int(m.get('opened_at') or 0)
+        hours = max(1, (self.now_ms - opened) // 3600_000 + 2)
+        try:
+            r = self.c.request('GET', f"/api/v5/market/candles?instId={m['inst']}&bar=1H&limit={min(300, hours)}")
+        except OKXError:
+            return best
+        for row in (r.get('data') or []) if ok(r) else []:
+            try:
+                if int(row[0]) < opened or (len(row) > 8 and str(row[8]) != '1'):
+                    continue
+                best = max(best, float(row[2])) if m['side'] == 1 else min(best, float(row[3]))
+            except (TypeError, ValueError, IndexError):
+                continue
+        m['best'] = best
+        return best
+
+    def trail_stop(self, key, m, p):
+        """Trailing stop on the exchange (execution.trail_update, once per run): once the best price since the entry is
+        TRAIL_START_R × dist in profit, the stop is best ∓ TRAIL_DIST_R × dist; the paper's own stop is used when it is
+        tighter. The exchange stop only moves in the position's favour (amend-algos); if the price is already beyond the
+        new stop, the position is closed at market (trailing_stop)."""
+        if not self.mirror_algos(m, 'sl'):
+            return                                                 # opened / stop restored in this run: trail from the next run
+        dist, entry = self.mirror_dist(m, p), float(m.get('entry') or 0)
+        want, trailing = float(m['stop']), False
+        if p and p.get('stop') and (float(p['stop']) - want) * m['side'] > 0:
+            want, trailing = float(p['stop']), bool(p.get('trailing'))
+        if dist and entry:
+            best = self.best_price(m)
+            if (best - entry) * m['side'] >= TRAIL_START_R * dist - 1e-12:
+                t = best - m['side'] * TRAIL_DIST_R * dist
+                if (t - want) * m['side'] >= 0:
+                    want, trailing = t, True
+        if (want - m['stop']) * m['side'] <= 0 or abs(want - m['stop']) / m['stop'] <= AMEND_TOLERANCE:
+            return
+        if trailing:
+            m['trailing'] = True
+        px = self.price(m['inst'])
+        if px and (px - want) * m['side'] <= 0:
+            return self.close(key, m, 'trailing_stop' if trailing else 'stop_loss')
+        self.amend_stop(key, m, want)
+
     def amend_stop(self, key, m, new_stop):
-        algo = next((a for a in self.algos if a['instId'] == m['inst'] and (a.get('posSide', 'net') == m['posSide'] or m['posSide'] == 'net')), None)
+        algo = next(iter(self.mirror_algos(m, 'sl')), None)
         if not algo:
             return self.log('error', m['inst'], step='amend_stop', detail='algo order not found')
         tick = self.spec(m['inst'])['tickSz']
@@ -768,21 +897,24 @@ class Mirror:
             p = paper_positions.get(m['inst'])
             same = p and f"{m['inst']}|{int(p['opened'])}" == key
             if not held:
-                m['status'] = 'done'; m['closed_reason'] = 'exchange_stop_or_target'
+                m['status'] = 'done'
                 try:
                     res = self.outcome(m, self.fill_result(m['inst'], m['posSide'], int(m.get('opened_at') or 0)))
                 except OKXError:
                     res = {}
+                why = EXCHANGE_EXIT_REASONS.get(res.get('outcome'), 'exchange_stop_or_target')
+                m['closed_reason'] = 'trailing_stop' if why == 'stop_loss' and m.get('trailing') else why
                 if res.get('pnl') is not None:
                     m['realized_pnl'] = res['pnl']
                 self.book_leader(m, res)
-                self.log('closed_on_exchange', m['inst'], strategy=m.get('strategy'), **res)
+                self.log('closed_on_exchange', m['inst'], strategy=m.get('strategy'), reason=m['closed_reason'], **res)
             elif not same:
-                self.close(key, m, 'paper_closed')
+                paper_why = (self.paper.get('exits') or {}).get(key)
+                self.close(key, m, PAPER_EXIT_REASONS.get(paper_why, 'paper_closed'), **({'paper_reason': paper_why} if paper_why else {}))
             elif not self.ensure_stop(key, m, p):
                 continue
-            elif abs(p['stop'] - m['stop']) / m['stop'] > AMEND_TOLERANCE and (p['stop'] - m['stop']) * m['side'] > 0:
-                self.amend_stop(key, m, p['stop'])
+            elif self.ensure_target(key, m, p):
+                self.trail_stop(key, m, p)
         # New entries (a dry run previews them as if resumed).
         if self.s['paused'] and not self.dry:
             return
@@ -806,7 +938,7 @@ class Mirror:
     def settle(self):
         """load() ran before this run's orders: read the account again so the summary already lists new / closed positions
         (otherwise they only appear after the next scheduled run, 40–60 minutes later)."""
-        if not self.dry and any(a['action'] in ('open', 'close', 'amend_stop', 'flatten', 'daily_halt') for a in self.actions):
+        if not self.dry and any(a['action'] in ('open', 'close', 'amend_stop', 'restore_target', 'amend_target', 'flatten', 'daily_halt') for a in self.actions):
             self.load()
 
     def summary(self):
@@ -863,7 +995,9 @@ def main():
         if live and args.action != 'snapshot' and (age is None or age > LIVE_SIGNAL_MAX_AGE):
             # A stale signal file would keep closed paper positions open and follow old entries; the exchange stops stay in place.
             raise SystemExit(f'evolve/signals.json 已过期、时间戳在未来或缺少 updated_at（超过 {LIVE_SIGNAL_MAX_AGE // 3600_000} 小时），实盘本轮不操作。')
-        paper = {'positions': sig.get('positions', {}), 'source': 'evolve'}
+        exits = sig.get('exits') if isinstance(sig.get('exits'), dict) else {}
+        paper = {'positions': sig.get('positions', {}), 'exits': {k: v for k, v in exits.items() if isinstance(k, str) and isinstance(v, str)},
+                 'source': 'evolve'}
         applied = configure_evolved(sig.get('instruments'))
         print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，规格缺失则不开新仓）· 全仓 · 同向风险不设上限、≤ {MAX_SAME_SIDE} 仓 · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
     else:

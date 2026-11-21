@@ -51,6 +51,10 @@ class FakeOKX:
                     return {'code': '0', 'data': []}
                 return {'code': '0', 'data': [row(inst, src[inst])]}
             return {'code': '0', 'data': [row(i, s) for i, s in src.items()]}
+        if path.startswith('/api/v5/market/candles'):
+            self.candle_calls = getattr(self, 'candle_calls', 0) + 1
+            inst = path.split('instId=')[1].split('&')[0]
+            return {'code': '0', 'data': list(getattr(self, 'candles', {}).get(inst, []))}
         if path.startswith('/api/v5/market/ticker'):
             return {'code': '0', 'data': [{'last': str(self.prices[path.split('instId=')[1]])}]}
         raise AssertionError(path)
@@ -123,7 +127,7 @@ class MirrorTests(unittest.TestCase):
     def test_trailing_paper_stop_amends_the_exchange_stop_only_upwards_for_longs(self):
         fake = FakeOKX(); _, state = run(fake, paper(**{'BTC-USDT-SWAP': long_btc()}))
         fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3.57')]
-        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1')]; fake.posts.clear()
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1', slTriggerPx='68600', tpTriggerPx='74200')]; fake.posts.clear()
         run(fake, paper(**{'BTC-USDT-SWAP': long_btc(stop=69300.0)}), state)
         self.assertEqual(fake.posts, [('/api/v5/trade/amend-algos', {'instId': 'BTC-USDT-SWAP', 'algoId': 'a1', 'newSlTriggerPx': '69300'})])
         fake.posts.clear(); run(fake, paper(**{'BTC-USDT-SWAP': long_btc(stop=69000.0)}), state)   # never loosened
@@ -467,7 +471,7 @@ class MirrorTests(unittest.TestCase):
             self.assertEqual((algo['slTriggerPx'], algo['tdMode'], algo['side'], algo['posSide'], algo['closeFraction']), ('68600', 'cross', 'sell', 'long', '1'))
             self.assertIn('restore_stop', [a['action'] for a in later.actions])
             # with a stop resting, nothing is sent
-            fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='9', slTriggerPx='68600')]; fake.posts.clear()
+            fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='9', slTriggerPx='68600', tpTriggerPx='74200')]; fake.posts.clear()
             again = odt.Mirror(fake, state, paper(**sig), NOW + odt.timedelta(hours=8), False); again.run('run')
             self.assertEqual(fake.posts, [])
             # no stop and the price is already beyond it: close instead of placing a stop that would fire at once
@@ -664,7 +668,7 @@ class MirrorTests(unittest.TestCase):
             algo = next(b for q, b in bare.posts if q == '/api/v5/trade/order-algo')
             self.assertEqual(algo['slTriggerPx'], '68600'); self.assertIn('restore_stop', [a['action'] for a in later.actions])
             # ... a tighter paper stop is still trailed on the exchange
-            bare = NoLever(positions=held, algos=[dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1', slTriggerPx='68600')])
+            bare = NoLever(positions=held, algos=[dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1', slTriggerPx='68600', tpTriggerPx='74200')])
             sig2 = {'BTC-USDT-SWAP': dict(long_btc(stop=69300.0), strategy='evolved', risk=.02)}
             odt.Mirror(bare, state, paper(**sig2), NOW + odt.timedelta(hours=6), False).run('run')
             self.assertEqual([q for q, _ in bare.posts], ['/api/v5/trade/amend-algos'])
@@ -799,6 +803,154 @@ class MirrorTests(unittest.TestCase):
         args, cfg = (fake.parent / 'args').read_text(), (fake.parent / 'stdin').read_text()
         for s in ('KEY1', 'SECRET1', 'PASS1'): self.assertNotIn(s, args)
         self.assertIn('x-simulated-trading: 1', cfg); self.assertIn('request = "POST"', cfg); self.assertIn('\\"instId\\"', cfg)
+
+
+class ExitRuleMirrorTests(unittest.TestCase):
+    """2026-11-21 exits on the exchange: stop + take-profit resting for every mirror, trailing stop amended each run,
+    reverse-signal / trailing closes from the paper with closed_reason, no time exit."""
+    KEY_OPENED = NOW_MS - 30 * 60_000
+
+    def setUp(self):
+        odt.configure_evolved()
+        self.addCleanup(lambda: (setattr(odt, 'ACTIVE_PROFILE', None), odt.configure_volume_test(datetime(2026, 1, 1, tzinfo=timezone.utc))))
+
+    def sig(self, **kw):
+        return {'BTC-USDT-SWAP': dict(long_btc(), strategy='evolved', risk=.05, **kw)}
+
+    def opened(self, **kw):
+        """A mirror opened at NOW (entry 70000, stop 68600, dist 1400), then the exchange snapshot of the next runs."""
+        fake = FakeOKX(); _, state = run(fake, paper(**self.sig(**kw)))
+        fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='long', pos='3', mgnMode='cross')]
+        fake.posts.clear()
+        return fake, state
+
+    def later(self, fake, state, sig, hours=4, exits=None):
+        m = odt.Mirror(fake, state, dict(paper(**sig), exits=exits or {}), NOW + timedelta(hours=hours), False)
+        m.run('run')
+        return m
+
+    def key(self, state):
+        return next(iter(state['mirrored']))
+
+    def test_every_new_entry_attaches_a_stop_and_a_take_profit(self):
+        fake = FakeOKX(); _, state = run(fake, paper(**self.sig()))         # paper tp None (an old signal): default 3R
+        algo = next(b for q, b in fake.posts if q == '/api/v5/trade/order')['attachAlgoOrds'][0]
+        self.assertEqual((algo['slTriggerPx'], algo['tpTriggerPx']), ('68600', '74200'))
+        mir = state['mirrored'][self.key(state)]
+        self.assertEqual((mir['target'], mir['dist'], mir['init_stop'], mir['best']), (74200.0, 1400.0, 68600.0, 70000.0))
+        fake = FakeOKX(); run(fake, paper(**self.sig(tp=73000.0, dist=1400.0)))
+        self.assertEqual(next(b for q, b in fake.posts if q == '/api/v5/trade/order')['attachAlgoOrds'][0]['tpTriggerPx'], '73000')
+
+    def test_a_missing_take_profit_is_placed_again(self):
+        fake, state = self.opened()
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='s1', slTriggerPx='68600')]   # stop only (e.g. FIL / AVAX today)
+        m = self.later(fake, state, self.sig(tp=74000.0, dist=1400.0))
+        self.assertEqual(fake.posts, [('/api/v5/trade/order-algo', dict(instId='BTC-USDT-SWAP', tdMode='cross', side='sell', ordType='conditional', sz='3',
+                                                                          tpTriggerPx='74000', tpOrdPx='-1', tpTriggerPxType='last', posSide='long'))])
+        self.assertIn('restore_target', [a['action'] for a in m.actions])
+        # no paper target and nothing stored: entry + 3R of the paper stop distance
+        fake, state = self.opened()
+        state['mirrored'][self.key(state)].pop('target')
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='s1', slTriggerPx='68600')]
+        self.later(fake, state, self.sig())
+        self.assertEqual(fake.posts[0][1]['tpTriggerPx'], '74200')
+        # net mode: reduce-only
+        fake, state = self.opened(); fake.pos_mode = 'net_mode'
+        fake.positions = [dict(instId='BTC-USDT-SWAP', posSide='net', pos='3', mgnMode='cross')]
+        state['mirrored'][self.key(state)]['posSide'] = 'net'
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='net', algoId='s1', slTriggerPx='68600')]
+        self.later(fake, state, self.sig())
+        self.assertTrue(fake.posts[0][1]['reduceOnly']); self.assertNotIn('posSide', fake.posts[0][1])
+
+    def test_an_old_mirror_whose_stop_already_trailed_past_the_entry_waits_for_the_published_distance(self):
+        fake, state = self.opened()
+        mir = state['mirrored'][self.key(state)]
+        for k in ('target', 'dist', 'init_stop', 'best'):
+            mir.pop(k)                                                # a record from before 2026-11-21
+        mir['stop'] = 70500.0                                         # trailed above the entry by the old trail gene
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='s1', slTriggerPx='70500')]
+        m = self.later(fake, state, self.sig(stop=70500.0))
+        self.assertEqual(fake.posts, [])
+        self.assertIn('ensure_target', [a.get('step') for a in m.actions])
+        self.later(fake, state, self.sig(stop=70500.0, tp=74200.0, dist=1400.0), hours=5)   # the next signals carry tp / dist
+        self.assertEqual(fake.posts[0][1]['tpTriggerPx'], '74200')
+        self.assertEqual(mir['dist'], 1400.0)
+
+    def test_price_already_past_the_missing_take_profit_closes_at_market(self):
+        fake, state = self.opened()
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='s1', slTriggerPx='68600')]
+        fake.prices = {'BTC-USDT-SWAP': 74500.0}
+        self.later(fake, state, self.sig())
+        self.assertEqual(fake.posts[0][0], '/api/v5/trade/close-position'); self.assertTrue(fake.posts[0][1]['autoCxl'])
+        self.assertEqual(state['mirrored'][self.key(state)]['closed_reason'], 'take_profit')
+
+    def test_trailing_stop_from_closed_1h_candles_moves_only_in_favour(self):
+        fake, state = self.opened(tp=76000.0)
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1', slTriggerPx='68600', tpTriggerPx='76000')]
+        bar = lambda h, hi, lo, confirm='1': [str(NOW_MS + h * 3600_000), '70000', str(hi), str(lo), '70500', '1', '1', '1', confirm]
+        # < 1R (71,400) in profit: no trail yet
+        fake.candles = {'BTC-USDT-SWAP': [bar(1, 71300, 69900)]}
+        self.later(fake, state, self.sig(tp=76000.0), hours=2)
+        self.assertEqual(fake.posts, [])
+        # best 72,500 (≥ 1R): stop = 72,500 − 1,400 = 71,100; the unconfirmed bar (74,000) and a bar before the entry are ignored
+        fake.candles = {'BTC-USDT-SWAP': [bar(3, 74000, 71000, confirm='0'), bar(2, 72500, 70800), bar(1, 71300, 69900), bar(-1, 80000, 60000)]}
+        fake.prices = {'BTC-USDT-SWAP': 72000.0}
+        m = self.later(fake, state, self.sig(tp=76000.0), hours=3)
+        self.assertEqual(fake.posts, [('/api/v5/trade/amend-algos', {'instId': 'BTC-USDT-SWAP', 'algoId': 'a1', 'newSlTriggerPx': '71100'})])
+        mir = state['mirrored'][self.key(state)]
+        self.assertEqual((mir['stop'], mir['best'], mir['trailing']), (71100.0, 72500.0, True))
+        # lower candles later: the stop is never loosened
+        fake.posts.clear(); fake.candles = {'BTC-USDT-SWAP': [bar(4, 71500, 70900)]}
+        self.later(fake, state, self.sig(tp=76000.0), hours=5)
+        self.assertEqual(fake.posts, [])
+        # the paper's own trailed stop is used when it is tighter
+        fake.posts.clear(); fake.candles = {}
+        self.later(fake, state, self.sig(tp=76000.0, stop=71600.0, trailing=True), hours=6)
+        self.assertEqual(fake.posts[0][1]['newSlTriggerPx'], '71600')
+
+    def test_price_already_beyond_the_new_trailing_stop_closes_as_trailing_stop(self):
+        fake, state = self.opened(tp=76000.0)
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1', slTriggerPx='68600', tpTriggerPx='76000')]
+        fake.candles = {'BTC-USDT-SWAP': [[str(NOW_MS + 3600_000), '70000', '73000', '70000', '71000', '1', '1', '1', '1']]}
+        fake.prices = {'BTC-USDT-SWAP': 71400.0}                         # new stop 71,600 is above the price
+        m = self.later(fake, state, self.sig(tp=76000.0), hours=2)
+        self.assertEqual(fake.posts[0][0], '/api/v5/trade/close-position')
+        self.assertEqual(state['mirrored'][self.key(state)]['closed_reason'], 'trailing_stop')
+        self.assertEqual(next(a for a in m.actions if a['action'] == 'close')['reason'], 'trailing_stop')
+
+    def test_reverse_signal_close_from_the_paper_cancels_the_algos_and_records_the_reason(self):
+        fake, state = self.opened()
+        key = self.key(state)
+        reverse = {'BTC-USDT-SWAP': dict(long_btc(), side=-1, stop=71400.0, opened=NOW_MS + 3 * 3600_000, strategy='evolved')}
+        m = self.later(fake, state, reverse, exits={key: 'reverse_signal'})
+        close = fake.posts[0]
+        self.assertEqual(close[0], '/api/v5/trade/close-position'); self.assertTrue(close[1]['autoCxl'])
+        self.assertEqual(state['mirrored'][key]['closed_reason'], 'reverse_signal')
+        a = next(a for a in m.actions if a['action'] == 'close')
+        self.assertEqual((a['reason'], a['paper_reason']), ('reverse_signal', 'reverse_signal'))
+        # a paper close without a published reason stays paper_closed
+        fake, state = self.opened()
+        self.later(fake, state, {})
+        self.assertEqual(state['mirrored'][self.key(state)]['closed_reason'], 'paper_closed')
+
+    def test_exchange_closes_are_recorded_as_take_profit_stop_loss_or_trailing_stop(self):
+        for trailing, close_px, want in ((False, '74190', 'take_profit'), (False, '68610', 'stop_loss'), (True, '71090', 'trailing_stop')):
+            fake, state = self.opened()
+            mir = state['mirrored'][self.key(state)]
+            if trailing:
+                mir.update(stop=71100.0, trailing=True)
+            fake.positions = []
+            fake.history = [dict(instId='BTC-USDT-SWAP', posSide='long', realizedPnl='1', closeAvgPx=close_px, type='2', uTime=str(NOW_MS + 60_000))]
+            m = self.later(fake, state, self.sig())
+            self.assertEqual(mir['closed_reason'], want, close_px)
+            self.assertEqual(next(a for a in m.actions if a['action'] == 'closed_on_exchange')['reason'], want)
+
+    def test_no_time_exit_a_long_held_mirror_stays_open(self):
+        fake, state = self.opened()
+        fake.algos = [dict(instId='BTC-USDT-SWAP', posSide='long', algoId='a1', slTriggerPx='68600', tpTriggerPx='74200')]
+        self.later(fake, state, self.sig(), hours=24 * 40)
+        self.assertEqual(fake.posts, [])
+        self.assertEqual(state['mirrored'][self.key(state)]['status'], 'open')
 
 
 if __name__ == '__main__':
