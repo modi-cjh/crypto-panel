@@ -21,6 +21,12 @@ account['exit_rules_from'] = the last bar of the previous run (the last bar the 
 bar when unknown), set once. Bars up to it replay with the old exits (target only when the stored gene had one, trail
 gene, max_hold / MAX_HOLD_H time exit), so trades that already closed are never rewritten; later bars use the new exits
 for every position, including ones opened earlier (they get a take-profit and the trailing stop at the first new bar).
+Manual closes (MANUAL_CLOSES below, exit reason `manual_user`): a position the user closed by hand is closed in every
+replay at the given price, matched by coin AND entry time (execution.simulate_account `manual`). Like the other eras,
+account['manual_from'][key] = the last bar of the previous run (set once per close, when it first appears) so the bars
+already published replay unchanged: the close is booked at the open of the first bar at or after its time AND after that
+stamp (`closed` = its real time). From then on the coin takes new entries like any other and the position no longer
+counts for the same-side count / crowding.
 The OKX follow (tools/okx_demo_trader.py, demo and live) uses the
 same 5–10 % / 10 % / half-at-10 steps and 1–20× genes on cross margin, clamped to each coin's OKX max leverage (no new
 entry if the spec is missing).
@@ -43,6 +49,25 @@ HOUR = 3600_000
 EXIT_WINDOW = 24 * HOUR      # closes this recent are published with their reason, so the OKX follow can log why it closes
 # Caps (not a fixed leader size): published on the dashboard and used as leverage/risk ceilings.
 LEADER_RISK, LEADER_LEVERAGE = ACCOUNT_RULES['leader_risk'], ACCOUNT_RULES['leader_lever']
+# The user's manual closes, kept for every replay: (inst, opened ms) → (close time ms, close price). Only the position of
+# that coin opened at exactly that time is closed (reason `manual_user`, at that price as filled: taker fee, no slip), at
+# the open of the first 1H bar at or after the close time that the published history does not cover yet
+# (account['manual_from']); see execution.simulate_account. Add new entries; never edit or remove old ones.
+MANUAL_CLOSES = {
+    # 2026-11-20T22:19:27Z — closed by hand on OKX live (tools/ops_manual_close.py, reason manual_user) at these fills.
+    # The paper history up to 2026-11-21T07:00Z was already published with them open, so they are booked at the first
+    # bar after the previous run's last bar (account['manual_from']), at these prices; `closed` keeps 22:19:27Z.
+    ('NEAR-USDT-SWAP', 1794700800000): (1795213167000, 2.87),
+    ('ADA-USDT-SWAP', 1794700800000): (1795213167000, 0.1436),
+    ('LTC-USDT-SWAP', 1794700800000): (1795213167000, 40.59),
+    ('KAITO-USDT-SWAP', 1794816000000): (1795213167000, 0.1572),
+    ('ICP-USDT-SWAP', 1794931200000): (1795213167000, 2.048),
+    # never followed on live: closed at the close of the last completed OKX 1H candle when the user asked (public
+    # market/candles?instId=…&bar=1H&limit=3, fetched 2026-11-21T12:24:55Z): bar 2026-11-21T11:00Z (open 1795258800000,
+    # confirm 1), close time 12:00Z (1795262400000) → booked at the open of the 12:00Z bar (or the first unpublished bar).
+    ('H-USDT-SWAP', 1794384000000): (1795262400000, 0.01098),
+    ('DOGE-USDT-SWAP', 1794499200000): (1795262400000, 0.05372),
+}
 _CTX = dict(extra={})        # per update(): {slot index: {ts: equity of the other slots}} for boosted segments
 
 
@@ -355,9 +380,14 @@ def update(state, series, changes, price_off=None, prev_last=None):
     acc.setdefault('risk_cap_from', last_ts)          # the 5–10 % / 10 % / half-at-10 sizing starts with the first run that has it
     # the new exits start right after the bars the previous run already published (closed trades stay as they were)
     acc.setdefault('exit_rules_from', min(prev_last, last_ts) if prev_last is not None else last_ts)
+    # each manual close starts after the bars the previous run already published (set once per close, never moved)
+    mfrom = acc.setdefault('manual_from', {})
+    for inst, opened in MANUAL_CLOSES:
+        mfrom.setdefault(f'{inst}|{int(opened)}', min(prev_last, last_ts) if prev_last is not None else last_ts)
+    manual = {(inst, int(opened)): (at, px, idx(mfrom[f'{inst}|{int(opened)}'])) for (inst, opened), (at, px) in MANUAL_CLOSES.items()}
     res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked,
                            side_cap_from=idx(acc['side_cap_from']), risk_from=idx(acc['risk_rules_from']),
-                           risk_cap_from=idx(acc['risk_cap_from']), exit_from=idx(acc['exit_rules_from']))
+                           risk_cap_from=idx(acc['risk_cap_from']), exit_from=idx(acc['exit_rules_from']), manual=manual)
     by = {g['id']: g for g in acc['segs']}
     rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     who = lambda sid: by[sid]['champion']
@@ -421,5 +451,6 @@ def update(state, series, changes, price_off=None, prev_last=None):
                 leader=_leader_view(leader, nodes) if leader else None,
                 members=sorted(members, key=lambda m: m['rank']), segments=(seats + (legacy.get('segments') or []))[:30],
                 # recent closes and why ({inst|opened: reason}); run.py moves this into signals.json for the OKX follow
-                exits={f"{t['inst']}|{int(t['opened'])}": t['reason'] for t in res['trades'] if t['closed'] >= last_ts - EXIT_WINDOW})
+                # (a manual close counts from the bar it was booked on, its `closed` being the real, possibly older, time)
+                exits={f"{t['inst']}|{int(t['opened'])}": t['reason'] for t in res['trades'] if t.get('booked', t['closed']) >= last_ts - EXIT_WINDOW})
     return view, signals

@@ -858,7 +858,7 @@ def position_risk(base, inst, same_side_open=0, rules=None):
 
 
 def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None, side_cap_from=None,
-                     risk_from=None, risk_cap_from=None, exit_from=None):
+                     risk_from=None, risk_cap_from=None, exit_from=None, manual=None):
     """ONE shared-equity account traded by several strategies at once, with cross (全仓) liquidation: the paper account of the champion team.
 
     segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
@@ -908,6 +908,15 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
       extremes, and at the close before time exits (same-bar order: see `gap_exit`); a gap past bankruptcy floors cash
       at 0 and records the difference as an insurance adjustment;
     - funding is deducted from shared cash (notional × rate × side) and can itself trigger a cross liquidation;
+    - manual closes (reason `manual_user`; paper.MANUAL_CLOSES): `manual` = {(inst, opened ts): (at ts, price, from_i)}.
+      Only the open position of exactly that coin AND that entry time is closed, at `price` (the real fill: taker fee,
+      no extra slip), at the OPEN of the first bar k with ts[k] >= at and k > from_i, before that bar's funding and
+      fills. from_i (None = no limit) is an era stamp like exit_from: the last bar already published when the close was
+      added (paper account['manual_from']), so the replay of bars that were already published never changes; a close
+      whose time lies inside them is booked at the first new bar. The trade's `closed` is `at` (the real time), `booked`
+      the bar it was booked on. It is booked like any other close (cash, pnl, daily halt, curve), so from bar k on the
+      coin may take a new entry like any coin and the position no longer counts for the same-side count / crowding /
+      margin. Nothing happens when that position is not open at bar k (it already left by its own exit);
     Returns dict(equity, curve, trades, positions, pending, pnl={seg id: realised + floating}, halted, metrics,
     liquidations = number of cross liquidations of the whole account, insurance = total insurance-fund compensation,
     adjustments = [dict(ts, kind='insurance', amount)]). Trades and pnl keep the full loss, so
@@ -938,16 +947,23 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     day, day_start, others_real, snap, halted = None, equity, 0.0, {}, False
     cap_side, halt = rules['same_side_cap'], rules['daily_halt']
 
-    def close(inst, px, why, i, slip=True):
+    def close(inst, px, why, i, slip=True, closed=None, **extra):
         nonlocal cash, others_real
         p = pos.pop(inst)
         fill, gain, net = close_proceeds(p, px, slip=slip)
         cash += gain
         pnl[p['seg']] += net
         others_real += gain - snap.pop(inst, 0.0)              # today's part: the result minus what it was worth at the day's start
-        trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=fill, opened=p['opened'], closed=ts0[i], pnl=net,
-                           funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why, seg=p['seg'], boost=p['boost'],
-                           liq=p.get('liq')))
+        trades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=fill, opened=p['opened'], closed=ts0[i] if closed is None else closed,
+                           pnl=net, funding=round(p['funding'], 4), qty=p['qty'], lever=p['lever'], reason=why, seg=p['seg'], boost=p['boost'],
+                           liq=p.get('liq'), **extra))
+
+    manual_at = {}      # {bar index k: [(inst, opened, at, price)]}: the bar whose open books each manual close
+    for (m_inst, m_opened), (m_at, m_px, m_from) in (manual or {}).items():
+        lo = max(start, m_from + 1) if m_from is not None else start
+        k = next((j for j in range(lo, end) if ts0[j] >= m_at), None)
+        if k is not None:
+            manual_at.setdefault(k, []).append((m_inst, int(m_opened), int(m_at), float(m_px)))
 
     def liq_now(prices, i):
         """Full-account cross liquidation at `prices` (fees, no extra slip)."""
@@ -971,6 +987,10 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             for p in pos.values():
                 if not p['target']:
                     p['target'] = p['entry'] + p['side'] * target_rr(by_id[p['seg']]['genes']) * p['dist']
+        # manual closes (the user's, reason manual_user): only that exact position, at its real price, before this bar
+        for m_inst, m_opened, m_at, m_px in manual_at.get(i, ()):
+            if m_inst in pos and pos[m_inst]['opened'] == m_opened:
+                close(m_inst, m_px, 'manual_user', i, slip=False, closed=m_at, booked=ts0[i])
         # 0) funding (shared cash; may itself trigger cross liquidation)
         for inst, p in pos.items():
             f = series[inst].funding

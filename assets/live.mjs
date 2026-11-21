@@ -140,7 +140,7 @@ const OUTCOME = { stop: '交易所止损触发', target: '交易所止盈触发'
 const REASONS = { paper_entry_too_old: '信号太旧，价格已离开入场区间', stop_too_close_or_crossed: '价格已接近或越过止损', target_already_reached: '价格已到止盈',
   size_below_minimum: '仓位小于最小下单量', insufficient_margin: '保证金不足', exchange_position_exists_not_ours: '交易所已有人工仓位', no_price: '取不到价格',
   no_instrument_spec: '取不到合约信息', no_leverage_spec: '取不到杠杆上限', same_side_risk: '达到同向风险上限', same_side_count: '同方向持仓数已达上限',
-  existing_risk_unknown: '现有仓位风险暂时无法确认', stop_before_liquidation: '止损前会触及强平线', paper_closed: '策略信号平仓', reverse_signal: '反向信号平仓', trailing_stop: '移动止损平仓', take_profit: '止盈平仓', stop_loss: '止损平仓', daily_halt: '日亏停手平仓',
+  existing_risk_unknown: '现有仓位风险暂时无法确认', stop_before_liquidation: '止损前会触及强平线', paper_closed: '策略信号平仓', reverse_signal: '反向信号平仓', trailing_stop: '移动止损平仓', manual_user: '手动平仓', take_profit: '止盈平仓', stop_loss: '止损平仓', daily_halt: '日亏停手平仓',
   manual_flatten: '手动全部平仓', stop_missing_price_beyond_stop: '止损单缺失且价格已越过止损', signals_stale: '信号过期' };
 const titleOf = a => a.action === 'closed_on_exchange' && OUTCOME[a.outcome] ? OUTCOME[a.outcome] : ACTIONS[a.action] || a.action;
 const toneOf = a => (a.action === 'close' || a.action === 'closed_on_exchange') && finite(num(a.pnl)) ? (num(a.pnl) >= 0 ? 'close' : 'stop')

@@ -26,7 +26,7 @@ Each run, against <data>/combined/state.json:
     bar, this program once per run (hourly at :50 UTC on the live server), so the exchange stop can lag by up to an hour;
   - when the paper position is gone (paper stop / target / reverse signal / trailing stop), the mirrored position is
     closed with close-position + autoCxl (its resting algos are cancelled); the paper's reason, published in
-    signals.json 'exits', is kept as closed_reason (reverse_signal, trailing_stop, else paper_closed). Reverse signals are
+    signals.json 'exits', is kept as closed_reason (reverse_signal, trailing_stop, manual_user, else paper_closed). Reverse signals are
     seen when signals.json is republished (every 4 h), so this close can come up to ~4 h after the paper close;
   - if the exchange stop already closed a mirrored position, it is marked done and never reopened.
 Safety: a new mirror starts paused (check with `dry-run`, then `resume`); positions not opened by this script are never touched; in demo mode
@@ -94,7 +94,7 @@ MIN_STOP_DIST = .002              # skip entries whose stop is already too close
 AMEND_TOLERANCE = .003            # amend the exchange stop when the paper stop moved more than 0.3% (0.1% logged a move every run)
 UTC7 = timezone(timedelta(hours=7))
 # Paper close reason (signals.json 'exits') → closed_reason of the mirrored position; anything else is paper_closed.
-PAPER_EXIT_REASONS = {'reverse_signal': 'reverse_signal', 'trailing_stop': 'trailing_stop'}
+PAPER_EXIT_REASONS = {'reverse_signal': 'reverse_signal', 'trailing_stop': 'trailing_stop', 'manual_user': 'manual_user'}   # manual_user: paper.MANUAL_CLOSES
 # Which resting exchange order closed a mirror (outcome()) → closed_reason.
 EXCHANGE_EXIT_REASONS = {'target': 'take_profit', 'stop': 'stop_loss', 'liquidation': 'liquidation'}
 TAG = {'mean_reversion': 'mr', 'breakout_long': 'bl', 'breakout_daily': 'bd', 'evolved': 'ev'}

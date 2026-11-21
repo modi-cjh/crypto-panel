@@ -655,6 +655,13 @@
 - 不变：风险 5–10%、`CROWD_STEPS`、杠杆 ≤ 20×、同向 20 仓、全仓、日亏 25%、主流币 ×2 封顶 10%。
 - 测试：`tests/test_evolve.py` `ExitRuleTests`（target_rr 范围与映射、每仓有止盈、own / team / 离任成员 / 旧段无反向、反向信号不受方向与波动过滤、移动止损 1R 激活与单向、`trailing_stop` 记录、`exit_rules_from` 前已平仓交易不变、切换时补止盈、`exit_rules_from` 只设一次）；`tests/test_okx_demo_trader.py` `ExitRuleMirrorTests`（开仓带止盈、补挂止盈、已过止盈平仓、K 线移动止损只上移、越过新止损平仓、反向信号平仓 autoCxl 与 closed_reason、交易所触发原因、无超时）。
 
+### 纸面账户：用户手动平仓 `manual_user`（7 个空单，2026-11-21）
+- 做了什么：`tools/evolve/paper.py` 新增 `MANUAL_CLOSES = {(币种, 开仓时间 ms): (平仓时间 ms, 平仓价)}`，`execution.simulate_account(manual=...)` 在每次重放中只平掉 币种 + 开仓时间 完全一致的那一仓，原因 `manual_user`，按给定价格成交（收 taker 手续费、不加滑点），和其他平仓一样记入现金 / 盈亏 / 日亏 / 曲线 / signals.json `exits`。平仓后该币可以照常开新仓，不再计入同向 20 仓和拥挤减半；仓位已被自身出场平掉时不做任何事。
+- 已发布的历史不重算：和 `exit_rules_from` 等一样，`account['manual_from'][inst|opened]` = 上一轮已发布的最后一根（每条只设一次），平仓在“开盘时间不早于平仓时间、且晚于该时间点”的第一根 K 线开盘入账；交易的 `closed` 记真实时间，`booked` 记入账的 K 线，`exits` 的 24 小时窗口按 `booked` 算。为什么：若在 2026-11-20 22:00 那根就平，后面已发布的 K 线会被改写（腾出的保证金和仓位让 NEAR / BTC 提前开仓、ETH 那笔不再成交），实盘会因此平掉 ETH。
+- 本次 7 条：NEAR 2.87、ADA 0.1436、LTC 40.59、KAITO 0.1572、ICP 2.048（实盘 2026-11-20T22:19:27Z 手动平仓价）；H 0.01098、DOGE 0.05372（实盘未跟，OKX 公共 1H K 线 2026-11-21T11:00Z 那根的收盘价，收盘时间 12:00Z）。ETH 和其他仓位不变。
+- 跟单（`okx_demo_trader.py`）：`PAPER_EXIT_REASONS` 加 `manual_user`，纸面手动平仓时跟单仓位的 `closed_reason` 记 `manual_user`；看板原因文字“手动平仓”（`evolve.mjs` / `live.mjs` / `okx.mjs`）。
+- 测试：`tests/test_evolve.py` `ManualCloseTests`（只平精确那一仓、价格与 pnl、已发布 K 线不变、超出数据不动、已被止损的不动、同币重新开仓、同向计数与拥挤不再计入、`manual_from` 只设一次、`exits`、配置内容）；`tests/test_okx_demo_trader.py`（`manual_user` 原因、同币新仓照常跟、不计入同向 / 拥挤）。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |
