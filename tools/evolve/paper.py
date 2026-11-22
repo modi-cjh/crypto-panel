@@ -47,7 +47,33 @@ produces on live bars:
 Before this, the account was five separate slots of 1/5 each; that history (curve, trades, seat changes) is kept as
 paper['legacy'] and the shared account starts from the slots' total equity. The slot code below `_legacy_update` only
 serves that one-time conversion.
+
+NEXT-HOUR RULE (2026-11-22, for the hourly server signals). The GitHub paper run (every 4 h, usually ~1 h late) stamps
+every change it makes on the EFFECTIVE BAR C = floor(now, 1 h) + 1 h (effective_bar(); `now` = the run's wall clock in
+ms UTC, read just before price_check / update; C is a bar OPEN time). C is always later than the run's last bar, so
+the change is PENDING when stamped (recorded in state.json only as its timestamp; no separate flag that could go stale)
+and takes effect on whichever later replay first has bar C:
+- seat in / out (seg from_ts / wind_ts = C) and leader title (boosts [C, …] / closing it at C): the new seat's first
+  signal, and the leader's priority, is on the CLOSE of bar C; the old seat's last signal is on the close of bar C − 1 h;
+- price_off ranges (data.price_check, stamps are FILL bars): [C + 1 h, …] — fills from the open of bar C + 1 h on;
+- manual closes (account['manual_from'][key] = C): booked at the open of the first bar after C at or after the
+  close time, i.e. no earlier than the open of bar C + 1 h;
+- cutover keys set for the first time (setdefault; side_cap_from, risk_rules_from, risk_cap_from, exit_rules_from,
+  trail_risk_from and every future key, via cutover()): C — bar C replays under the old rule, bar C + 1 h on under
+  the new one.
+So nothing the replay derives from bars with open time <= C − 1 h changes, including the entries it queues for the
+open of bar C: a server that replays at C:01:30 (last bar C − 1 h) gets the same signals from the old or the new
+state.json, and from C + 1 h:01:30 on (last bar >= C) it gets what the next GitHub run will replay — as long as the new
+state.json is readable by then (the run commits within minutes of `now`; raw CDN cache <= ~5 min).
+account['next_hour_from'] = C of the first run with this rule (set once): a record that the state follows it (a
+replay-only caller, replay=True, refuses a state without it). Stamps >= it map to the first bar at or after them
+(stamps are always on the hour, so this only matters if the timeline ever skipped that hour); older stamps keep the
+old mapping (last bar at or before), so published history replays byte-identically. A stamp after the last bar maps
+to a virtual index >= n (n = the next, not yet existing bar), i.e. not in effect. Without `now` (tests, analysis
+tools) update() keeps the old stamps (this run's last bar / the previous run's last bar).
 """
+import copy
+from bisect import bisect_left
 from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, same_side_full, clamp_risk, target_rr
 from execution import entry_risk_factor, same_bar_groups
 from evolution import TEAM_SIZE, entry_gate
@@ -76,6 +102,8 @@ MANUAL_CLOSES = {
     ('H-USDT-SWAP', 1794384000000): (1795262400000, 0.01098),
     ('DOGE-USDT-SWAP', 1794499200000): (1795262400000, 0.05372),
 }
+# Account keys that switch a rule on from a bar (eras); set once with cutover() and never moved. Add new keys here.
+CUTOVER_KEYS = ('side_cap_from', 'risk_rules_from', 'risk_cap_from', 'exit_rules_from', 'trail_risk_from')
 _CTX = dict(extra={})        # per update(): {slot index: {ts: equity of the other slots}} for boosted segments
 
 
@@ -113,6 +141,17 @@ def seat_chains(segs):
             chain[g['id']], tenure[g['id']] = g['id'], g['from_ts']
         last[g['champion']] = g
     return chain, tenure
+
+
+class StateDrift(ValueError):
+    """update(replay=True): the state would need a change (seat / leader / cutover) that only the GitHub run may stamp."""
+
+
+def effective_bar(now_ms):
+    """The effective bar C of a change made by a GitHub paper run at wall clock now_ms (ms UTC): the OPEN time of the bar
+    after the current hour, floor(now, 1 h) + 1 h. now = 16:57:12 → 17:00; 17:00:00.000 → 18:00; 16:59:59.999 → 17:00.
+    See NEXT-HOUR RULE in the module docstring for what "effective" means for each kind of change."""
+    return (int(now_ms) // HOUR + 1) * HOUR
 
 
 def _index(series, ts):
@@ -335,60 +374,132 @@ def _convert(state, series, last_ts):
     return state['paper']
 
 
-def update(state, series, changes, price_off=None, prev_last=None):
+def scheduled(acc, price_off, manual_stamps, last_ts):
+    """The changes still pending at last_ts (stamped on a later bar), oldest first: what a replay that has those bars
+    will apply. Derived from the stamps only, so it never goes stale."""
+    out = []
+    for g in acc['segs']:
+        if g['from_ts'] > last_ts:
+            out.append(dict(kind='seat', ts=g['from_ts'], champion=g['champion'], slot=g['slot'], reason=g['reason']))
+        if g['wind_ts'] is not None and g['wind_ts'] > last_ts and g['wind_ts'] != g['from_ts']:
+            out.append(dict(kind='wind', ts=g['wind_ts'], champion=g['champion'], slot=g['slot']))
+        for a, b in g['boosts']:
+            if a > last_ts and a != b:
+                out.append(dict(kind='leader', ts=a, champion=g['champion'], slot=g['slot']))
+            if b is not None and b > last_ts and a != b:
+                out.append(dict(kind='leader_end', ts=b, champion=g['champion'], slot=g['slot']))
+    for inst, rs in sorted((price_off or {}).items()):
+        for a, b in rs:
+            if a > last_ts + HOUR:
+                out.append(dict(kind='price_off', ts=a, inst=inst))
+            if b is not None and b > last_ts + HOUR and a != b:
+                out.append(dict(kind='price_off_end', ts=b, inst=inst))
+    for key in CUTOVER_KEYS + ('next_hour_from',):
+        if acc.get(key) is not None and acc[key] > last_ts:
+            out.append(dict(kind='cutover', ts=acc[key], key=key))
+    for key, ts in sorted((manual_stamps or {}).items()):
+        if ts > last_ts:
+            out.append(dict(kind='manual_close', ts=ts, key=key))
+    return sorted(out, key=lambda x: (x['ts'], x['kind']))
+
+
+def update(state, series, changes, price_off=None, prev_last=None, now=None, replay=False):
     """price_off: data.price_check ranges {inst: [[from_ts, to_ts or None]]} — coins that take no new entry in those ranges.
-    prev_last: the last bar of the previous run (its published curve), used once to stamp account['exit_rules_from'].
+    prev_last: the last bar of the previous run (its published curve), used once to stamp account['exit_rules_from'] (only
+    without `now`).
+    now: the GitHub run's wall clock (ms): every change is stamped on effective_bar(now) (NEXT-HOUR RULE). None = the old
+    stamps (this run's last bar), for tests and analysis tools.
+    replay=True: replay only (the hourly server signals): nothing is stamped and the state is never changed; raises
+    StateDrift when the state predates the next-hour rule or its seats / leader disagree with state['team'] /
+    state['leader'] (then only a GitHub run may fix it). A cutover key or manual close the state does not have yet is
+    pending (old rule on every bar / not booked) — exactly what the published state means until GitHub stamps it.
     Apply this run's seat and leader changes, replay the shared account, and return (dashboard view, mirror signals)."""
     nodes, s = state['nodes'], next(iter(series.values()))
     last_ts = s.ts[-1]
     paper = state.get('paper') or {}
     if 'account' not in paper:
+        if replay:
+            raise StateDrift('no shared paper account in state')
         paper = _convert(state, series, last_ts)
     acc, team = paper['account'], state.get('team', [])
+    if replay and acc.get('next_hour_from') is None:
+        raise StateDrift('state predates the next-hour rule (no account.next_hour_from)')
+    # the bar every change of this run is stamped on (NEXT-HOUR RULE): never this run's last bar or earlier
+    eff = max(effective_bar(now), last_ts + HOUR) if now is not None else last_ts
+    if now is not None and not replay:
+        acc.setdefault('next_hour_from', eff)
+    # old-style stamp of the cutover keys (without `now`): right after the bars the previous run already published
+    published = min(prev_last, last_ts) if prev_last is not None else last_ts
+
+    def cutover(key, legacy):
+        """An era key: set once (never moved), on the effective bar; replay: a missing key is pending (None here)."""
+        if replay:
+            return acc.get(key)
+        return acc.setdefault(key, eff if now is not None else legacy)
     # Only members who pass the three-part entry gate may keep or take a live paper seat / OKX follow.
     # Failing members are wound down (open positions run to their own exits). If nobody passes, the
     # account holds cash — it never falls back to an ungated strategy. Existing open size is not resized.
     allowed = lambda nid: bool(nid) and nid in nodes and entry_gate(nodes[nid], state=state)['passed']
     leader = state.get('leader') if allowed(state.get('leader')) else None
-    seated = lambda slot_i: next((g for g in acc['segs'] if g['slot'] == slot_i and g['wind_ts'] is None), None)
 
-    def wind(g):
-        g['wind_ts'] = last_ts
-        if g['boosts'] and g['boosts'][-1][1] is None:
-            g['boosts'][-1][1] = last_ts
+    def reconcile(acc):
+        """Apply this run's seat / leader changes to acc, every stamp on `eff` (NEXT-HOUR RULE)."""
+        seated = lambda slot_i: next((g for g in acc['segs'] if g['slot'] == slot_i and g['wind_ts'] is None), None)
 
-    def seat(slot_i, nid, reason):
-        cur = seated(slot_i)
-        if cur:
-            wind(cur)
-        acc['next'] += 1
-        acc['segs'].append(dict(id=f"a{acc['next']}", champion=nid, slot=slot_i, genes=fix(nodes[nid]['genes']), species=nodes[nid]['species'],
-                                from_ts=last_ts, wind_ts=None, boosts=[], reason=reason))
+        def wind(g):
+            g['wind_ts'] = max(eff, g['from_ts'])
+            if g['boosts'] and g['boosts'][-1][1] is None:
+                g['boosts'][-1][1] = max(eff, g['boosts'][-1][0])
 
-    for slot_i, old, new, reason in changes:
-        if allowed(new):
-            seat(slot_i, new, reason)
-        elif seated(slot_i):
-            wind(seated(slot_i))
-    for slot_i, m in enumerate(team):                    # a seated member without a running segment (first run, conversion) starts one
-        cur = seated(slot_i)
-        if not allowed(m['id']):
+        def seat(slot_i, nid, reason):
+            cur = seated(slot_i)
             if cur:
                 wind(cur)
-            continue
-        if not cur or cur['champion'] != m['id']:
-            seat(slot_i, m['id'], 'carry')
-    for g in acc['segs']:                                # a seat that no longer exists, or no longer passes the entry gate
-        if g['wind_ts'] is None and (g['slot'] >= len(team) or team[g['slot']]['id'] != g['champion'] or not allowed(g['champion'])):
-            wind(g)
-    for g in acc['segs']:                                # the leader title — only an entry-gated member may hold the bigger size
-        if g['wind_ts'] is None:
-            is_leader = bool(g['boosts']) and g['boosts'][-1][1] is None
-            if g['champion'] == leader and not is_leader:
-                g['boosts'].append([last_ts, None])
-            elif g['champion'] != leader and is_leader:
-                g['boosts'][-1][1] = last_ts
-    idx = lambda ts: _index(series, ts)
+            acc['next'] += 1
+            acc['segs'].append(dict(id=f"a{acc['next']}", champion=nid, slot=slot_i, genes=fix(nodes[nid]['genes']), species=nodes[nid]['species'],
+                                    from_ts=eff, wind_ts=None, boosts=[], reason=reason))
+
+        for slot_i, old, new, reason in changes:
+            if allowed(new):
+                seat(slot_i, new, reason)
+            elif seated(slot_i):
+                wind(seated(slot_i))
+        for slot_i, m in enumerate(team):                    # a seated member without a running segment (first run, conversion) starts one
+            cur = seated(slot_i)
+            if not allowed(m['id']):
+                if cur:
+                    wind(cur)
+                continue
+            if not cur or cur['champion'] != m['id']:
+                seat(slot_i, m['id'], 'carry')
+        for g in acc['segs']:                                # a seat that no longer exists, or no longer passes the entry gate
+            if g['wind_ts'] is None and (g['slot'] >= len(team) or team[g['slot']]['id'] != g['champion'] or not allowed(g['champion'])):
+                wind(g)
+        for g in acc['segs']:                                # the leader title — only an entry-gated member may hold the bigger size
+            if g['wind_ts'] is None:
+                is_leader = bool(g['boosts']) and g['boosts'][-1][1] is None
+                if g['champion'] == leader and not is_leader:
+                    g['boosts'].append([max(eff, g['from_ts']), None])
+                elif g['champion'] != leader and is_leader:
+                    g['boosts'][-1][1] = max(eff, g['boosts'][-1][0])
+
+    if replay:                                           # the server never stamps: the published state must already agree
+        probe = copy.deepcopy(acc)
+        reconcile(probe)
+        if probe != acc:
+            raise StateDrift('seats / leader in state.json disagree with its team / leader')
+    else:
+        reconcile(acc)
+    n, nh = s.n, acc.get('next_hour_from')
+
+    def idx(ts):
+        """Bar index of a stamp. After the last bar: a virtual index >= n (n = the next bar), i.e. not in effect yet.
+        Stamps >= next_hour_from: the first bar at or after them; older stamps: the last bar at or before (as always)."""
+        if ts > last_ts:
+            return n - 1 + -(-(ts - last_ts) // HOUR)
+        if nh is not None and ts >= nh:
+            return bisect_left(s.ts, ts)
+        return _index(series, ts)
     # genes are re-clamped to the current bands for new entries; old_risk = the risk gene as stored when the seat was
     # taken (fix() under the band of that time), used for fills on or before risk_rules_from / risk_cap_from so the
     # replay keeps their size (each era clamps it into its own band).
@@ -400,44 +511,52 @@ def update(state, series, changes, price_off=None, prev_last=None):
                  # the exit genes as stored (old fix(): target_rr 0 = no target), for bars on or before exit_rules_from
                  old_exit={k: g['genes'][k] for k in ('target_rr', 'trail', 'max_hold', 'tf') if g['genes'].get(k) is not None}) for g in acc['segs']]
     blocked = {inst: [(idx(a), idx(b) if b is not None else None) for a, b in rs] for inst, rs in (price_off or {}).items()}
-    off_now = {inst for inst, rs in (price_off or {}).items() if rs and rs[-1][1] is None}
-    acc.setdefault('side_cap_from', last_ts)          # the same-side count starts with the first run that has it
-    acc.setdefault('risk_rules_from', last_ts)        # the 5–20 % / 20 % / half-at-10 sizing (PR #107) started with the first run that had it
-    acc.setdefault('risk_cap_from', last_ts)          # the 5–10 % / 10 % / half-at-10 sizing starts with the first run that has it
-    # the new exits start right after the bars the previous run already published (closed trades stay as they were)
-    acc.setdefault('exit_rules_from', min(prev_last, last_ts) if prev_last is not None else last_ts)
-    # the trail / risk rules (TRAIL & RISK RULES) likewise start right after the bars already published (set once)
-    acc.setdefault('trail_risk_from', min(prev_last, last_ts) if prev_last is not None else last_ts)
-    # each manual close starts after the bars the previous run already published (set once per close, never moved)
-    mfrom = acc.setdefault('manual_from', {})
-    for inst, opened in MANUAL_CLOSES:
-        mfrom.setdefault(f'{inst}|{int(opened)}', min(prev_last, last_ts) if prev_last is not None else last_ts)
-    manual = {(inst, int(opened)): (at, px, idx(mfrom[f'{inst}|{int(opened)}'])) for (inst, opened), (at, px) in MANUAL_CLOSES.items()}
+    off_now = {inst for inst, rs in (price_off or {}).items() if rs and rs[-1][1] is None}      # shown on the dashboard
+    # coins blocked for the next fill (the open of bar n): the same test the next replay applies at that bar
+    blocked_next = {inst for inst, rs in blocked.items() if any(a <= n and (b is None or n < b) for a, b in rs)}
+    # the era keys (CUTOVER_KEYS, each set once). Without `now` the stamps of their time: this run's last bar, or for the
+    # exits / trail & risk rules the previous run's last bar (right after the bars already published; closed trades stay)
+    cut = {k: cutover(k, published if k in ('exit_rules_from', 'trail_risk_from') else last_ts) for k in CUTOVER_KEYS}
+    # a key that is still pending (replay of a state GitHub has not stamped yet) = the old rule on every bar so far
+    ci = {k: idx(v) if v is not None else n for k, v in cut.items()}
+    # each manual close starts after the effective bar (old: after the bars already published); set once per close
+    mfrom = acc.get('manual_from', {}) if replay else acc.setdefault('manual_from', {})
+    if not replay:
+        for inst, opened in MANUAL_CLOSES:
+            mfrom.setdefault(f'{inst}|{int(opened)}', eff if now is not None else published)
+    manual = {(inst, int(opened)): (at, px, idx(mfrom[f'{inst}|{int(opened)}'])) for (inst, opened), (at, px) in MANUAL_CLOSES.items()
+              if f'{inst}|{int(opened)}' in mfrom}       # replay: a close GitHub has not stamped yet is pending
     res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked,
-                           side_cap_from=idx(acc['side_cap_from']), risk_from=idx(acc['risk_rules_from']),
-                           risk_cap_from=idx(acc['risk_cap_from']), exit_from=idx(acc['exit_rules_from']), manual=manual,
-                           trail_risk_from=idx(acc['trail_risk_from']))
+                           side_cap_from=ci['side_cap_from'], risk_from=ci['risk_rules_from'],
+                           risk_cap_from=ci['risk_cap_from'], exit_from=ci['exit_rules_from'], manual=manual,
+                           trail_risk_from=ci['trail_risk_from'])
     by = {g['id']: g for g in acc['segs']}
     rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     who = lambda sid: by[sid]['champion']
     tag = lambda x: dict({k: v for k, v in x.items() if k != 'seg'}, champion=who(x['seg']), slot=by[x['seg']]['slot'])
-    positions = [dict(tag(p), **({'winding': True} if by[p['seg']]['wind_ts'] is not None else {})) for p in res['positions']]
+    # a seat whose wind stamp is still pending (> last bar) keeps trading until that bar: not winding yet
+    wound = lambda g: g['wind_ts'] is not None and g['wind_ts'] <= last_ts
+    positions = [dict(tag(p), **({'winding': True} if wound(by[p['seg']]) else {})) for p in res['positions']]
     trades = [tag(t) for t in res['trades']]
     # Signals waiting for the next open, as far as the account will take them: one per coin, the leader's first, and no more
     # than a strategy's free position slots (otherwise the mirror would open entries the account itself never fills).
-    held = {g['id']: sum(1 for p in res['positions'] if p['seg'] == g['id']) for g in acc['segs']}
-    queue, seen = [], {p['inst'] for p in res['positions']}
-    sides = {d: sum(1 for p in res['positions'] if p['side'] == d) for d in (1, -1)}
+    # A manual close booked at the open of that next bar (before its fills) no longer counts, as in the next replay.
+    nxt = last_ts + HOUR
+    books_next = {(inst, o) for (inst, o), (at, px, m_i) in manual.items() if nxt >= at and n > m_i}
+    left = [p for p in res['positions'] if (p['inst'], int(p['opened'])) not in books_next]
+    held = {g['id']: sum(1 for p in left if p['seg'] == g['id']) for g in acc['segs']}
+    queue, seen = [], {p['inst'] for p in left}
+    sides = {d: sum(1 for p in left if p['side'] == d) for d in (1, -1)}
     for sid, inst, d, dist, b in sorted(res['pending'], key=lambda x: not x[4]):
-        if inst in seen or inst in off_now or held[sid] >= MAX_POSITIONS or res['halted'] or same_side_full(sides[d], ACCOUNT_RULES['max_same_side']):
+        if inst in seen or inst in blocked_next or held[sid] >= MAX_POSITIONS or res['halted'] or same_side_full(sides[d], ACCOUNT_RULES['max_same_side']):
             continue
         seen.add(inst); held[sid] += 1; sides[d] += 1; queue.append((sid, inst, d, dist, b))
     pending = [dict(inst=inst, side=d, champion=who(sid)) for sid, inst, d, dist, b in queue]
     # risk factor of the queued entries (fill at the next open), the same rule the next replay applies to them
     seg_by = {x['id']: x for x in segs}
-    groups = same_bar_groups(sorted(res['pending'], key=lambda x: not x[4]), {p['inst'] for p in res['positions']},
-                             {g['id']: sum(1 for p in res['positions'] if p['seg'] == g['id']) for g in acc['segs']},
-                             eligible=lambda k: k not in off_now)
+    groups = same_bar_groups(sorted(res['pending'], key=lambda x: not x[4]), {p['inst'] for p in left},
+                             {g['id']: sum(1 for p in left if p['seg'] == g['id']) for g in acc['segs']},
+                             eligible=lambda k: k not in blocked_next)
 
     def queue_factor(sid, d):
         fb = res.get('first_fill', {}).get(seg_by[sid]['chain'])
@@ -452,7 +571,9 @@ def update(state, series, changes, price_off=None, prev_last=None):
                                 pnl=round(pnl, 2), ret=round(pnl / acc['start_equity'] * 100, 3),
                                 positions=sum(1 for p in res['positions'] if p['seg'] == g['id']), trades=sum(1 for t in res['trades'] if t['seg'] == g['id']),
                                 boost=bool(g['boosts']) and g['boosts'][-1][1] is None,
-                                entry_gate=entry_gate(nodes[g['champion']], state=state), trading=g['wind_ts'] is None and allowed(g['champion'])))
+                                entry_gate=entry_gate(nodes[g['champion']], state=state),
+                                trading=g['wind_ts'] is None and g['from_ts'] <= last_ts and allowed(g['champion']),
+                                **({'effective_from': g['from_ts']} if g['from_ts'] > last_ts else {})))   # seated from a pending bar
     # Mirror signals: one per coin (the account holds one position per coin). 'rank' orders the mirror's entries.
     signals = {}
     for p in res['positions']:
@@ -460,7 +581,7 @@ def update(state, series, changes, price_off=None, prev_last=None):
                                   opened=p['opened'], strategy='evolved',
                                   champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1,
                                   risk_factor=round(p.get('risk_factor', 1.0), 6), seat_from=seg_by[p['seg']]['tenure_ts'],
-                                  winding=by[p['seg']]['wind_ts'] is not None,
+                                  winding=wound(by[p['seg']]),
                                   **_size(by[p['seg']]['genes'], leader=p['boost']))   # the base risk: the mirror applies the majors / crowding steps itself
     for sid, inst, d, dist, b in queue:
         g = by[sid]
@@ -478,8 +599,8 @@ def update(state, series, changes, price_off=None, prev_last=None):
                 # account_start + Σ members' pnl (incl. wound-down seats) + insurance = equity
                 liquidations=res.get('liquidations', 0), insurance=round(res.get('insurance', 0.0), 2),
                 adjustments=[dict(a, amount=round(a['amount'], 2)) for a in res.get('adjustments') or []][-20:],
-                rules=dict(reverse_close=ACCOUNT_RULES['reverse_close'], exit_rules_from=acc['exit_rules_from'],
-                           trail_risk_from=acc['trail_risk_from'], trail=dict(ACCOUNT_RULES['trail']),
+                rules=dict(reverse_close=ACCOUNT_RULES['reverse_close'], exit_rules_from=acc.get('exit_rules_from'),
+                           trail_risk_from=acc.get('trail_risk_from'), next_hour_from=acc.get('next_hour_from'), trail=dict(ACCOUNT_RULES['trail']),
                            same_bar_share=ACCOUNT_RULES['same_bar_share'], new_seat_h=ACCOUNT_RULES['new_seat_h'],
                            new_seat_factor=ACCOUNT_RULES['new_seat_factor'],
                            same_side_cap=ACCOUNT_RULES['same_side_cap'], max_same_side=ACCOUNT_RULES['max_same_side'], daily_halt=ACCOUNT_RULES['daily_halt'], lever=ACCOUNT_RULES['lever'],
@@ -495,6 +616,8 @@ def update(state, series, changes, price_off=None, prev_last=None):
                 positions=positions, pending=pending,
                 leader=_leader_view(leader, nodes) if leader else None,
                 members=sorted(members, key=lambda m: m['rank']), segments=(seats + (legacy.get('segments') or []))[:30],
+                # changes stamped on a bar after the last one (NEXT-HOUR RULE): in effect once a replay has that bar
+                scheduled=scheduled(acc, price_off, manual_stamps=mfrom, last_ts=last_ts),
                 # recent closes and why ({inst|opened: reason}); run.py moves this into signals.json for the OKX follow
                 # (a manual close counts from the bar it was booked on, its `closed` being the real, possibly older, time)
                 exits={f"{t['inst']}|{int(t['opened'])}": t['reason'] for t in res['trades'] if t.get('booked', t['closed']) >= last_ts - EXIT_WINDOW})

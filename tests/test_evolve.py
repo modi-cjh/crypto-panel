@@ -1632,6 +1632,13 @@ class RunTests(unittest.TestCase):
                 self.assertIn('positions', sig)
                 for inst, p in sig['positions'].items():
                     self.assertIn(p['side'], (1, -1)); self.assertIn('stop', p); self.assertIn('opened', p)
+                # NEXT-HOUR RULE: the run stamps its changes on floor(now, 1 h) + 1 h of its own clock
+                eff = P.effective_bar(1794300021000)
+                self.assertEqual(eff, 1794301200000)
+                self.assertEqual(dash['timing']['effective_bar'], R.iso(eff))
+                acc = json.loads((out / 'state.json').read_text())['paper']['account']
+                self.assertEqual(acc['next_hour_from'], eff)
+                self.assertTrue(all(g['from_ts'] in (eff, acc['from_ts']) for g in acc['segs']))
                 R.main(['--data', tmp, '--generations', '1'])            # second run resumes the same population
                 self.assertEqual(json.loads((out / 'dashboard.json').read_text())['generation'], 3)
         finally:
@@ -2082,3 +2089,297 @@ class TrailRiskRuleTests(unittest.TestCase):
         chain, tenure = P.seat_chains(segs)
         self.assertEqual(chain, dict(a1='a1', a2='a1', a3='a3', a4='a4'))     # a re-seat after a gap is a new seat
         self.assertEqual(tenure, dict(a1=0, a2=0, a3=5, a4=20))
+
+
+class NextHourRuleTests(unittest.TestCase):
+    """NEXT-HOUR RULE (paper.py): a GitHub run stamps every change on C = floor(now, 1 h) + 1 h, so an hourly server that
+    replays the published state.json gets the same signals from a stale or a fresh state until bar C exists, and the same
+    as the next GitHub run afterwards."""
+    COINS = ('A-USDT-SWAP', 'B-USDT-SWAP', 'C-USDT-SWAP', 'D-USDT-SWAP', 'E-USDT-SWAP', 'F-USDT-SWAP')
+    L = 20                     # the GitHub run's last bar index; it runs ~57 min late: now = ts[L] + 2 h − 3 min
+
+    def setUp(self):
+        gate = mock.patch.object(P, 'entry_gate', lambda node, state=None, streak=None: dict(passed=True, reasons=[]))
+        gate.start(); self.addCleanup(gate.stop)
+        self.entries = {}       # {lookback gene: {bar: [(inst, side, dist)]}}: each strategy's signals, by bar
+        sig = mock.patch.object(X, 'signal_sets', side_effect=lambda g, series: (self.entries.get(int(g['lookback']), {}), {}))
+        sig.start(); self.addCleanup(sig.stop)
+        mc = mock.patch.object(P, 'MANUAL_CLOSES', {})     # the shipped closes are for real coins; tests add their own
+        mc.start(); self.addCleanup(mc.stop)
+
+    def sr(self, n):
+        ts = [T0 + i * H for i in range(n)]
+        return {k: X.Series(k, ts, [100.0] * n, [100.1] * n, [99.99] * n, [100.0] * n) for k in self.COINS}
+
+    def ts(self, i):
+        return T0 + i * H
+
+    def node(self, nid, lookback):
+        return dict(id=nid, genes=base_genes(lookback=lookback, risk=.05), species='momentum', fitness=1.0, qualified=True)
+
+    def state(self, team=('n1',), leader=None):
+        nodes = {nid: self.node(nid, lb) for nid, lb in (('n1', 11), ('n2', 12), ('n3', 13))}
+        segs = [dict(id=f'a{k + 1}', champion=nid, slot=k, genes=fix_genes(nodes[nid]['genes']), species='momentum', from_ts=T0, wind_ts=None,
+                     boosts=[[T0, None]] if nid == leader else [], reason='carry') for k, nid in enumerate(team)]
+        acc = dict(from_ts=T0, start_equity=10000.0, next=len(segs), segs=segs, side_cap_from=T0, risk_rules_from=T0, risk_cap_from=T0,
+                   exit_rules_from=T0, trail_risk_from=T0, manual_from={})
+        return dict(nodes=nodes, team=[dict(id=nid, since=T0) for nid in team], leader=leader, champion=leader,
+                    paper=dict(account=acc, start_equity=10000.0))
+
+    def replay(self, state, n, price_off=None):
+        """The hourly server: replay only, on a copy (it never writes state.json)."""
+        st = json.loads(json.dumps(state))
+        cap, orig = {}, X.simulate_account
+        with mock.patch.object(P, 'simulate_account', side_effect=lambda *a, **k: cap.setdefault('r', orig(*a, **k))):
+            view, signals = P.update(st, self.sr(n), [], price_off, replay=True)
+        self.assertEqual(st, json.loads(json.dumps(state)))                          # replay never changes the state
+        return dict(signals=signals, trades=cap['r']['trades'], curve=cap['r']['curve'], positions=view['positions'], pending=view['pending'])
+
+    def github(self, state, n, changes, now, price_off=None):
+        return P.update(state, self.sr(n), changes, price_off, now=now)
+
+    def late_now(self):
+        return self.ts(self.L) + 2 * H - 3 * 60_000                                   # 57 min late → C = ts[L] + 2 h
+
+    # --- the definition -------------------------------------------------------------------------------------------
+    def test_effective_bar_is_the_next_whole_hour_and_its_boundaries(self):
+        h17 = T0 + 17 * H
+        self.assertEqual(P.effective_bar(h17), h17 + H)                              # exactly on the hour → the next hour
+        self.assertEqual(P.effective_bar(h17 + 5_000), h17 + H)                      # a few seconds after
+        self.assertEqual(P.effective_bar(h17 - 1), h17)                              # 16:59:59.999 → 17:00
+        self.assertEqual(P.effective_bar(h17 - 60_000), h17)                         # :59
+        self.assertEqual(P.effective_bar(h17 + H - 1), h17 + H)
+        for now, want in ((self.ts(self.L) + 2 * H, self.ts(self.L) + 3 * H), (self.ts(self.L) + 2 * H + 4_000, self.ts(self.L) + 3 * H),
+                          (self.ts(self.L) + 2 * H - 1_000, self.ts(self.L) + 2 * H)):
+            st = self.state(team=('n1',))
+            st['team'] = [dict(id='n2', since=now)]
+            self.github(st, self.L + 1, [(0, 'n1', 'n2', 'challenger')], now)
+            segs = st['paper']['account']['segs']
+            self.assertEqual((segs[0]['wind_ts'], segs[1]['from_ts'], st['paper']['account']['next_hour_from']), (want, want, want))
+        # never on or before the run's own last bar, whatever the clock says
+        st = self.state(team=('n1',)); st['team'] = [dict(id='n2', since=0)]
+        self.github(st, self.L + 1, [(0, 'n1', 'n2', 'challenger')], self.ts(self.L) - 5 * H)
+        self.assertEqual(st['paper']['account']['segs'][1]['from_ts'], self.ts(self.L) + H)
+
+    # --- seats --------------------------------------------------------------------------------------------------------
+    def test_seat_change_takes_effect_on_bar_C_and_the_server_never_diverges(self):
+        L, C = self.L, self.ts(self.L) + 2 * H                                       # bar index L + 2 has open time C
+        self.entries = {11: {L + 1: [('A-USDT-SWAP', 1, 5.0)], L + 2: [('C-USDT-SWAP', 1, 5.0)]},     # n1 (outgoing)
+                        12: {L + 1: [('B-USDT-SWAP', 1, 5.0)], L + 2: [('D-USDT-SWAP', 1, 5.0)]}}     # n2 (incoming)
+        stale = self.state(team=('n1',))
+        self.github(stale, L - 3, [], self.late_now() - 4 * H)                       # the previous run (4 h earlier): rule switched on
+        fresh = json.loads(json.dumps(stale))
+        fresh['team'] = [dict(id='n2', since=self.late_now())]
+        view, signals = self.github(fresh, L + 1, [(0, 'n1', 'n2', 'challenger')], self.late_now())
+        a1, a2 = fresh['paper']['account']['segs']
+        self.assertEqual((a1['wind_ts'], a2['from_ts']), (C, C))                     # stamped on C, not on ts[L]
+        self.assertEqual([x['kind'] for x in view['scheduled']], ['seat', 'wind'])  # pending: C is not in the data yet
+        self.assertEqual(next(m for m in view['members'] if m['id'] == 'n2')['effective_from'], C)
+        self.assertFalse(next(m for m in view['members'] if m['id'] == 'n2')['trading'])
+        # server at C:01:30 (last bar C − 1 h = L + 1): stale and fresh state.json give the same result (except `rank`,
+        # which only orders the follow's entries and always follows the latest team / fitness — see the contract)
+        self.assertEqual(unranked(self.replay(stale, L + 2)), unranked(self.replay(fresh, L + 2)))
+        self.assertEqual([s['rank'] for s in self.replay(fresh, L + 2)['signals'].values()], [100])   # n1 left the team list
+        self.assertEqual([(p['inst'], p['champion']) for p in self.replay(fresh, L + 2)['pending']], [('A-USDT-SWAP', 'n1')])
+        # server at C + 1 h:01:30 (last bar C = L + 2): n1's signal of bar C − 1 h filled at C; on bar C only n2 signals
+        r = self.replay(fresh, L + 3)
+        self.assertEqual([(p['inst'], p['champion']) for p in r['positions']], [('A-USDT-SWAP', 'n1')])
+        self.assertTrue(r['positions'][0]['winding'])
+        self.assertEqual([(p['inst'], p['champion']) for p in r['pending']], [('D-USDT-SWAP', 'n2')])
+        # … and it is exactly what the next GitHub run replays (deterministic, same input → same output)
+        for n in (L + 3, L + 6):
+            nxt = json.loads(json.dumps(fresh))
+            v, sg = self.github(nxt, n, [], self.late_now() + 4 * H)
+            self.assertEqual(sg, self.replay(fresh, n)['signals'])
+            self.assertEqual(nxt['paper']['account']['segs'], fresh['paper']['account']['segs'])    # nothing re-stamped
+        # the old rule (stamp = the run's last bar) would have moved n1's bar-(L+1) signal to n2: that is the divergence
+        legacy = self.state(team=('n1',)); legacy['team'] = [dict(id='n2', since=0)]
+        P.update(legacy, self.sr(L + 1), [(0, 'n1', 'n2', 'challenger')])
+        self.assertEqual(legacy['paper']['account']['segs'][1]['from_ts'], self.ts(L))
+        self.assertEqual([p['inst'] for p in P.update(legacy, self.sr(L + 3), [])[0]['positions']], ['B-USDT-SWAP'])
+
+    def test_two_runs_in_the_same_hour_leave_an_empty_segment_that_never_trades(self):
+        L = self.L
+        self.entries = {12: {L + 2: [('B-USDT-SWAP', 1, 5.0)]}, 13: {L + 2: [('C-USDT-SWAP', 1, 5.0)]}}
+        st = self.state(team=('n1',))
+        st['team'] = [dict(id='n2', since=0)]; self.github(st, L + 1, [(0, 'n1', 'n2', 'challenger')], self.late_now())
+        st['team'] = [dict(id='n3', since=0)]; self.github(st, L + 1, [(0, 'n2', 'n3', 'challenger')], self.late_now() + 60_000)
+        a2 = st['paper']['account']['segs'][1]
+        self.assertEqual(a2['from_ts'], a2['wind_ts'])
+        self.assertEqual([(p['inst'], p['champion']) for p in self.replay(st, L + 3)['pending']], [('C-USDT-SWAP', 'n3')])
+
+    # --- leader -------------------------------------------------------------------------------------------------------
+    def test_leader_change_takes_effect_on_bar_C(self):
+        L, C = self.L, self.ts(self.L) + 2 * H
+        self.entries = {11: {L + 1: [('A-USDT-SWAP', 1, 5.0)], L + 2: [('B-USDT-SWAP', 1, 5.0)]}}
+        stale = self.state(team=('n1', 'n2'))
+        self.github(stale, L - 3, [], self.late_now() - 4 * H)
+        fresh = json.loads(json.dumps(stale)); fresh['leader'] = 'n1'
+        view, _ = self.github(fresh, L + 1, [], self.late_now())
+        self.assertEqual(fresh['paper']['account']['segs'][0]['boosts'], [[C, None]])
+        self.assertEqual([x['kind'] for x in view['scheduled']], ['leader'])
+        self.assertEqual(self.replay(stale, L + 2)['signals'], self.replay(fresh, L + 2)['signals'])  # no `leader` flag yet
+        r = self.replay(fresh, L + 4)
+        boost = {p['inst']: p['boost'] for p in r['positions']}
+        self.assertEqual(boost, {'A-USDT-SWAP': False, 'B-USDT-SWAP': True})       # bar C − 1 h signal: not leader; bar C: leader
+        # losing the title closes the range on the next C
+        later = self.ts(L) + 5 * H + 600_000
+        fresh['leader'] = None
+        self.github(fresh, L + 4, [], later)
+        self.assertEqual(fresh['paper']['account']['segs'][0]['boosts'], [[C, P.effective_bar(later)]])
+
+    # --- price_off ------------------------------------------------------------------------------------------------------
+    def test_price_off_is_stamped_on_the_first_fill_after_C(self):
+        L, C = self.L, self.ts(self.L) + 2 * H
+        self.entries = {11: {L + 1: [('A-USDT-SWAP', 1, 5.0)], L + 2: [('B-USDT-SWAP', 1, 5.0)]}}
+        st = self.state(team=('n1',)); self.github(st, L - 3, [], self.late_now() - 4 * H)
+        with tempfile.TemporaryDirectory() as tmp:                                    # run.py: price_check(…, C + 1 h)
+            (Path(tmp) / 'evolve').mkdir()
+            (Path(tmp) / 'evolve' / 'universe.json').write_text(json.dumps(dict(instruments=['A-USDT-SWAP', 'B-USDT-SWAP'])))
+            tick = lambda **px: [dict(instId=f'{k}-USDT-SWAP', last=str(v)) for k, v in px.items()]
+            off, _ = D.price_check(tmp, P.effective_bar(self.late_now()) + H, lambda p: tick(A=100, B=100), lambda p: tick(A=150, B=150))
+        self.assertEqual(off, {'A-USDT-SWAP': [[C + H, None]], 'B-USDT-SWAP': [[C + H, None]]})
+        # server at C:01:30: A's fill at C is not blocked, with or without the new ranges
+        self.assertEqual(self.replay(st, L + 2, off), self.replay(st, L + 2, {}))
+        self.assertEqual([p['inst'] for p in self.replay(st, L + 2, off)['pending']], ['A-USDT-SWAP'])
+        # server at C + 1 h:01:30: B's fill at C + 1 h is blocked, so it is not queued — and the replay agrees later
+        self.assertEqual(self.replay(st, L + 3, off)['pending'], [])
+        self.assertEqual([p['inst'] for p in self.replay(st, L + 5, off)['positions']], ['A-USDT-SWAP'])
+        view, _ = self.github(json.loads(json.dumps(st)), L + 1, [], self.late_now(), off)
+        self.assertEqual([x['kind'] for x in view['scheduled']], ['price_off', 'price_off'])
+        self.assertEqual(view['price_off'], ['A-USDT-SWAP', 'B-USDT-SWAP'])         # the dashboard shows them as off already
+        # a range closed on C + 1 h keeps blocking the fill at C (old code: the queue unblocked at once)
+        closed = {'A-USDT-SWAP': [[self.ts(5), C + H]]}
+        self.assertEqual(self.replay(st, L + 2, closed)['pending'], [])
+        self.assertEqual([p['inst'] for p in self.replay(st, L + 3, closed)['pending']], ['B-USDT-SWAP'])
+
+    # --- manual closes ----------------------------------------------------------------------------------------------------
+    def test_manual_close_is_stamped_on_C_and_booked_at_the_open_of_C_plus_1h(self):
+        L, C = self.L, self.ts(self.L) + 2 * H
+        self.entries = {11: {3: [('A-USDT-SWAP', -1, 5.0)], L + 2: [('B-USDT-SWAP', -1, 5.0)]}}
+        st = self.state(team=('n1',)); self.github(st, L - 3, [], self.late_now() - 4 * H)
+        key, at = f'A-USDT-SWAP|{self.ts(4)}', self.ts(L) + 30 * 60_000                # closed by hand at ts[L] + 30 min
+        stale = json.loads(json.dumps(st))
+        with mock.patch.object(P, 'MANUAL_CLOSES', {('A-USDT-SWAP', self.ts(4)): (at, 99.0)}):
+            # the server already runs the code with the new entry, but GitHub has not stamped it: pending, nothing changes
+            self.assertEqual(self.replay(stale, L + 4), self.replay(st, L + 4))
+            self.assertEqual([p['inst'] for p in self.replay(stale, L + 4)['positions']], ['A-USDT-SWAP', 'B-USDT-SWAP'])
+            view, _ = self.github(st, L + 1, [], self.late_now())
+            self.assertEqual(st['paper']['account']['manual_from'], {key: C})
+            self.assertEqual(view['scheduled'], [dict(kind='manual_close', ts=C, key=key)])
+            self.assertEqual(self.replay(st, L + 2), self.replay(stale, L + 2))     # server at C:01:30
+            r = self.replay(st, L + 3)                                               # server at C + 1 h:01:30: still open
+            self.assertEqual([p['inst'] for p in r['positions']], ['A-USDT-SWAP'])
+            self.assertEqual([p['inst'] for p in r['pending']], ['B-USDT-SWAP'])
+            r = self.replay(st, L + 4)                                               # booked at the open of C + 1 h
+            t = next(t for t in r['trades'] if t['reason'] == 'manual_user')
+            self.assertEqual((t['closed'], t['booked'], t['exit']), (at, C + H, 99.0))
+            nxt = json.loads(json.dumps(st)); _, sg = self.github(nxt, L + 4, [], self.late_now() + 4 * H)
+            self.assertEqual(sg, r['signals']); self.assertEqual(nxt['paper']['account']['manual_from'], {key: C})
+
+    def test_queue_counts_a_manual_close_booked_at_the_next_open_as_gone(self):
+        L, C = self.L, self.ts(self.L) + 2 * H
+        self.entries = {11: {3: [('A-USDT-SWAP', -1, 5.0)], L + 2: [('B-USDT-SWAP', -1, 5.0)]}}
+        st = self.state(team=('n1',))
+        with mock.patch.object(P, 'MANUAL_CLOSES', {('A-USDT-SWAP', self.ts(4)): (self.ts(L), 99.0)}), \
+                mock.patch.dict(X.ACCOUNT_RULES, max_same_side=1):
+            self.github(st, L + 1, [], self.late_now())
+            # last bar C: A (short) is still open, but it is booked at the next open before the fills → B fits under the cap
+            r = self.replay(st, L + 3)
+            self.assertEqual([p['inst'] for p in r['pending']], ['B-USDT-SWAP'])
+            self.assertEqual([p['inst'] for p in self.replay(st, L + 4)['positions']], ['B-USDT-SWAP'])
+
+    # --- cutover keys -------------------------------------------------------------------------------------------------------
+    def test_cutover_keys_are_first_set_on_C_and_never_moved(self):
+        L, C = self.L, self.ts(self.L) + 2 * H
+        st = self.state(team=('n1',))
+        acc = st['paper']['account']
+        for k in P.CUTOVER_KEYS + ('manual_from',):
+            acc.pop(k, None)
+        with mock.patch.object(P, 'MANUAL_CLOSES', {('A-USDT-SWAP', self.ts(4)): (self.ts(2), 99.0)}):
+            view, _ = self.github(st, L + 1, [], self.late_now(), )
+            self.assertEqual({k: acc[k] for k in P.CUTOVER_KEYS + ('next_hour_from',)}, {k: C for k in P.CUTOVER_KEYS + ('next_hour_from',)})
+            self.assertEqual(acc['manual_from'], {f'A-USDT-SWAP|{self.ts(4)}': C})
+            self.assertEqual(view['rules']['next_hour_from'], C)
+            self.assertEqual(view['rules']['exit_rules_from'], C); self.assertEqual(view['rules']['trail_risk_from'], C)
+            self.github(st, L + 8, [], self.late_now() + 7 * H)
+            self.assertEqual({k: acc[k] for k in P.CUTOVER_KEYS + ('next_hour_from',)}, {k: C for k in P.CUTOVER_KEYS + ('next_hour_from',)})
+
+    def test_exit_and_trail_eras_switch_after_bar_C(self):
+        L, C = self.L, self.ts(self.L) + 2 * H
+        self.entries = {11: {L + 1: [('A-USDT-SWAP', 1, 5.0)]}}
+        st = self.state(team=('n1',))
+        acc = st['paper']['account']
+        acc.pop('exit_rules_from'); acc.pop('trail_risk_from')
+        acc['segs'][0]['genes']['target_rr'] = 0                                    # stored as before 2026-11-21: no target
+        stale = json.loads(json.dumps(st)); stale['paper']['account']['next_hour_from'] = C   # a state without the keys yet
+        self.github(st, L + 1, [], self.late_now())
+        self.assertEqual((acc['exit_rules_from'], acc['trail_risk_from']), (C, C))
+        # the fill at C (signal of C − 1 h) is under the old rules: no target (gene 0 = none before), no risk factor —
+        # the same whether the server reads the state before (keys pending) or after GitHub stamped them
+        self.assertEqual(self.replay(stale, L + 2), self.replay(st, L + 2))
+        self.assertEqual(self.replay(stale, L + 3), self.replay(st, L + 3))
+        p = self.replay(st, L + 3)['positions'][0]
+        self.assertIsNone(p['target'])
+        p = self.replay(st, L + 4)['positions'][0]                                   # from bar C + 1 h on: new exits
+        self.assertIsNotNone(p['target'])
+
+    # --- compatibility / safety -----------------------------------------------------------------------------------------------
+    def test_old_state_replays_unchanged_and_without_now_keeps_the_old_stamps(self):
+        L = self.L
+        self.entries = {11: {k: [(self.COINS[k % 6], 1 if k % 2 else -1, 5.0)] for k in range(2, L + 5)}}
+        old = self.state(team=('n1',))
+        ref = json.loads(json.dumps(old)); v0, s0 = P.update(ref, self.sr(L + 5), [])            # master behaviour
+        new = json.loads(json.dumps(old)); v1, s1 = P.update(new, self.sr(L + 5), [], now=self.ts(L + 4) + 30 * 60_000)
+        self.assertEqual((v1['trades'], v1['curve'], v1['positions'], s1), (v0['trades'], v0['curve'], v0['positions'], s0))
+        self.assertEqual(new['paper']['account']['segs'], ref['paper']['account']['segs'])
+        self.assertNotIn('next_hour_from', ref['paper']['account'])
+        # without `now` a change is stamped on the run's last bar, as before
+        leg = json.loads(json.dumps(old)); leg['team'] = [dict(id='n2', since=0)]
+        P.update(leg, self.sr(L + 1), [(0, 'n1', 'n2', 'challenger')])
+        self.assertEqual(leg['paper']['account']['segs'][1]['from_ts'], self.ts(L))
+
+    def test_old_stamps_keep_their_bar_mapping_new_ones_round_up(self):
+        L = self.L
+        sr = self.sr(L + 3)
+        gap = {k: X.Series(k, v.ts[:10] + v.ts[11:], v.o[:10] + v.o[11:], v.h[:10] + v.h[11:], v.l[:10] + v.l[11:], v.c[:10] + v.c[11:]) for k, v in sr.items()}
+        self.assertEqual(P._index(gap, self.ts(10)), 9)                             # an off-grid stamp: the bar before (old)
+        self.entries = {11: {9: [('A-USDT-SWAP', 1, 5.0)]}, 12: {9: [('B-USDT-SWAP', 1, 5.0)]}}
+        st = self.state(team=('n1',))
+        st['paper']['account']['segs'][0]['wind_ts'] = self.ts(10)
+        st['paper']['account']['segs'].append(dict(id='a2', champion='n2', slot=0, genes=fix_genes(st['nodes']['n2']['genes']), species='momentum',
+                                                   from_ts=self.ts(10), wind_ts=None, boosts=[], reason='challenger'))
+        st['team'] = [dict(id='n2', since=0)]
+        with mock.patch.object(P, 'simulate_account', wraps=X.simulate_account) as sim:
+            P.update(json.loads(json.dumps(st)), gap, [])
+            self.assertEqual([s['from_i'] for s in sim.call_args[0][0]], [0, 9])     # before next_hour_from: floor
+            st['paper']['account']['next_hour_from'] = self.ts(10)
+            P.update(json.loads(json.dumps(st)), gap, [], replay=True)
+            self.assertEqual([s['from_i'] for s in sim.call_args[0][0]], [0, 10])    # from next_hour_from on: the first bar at or after
+
+    def test_replay_refuses_a_state_that_needs_a_github_stamp(self):
+        st = self.state(team=('n1',))
+        with self.assertRaises(P.StateDrift):                                        # predates the rule
+            P.update(json.loads(json.dumps(st)), self.sr(self.L + 1), [], replay=True)
+        self.github(st, self.L + 1, [], self.late_now())
+        self.replay(st, self.L + 1)                                                  # agrees: fine
+        drift = json.loads(json.dumps(st)); drift['team'] = [dict(id='n2', since=0)]
+        with self.assertRaises(P.StateDrift):
+            P.update(drift, self.sr(self.L + 1), [], replay=True)
+        drift = json.loads(json.dumps(st)); drift['leader'] = 'n1'
+        with self.assertRaises(P.StateDrift):
+            P.update(drift, self.sr(self.L + 1), [], replay=True)
+
+    def test_replay_is_deterministic(self):
+        L = self.L
+        self.entries = {11: {k: [(self.COINS[k % 6], 1 if k % 2 else -1, 3.0)] for k in range(2, L + 6)}}
+        st = self.state(team=('n1', 'n2'), leader='n1'); self.github(st, L + 1, [], self.late_now())
+        self.assertEqual(self.replay(st, L + 6), self.replay(st, L + 6))
+
+
+def unranked(r):
+    return dict(r, signals={k: {f: v for f, v in x.items() if f != 'rank'} for k, x in r['signals'].items()})
+
+
+def fix_genes(g):
+    return G.fix(dict(g))

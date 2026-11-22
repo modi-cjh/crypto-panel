@@ -27,7 +27,7 @@ def iso(ms):
 
 def previous_last_bar(path):
     """The last bar the previous run replayed: the last point of the paper curve in its dashboard.json (None if unknown).
-    Only used once, to stamp the paper account's exit_rules_from (paper.update)."""
+    Passed to paper.update; with `now` (every run.py run since the NEXT-HOUR RULE) the stamps use the effective bar instead."""
     try:
         return int(json.loads(Path(path).read_text())['paper']['curve'][-1][0])
     except (OSError, ValueError, KeyError, IndexError, TypeError):
@@ -117,13 +117,19 @@ def main(argv=None):
     changes = E.choose_team(state, now)
     champion, switched = state['champion'], bool(changes)
     real_universe = (out / 'universe.json').exists()          # offline tests trade a fixed list and have no demo market to compare with
-    price_off, off_now = D.price_check(args.data, next(iter(series.values())).ts[-1]) if real_universe else ({}, {})
+    # NEXT-HOUR RULE (paper.py): every change of this run takes effect on bar C = floor(now, 1 h) + 1 h, read here (after
+    # the evolution, seconds before the commit) so the hourly server signals never see it on a bar they already traded.
+    # price_off ranges are stamped on their first FILL bar, C + 1 h.
+    now_eff = int(time.time() * 1000)
+    eff = P.effective_bar(now_eff)
+    price_off, off_now = D.price_check(args.data, eff + P.HOUR) if real_universe else ({}, {})
     if off_now:
         print('模拟盘价格偏离真实行情 > 1%，暂停开新仓：' + '、'.join(f"{k.split('-')[0]} {v * 100:+.0f}%" if v is not None else k.split('-')[0] for k, v in off_now.items()))
-    paper_view, signals = P.update(state, series, changes, price_off, prev_last=previous_last_bar(out / 'dashboard.json'))
+    paper_view, signals = P.update(state, series, changes, price_off, prev_last=previous_last_bar(out / 'dashboard.json'), now=now_eff)
     exits = paper_view.pop('exits', {})
     E.prune(state)
-    timing = dict(seconds=round(time.time() - t0, 1), generations=len(rows), switched=switched, changes=[dict(slot=c[0], old=c[1], new=c[2], reason=c[3]) for c in changes])
+    timing = dict(seconds=round(time.time() - t0, 1), generations=len(rows), switched=switched, changes=[dict(slot=c[0], old=c[1], new=c[2], reason=c[3]) for c in changes],
+                  effective_bar=iso(eff))
     state_path.write_text(json.dumps(state, separators=(',', ':')))
     (out / 'dashboard.json').write_text(json.dumps(dashboard(state, series, split, obs, paper_view, timing), ensure_ascii=False, separators=(',', ':')))
     (out / 'nodes.json').write_text(json.dumps(node_details(state), ensure_ascii=False, separators=(',', ':')))
@@ -133,6 +139,7 @@ def main(argv=None):
         print(f"第 {r['gen']} 代 · 波动 {r['regime']} ({r['vol']}) · 最佳适应度 {r['best']} · 平均 {r['mean']} · 合格 {r['qualified']} · 新生 {r['born']} · 淘汰 {r['killed']}")
     for c in changes:
         print(f"席位 {c[0] + 1}: {c[1] or '空'} → {c[2]}（{c[3]}）")
+    print(f"本轮改动从 {iso(eff)} 这根 K 线起生效（收盘出信号，{iso(eff + P.HOUR)} 开盘成交）· 待生效 {len(paper_view.get('scheduled') or [])} 项")
     print(f"冠军组合 {[m['id'] for m in state.get('team', [])]} · 领头 {champion} · 纸面权益 {paper_view['equity']} · 用时 {timing['seconds']}s")
 
 
