@@ -298,6 +298,57 @@ class MainTests(LiveModeBase):
         self.assertTrue(code); self.assertIn('signals.json', text)
         self.assertEqual(self.requests(), [])
 
+    def test_hourly_mode_pause_and_snapshot_work_on_stale_signals_run_does_not(self):
+        saved = odt.LIVE_SIGNAL_MAX_AGE, odt.OPEN_WINDOW
+        self.addCleanup(lambda: (setattr(odt, 'LIVE_SIGNAL_MAX_AGE', saved[0]), setattr(odt, 'OPEN_WINDOW', saved[1])))
+        live = dict(OKX_TRADING_MODE='live', OKX_DRY_RUN='0')
+        hourly = dict(live, OKX_SIGNAL_MODE='hourly')
+        state = self.data / 'okx_live' / 'state.json'
+        self.main(**live)                                                     # creates the (paused) live state
+        st = json.loads(state.read_text())
+        # an open mirror the stale paper file does not contain: a normal pause would close it
+        st['mirrored']['ETH-USDT-SWAP|1'] = dict(inst='ETH-USDT-SWAP', status='open', side=1, posSide='net')
+        st['paused'] = False
+        state.write_text(json.dumps(st))
+        self.requests()
+        self.write_signals(signals(age_hours=3))                              # > 2 h 15 min, < 9 h
+        for action in ('run', 'resume', 'follow-current', 'flatten'):
+            text, code = self.main(action, **hourly)
+            self.assertTrue(code, action); self.assertIn('过期', text)
+            self.assertEqual(self.requests(), [], action)
+        text, code = self.main('snapshot', **hourly)
+        self.assertFalse(code, text); self.assertTrue(self.requests())
+        text, code = self.main('pause', **hourly)
+        self.assertFalse(code, text); self.assertIn('只设置暂停', text)
+        reqs = self.requests()
+        self.assertTrue(reqs); self.assertEqual({r['method'] for r in reqs}, {'GET'})   # no order, close or stop change
+        after = json.loads(state.read_text())
+        self.assertTrue(after['paused']); self.assertEqual(after['mirrored'], st['mirrored'])
+        self.assertTrue(json.loads((self.data / 'okx_live' / 'summary.json').read_text())['paused'])
+
+        # the flag holds even when the exchange cannot be read
+        after['paused'] = False
+        state.write_text(json.dumps(after))
+        with mock.patch.object(odt.Mirror, 'load', side_effect=odt.OKXError('down')):
+            text, code = self.main('pause', **hourly)
+        self.assertTrue(code)                                                 # reported as an error …
+        self.assertTrue(json.loads(state.read_text())['paused'])              # … but paused
+
+        # github mode: unchanged (3 h is fresh; 10 h refuses pause as before)
+        self.write_signals(signals(age_hours=10))
+        text, code = self.main('pause', **live)
+        self.assertTrue(code); self.assertIn('过期', text)
+        self.assertEqual(self.requests(), [])
+        text, code = self.main('snapshot', **live)
+        self.assertFalse(code, text)
+
+    def test_hourly_mode_pause_on_fresh_signals_is_the_normal_pause(self):
+        saved = odt.LIVE_SIGNAL_MAX_AGE, odt.OPEN_WINDOW
+        self.addCleanup(lambda: (setattr(odt, 'LIVE_SIGNAL_MAX_AGE', saved[0]), setattr(odt, 'OPEN_WINDOW', saved[1])))
+        with mock.patch.object(odt.Mirror, 'pause_only') as only, mock.patch.object(odt.Mirror, 'run') as run:
+            self.main('pause', OKX_TRADING_MODE='live', OKX_DRY_RUN='0', OKX_SIGNAL_MODE='hourly')
+        only.assert_not_called(); run.assert_called_once_with('pause')
+
     def test_live_refuses_signals_stamped_in_the_future(self):
         """PR #92 review: a future updated_at gave a negative age and slipped past the max-age check."""
         for hours_ahead in (0.01, 1, 24 * 365):
