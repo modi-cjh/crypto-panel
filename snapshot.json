@@ -2,19 +2,34 @@
  "schema_version": 1,
  "source": "okx-live",
  "trading_mode": "live",
- "updated_at": "2026-11-22T09:50:00Z",
- "equity": 103.295299,
- "available": 103.295299,
+ "updated_at": "2026-11-22T10:50:04Z",
+ "equity": 96.576094,
+ "available": 62.681178,
  "day_start": 103.295299,
- "day_pnl": 0.0,
- "day_pnl_pct": 0.0,
+ "day_pnl": -6.719205,
+ "day_pnl_pct": -6.50485,
  "start_equity": 126.66404,
- "total_pnl": -23.368741,
+ "total_pnl": -30.087946,
  "paused": false,
  "halted": false,
  "dry_run": false,
  "closed_trades": 17,
- "positions": [],
+ "positions": [
+  {
+   "inst": "BTC-USDT-SWAP",
+   "side": "long",
+   "contracts": 3.22,
+   "lever": 100.0,
+   "mgnMode": "isolated",
+   "avgPx": 60970.48571,
+   "markPx": 60792.3,
+   "upl": -5.73758,
+   "uplRatio": -0.292249,
+   "margin": 39.632496,
+   "ctVal": 0.01,
+   "ours": false
+  }
+ ],
  "history": [
   [
    1794751218461,
@@ -683,6 +698,10 @@
   [
    1795341000904,
    103.3
+  ],
+  [
+   1795344604393,
+   96.58
   ]
  ]
 }
