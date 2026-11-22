@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-22T01:22:22Z",
+ "updated_at": "2026-11-22T05:09:41Z",
  "champion": "s23387",
  "team": [
   "s29515",
@@ -9,7 +9,7 @@
   "s23735",
   "s27799",
   "s23387",
-  "s19112"
+  "s21608"
  ],
  "instruments": [
   "BTC-USDT-SWAP",
@@ -65,8 +65,6 @@
  ],
  "positions": {},
  "exits": {
-  "AVAX-USDT-SWAP|1795190400000": "stop",
-  "ENA-USDT-SWAP|1794470400000": "target",
   "FIL-USDT-SWAP|1795190400000": "stop",
   "NEAR-USDT-SWAP|1794700800000": "manual_user",
   "ADA-USDT-SWAP|1794700800000": "manual_user",
