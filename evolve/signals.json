@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-22T05:09:41Z",
+ "updated_at": "2026-11-22T08:58:34Z",
  "champion": "s23387",
  "team": [
   "s29515",
@@ -65,7 +65,6 @@
  ],
  "positions": {},
  "exits": {
-  "FIL-USDT-SWAP|1795190400000": "stop",
   "NEAR-USDT-SWAP|1794700800000": "manual_user",
   "ADA-USDT-SWAP|1794700800000": "manual_user",
   "LTC-USDT-SWAP|1794700800000": "manual_user",
