@@ -13,6 +13,9 @@ deploy/live/okx-live-hourly.conf, never in the key file):
                            (OKX_HOURLY_SIGNALS, default /var/lib/modi-okx-signals/evolve/signals.json): shape,
                            source = server-hourly, not a shadow / legacy-state file, age ≤ the trader's max age, last bar
                            not older than the copy already in <data>; then copy it atomically into <data>/evolve/.
+                           --action (the drop-in passes the instance name): a file that fails the check stops every action
+                           that needs signals; for NO_SIGNAL_ACTIONS (pause, snapshot) it is only reported and the copy in
+                           <data> is left as it is — those two must always be possible. No --action = needs signals.
 """
 import argparse
 import json
@@ -29,6 +32,7 @@ from runtime_guard import atomic_json  # noqa: E402
 URL = 'https://raw.githubusercontent.com/modi-cjh/crypto-panel/paper-data/evolve/signals.json'
 HOURLY_FILE = Path('/var/lib/modi-okx-signals/evolve/signals.json')
 HOURLY_SOURCE = 'server-hourly'
+NO_SIGNAL_ACTIONS = ('pause', 'snapshot')
 
 
 def valid(sig):
@@ -90,12 +94,19 @@ def main(argv=None, env=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--data', type=Path, required=True)
     ap.add_argument('--url', default=URL)
+    ap.add_argument('--action', default='run', help='okx-live@ instance name; only used in hourly mode')
     args = ap.parse_args(argv)
     env = os.environ if env is None else env
     mode = str(env.get('OKX_SIGNAL_MODE', '')).strip().lower() or 'github'
     dest = args.data / 'evolve' / 'signals.json'
     if mode == 'hourly':
-        sig = local_hourly(Path(env.get('OKX_HOURLY_SIGNALS') or HOURLY_FILE), dest, env=env)
+        try:
+            sig = local_hourly(Path(env.get('OKX_HOURLY_SIGNALS') or HOURLY_FILE), dest, env=env)
+        except SystemExit as exc:
+            if args.action not in NO_SIGNAL_ACTIONS:
+                raise
+            print(f'警告：{exc}；{args.action} 不需要信号，继续')
+            return
         atomic_json(dest, sig)
         print(f"signals.json（每小时，服务器）：{sig['updated_at']} · 最后 K 线 {sig.get('last_bar')} · {len(sig['positions'])} 个信号")
         return

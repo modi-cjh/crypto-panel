@@ -8,8 +8,11 @@ import math
 import os
 import random
 import re
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
@@ -31,6 +34,7 @@ import compare_signals as CS   # noqa: E402
 from genome import fix as fix_genes, random_genome  # noqa: E402
 
 H = 3600_000
+OKX_GET = D.okx_get                            # taken at import: test_evolve's RunTests leaves its fake in data.okx_get
 HOUR0 = 1_795_300_000_000 // H * H            # a whole UTC hour in Nov 2026
 COINS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
 DAYS = 40                                       # history the fake exchange has (listing date)
@@ -231,10 +235,11 @@ class CompletenessTests(Base):
         self.assertNotIn('DOGE-USDT-SWAP', sig['instruments']); self.assertEqual(sig['dropped'], ['DOGE-USDT-SWAP'])
         self.assertTrue(any('DOGE' in w for w in sig['warnings']))
 
-    def test_started_after_the_deadline_makes_one_attempt(self):
+    def test_started_after_the_deadline_gets_a_bounded_budget(self):
         clock = {'now': HOUR0 + 20 * 60_000}
         self.assertEqual(self.main(clock=clock, get=FakeOKX(clock, lag={'SOL-USDT-SWAP': 1})), S.EXIT_INCOMPLETE)
-        self.assertNotIn('slept', clock)
+        self.assertLessEqual(clock['now'], HOUR0 + 20 * 60_000 + 210_000)
+        self.assertGreater(clock['now'], HOUR0 + 20 * 60_000 + 180_000)
         clock = {'now': HOUR0 + 20 * 60_000}
         self.assertEqual(self.main(clock=clock), 0)
 
@@ -258,6 +263,195 @@ class CompletenessTests(Base):
         self.assertFalse(S.funding_missing([[0, 1], [8 * H, 1]], 15 * H))
         self.assertFalse(S.funding_missing([[0, 1], [4 * H, 1], [8 * H, 1]], 8 * H))
         self.assertTrue(S.funding_missing([[0, 1], [H, 1]], 2 * H))         # a 1 h interval coin
+
+
+class DeadlineTests(Base):
+    """A stuck request must not outlast the deadline: a clock running at real speed, budgets of 1–2 s."""
+
+    def setUp(self):
+        super().setUp()
+        self.gated()
+        self.release = threading.Event()
+        self.addCleanup(self.release.set)
+
+    def offset_clock(self, minute=20.0):
+        """now_fn running at real speed from HOUR0 + minute."""
+        t = time.monotonic()
+        return lambda: int(HOUR0 + minute * 60_000 + (time.monotonic() - t) * 1000)
+
+    def stalling(self, when):
+        fake = FakeOKX({'now': HOUR0 + 20 * 60_000})
+
+        def get(path):
+            if when(path):
+                self.release.wait(30)                      # one stuck request, ignores every timeout
+                raise RuntimeError('released')
+            return fake(path)
+        return get
+
+    def go(self, *extra, get=None, now_fn=None, http=None):
+        argv = ['--data', str(self.data), '--source', str(self.src), '--commit-api', '', '--master-api', '', '--retry', '0.2', *extra]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            t = time.monotonic()
+            rc = S.main(argv, now_fn=now_fn, get=get, **({'http': http} if http else {}))
+            took = time.monotonic() - t
+        self.out = buf.getvalue()
+        return rc, took
+
+    def no_signals(self):
+        self.assertFalse((self.data / 'evolve' / 'signals.json').exists())
+        self.assertFalse(list(self.data.glob('evolve/*')))
+        self.assertFalse(json.loads((self.data / 'last_run.json').read_text())['ok'])
+
+    def test_deadline_times(self):
+        args = S.parser().parse_args([])
+        m = 60_000
+        self.assertEqual(S.deadlines(args, HOUR0 + 90_000), (HOUR0 + 5 * m, HOUR0 + 8 * m))            # the timer
+        self.assertEqual(S.deadlines(args, HOUR0 + 5 * m), (HOUR0 + 5 * m + 210_000,) * 2)             # late: own budget
+        self.assertEqual(S.deadlines(args, HOUR0 + 59 * m), (HOUR0 + H, HOUR0 + H))                    # never into the next hour
+        # script deadline < watchdog < TimeoutStartSec, for the timer's start
+        svc = unit('okx-signals.service')['Service']
+        watchdog = 8 * 60 + S.HARD_GRACE_S
+        self.assertLess(watchdog, 90 + int(svc['TimeoutStartSec'][0]))
+        self.assertLess(210 + S.HARD_GRACE_S, int(svc['TimeoutStartSec'][0]))                          # a late start as well
+
+    def test_a_stuck_candle_request_is_cut_at_the_deadline(self):
+        self.publish(self.simple_state(), HOUR0 - 3 * H)
+        now = self.offset_clock()
+        rc, took = self.go('--late-budget', '1.5', now_fn=now, get=self.stalling(lambda p: p.startswith('market/') and 'SOL-' in p))
+        self.assertEqual(rc, S.EXIT_INCOMPLETE, self.out)
+        self.assertGreater(took, 1.2); self.assertLess(took, 10)
+        self.assertIn('SOL-USDT-SWAP: fetch failed: aborted at the deadline', self.out)
+        self.no_signals()
+
+    def test_the_retry_loop_ends_at_the_deadline(self):
+        self.publish(self.simple_state(), HOUR0 - 3 * H)
+        with mock.patch.object(S, 'LAST_TRY_S', .2):
+            rc, took = self.go('--late-budget', '1.5', now_fn=self.offset_clock(), get=FakeOKX({'now': HOUR0 + 20 * 60_000}, lag={'SOL-USDT-SWAP': 1}))
+        self.assertEqual(rc, S.EXIT_INCOMPLETE)
+        self.assertGreater(took, .9); self.assertLess(took, 10)
+        self.no_signals()
+
+    def test_complete_only_after_the_deadline_is_a_failure(self):
+        self.publish(self.simple_state(), HOUR0 - 3 * H)
+        clock = {'now': HOUR0 + 4 * 60_000}
+
+        class Slow(FakeOKX):
+            def __call__(s, path):
+                if path.startswith('market/candles') and 'DOGE' in path:
+                    clock['now'] = HOUR0 + 5 * 60_000 + 1        # everything arrives, one ms too late
+                return super().__call__(path)
+        self.assertEqual(self.main(clock=clock, get=Slow(clock)), S.EXIT_INCOMPLETE)
+        self.no_signals()
+
+    def test_a_stuck_funding_request_is_cut_and_the_cached_rates_are_used(self):
+        self.publish(self.simple_state(), HOUR0 - 3 * H)
+        now = self.offset_clock()
+        stuck = lambda p: p.startswith('public/funding') and 'ETH-' in p
+        fast = FakeOKX({'now': HOUR0 + 20 * 60_000})
+        D.update_funding(self.data / 'candles', 'ETH-USDT-SWAP', now(), fast)          # cached by an earlier run
+        rc, took = self.go('--late-budget', '2', now_fn=now, get=self.stalling(stuck))
+        self.assertEqual(rc, 0, self.out)                                               # its semantics: warn, do not fail
+        timing = self.signals()['timing']
+        self.assertGreater(took, 1.5); self.assertLess(timing['data_s'], 5, timing)     # the cut itself; the replay and the write follow it
+        self.assertTrue(any('ETH-USDT-SWAP' in w and 'funding' in w for w in self.signals()['warnings']))
+
+    def test_no_funding_rates_at_all_at_the_deadline_fails(self):
+        self.publish(self.simple_state(), HOUR0 - 3 * H)
+        now = self.offset_clock()
+        rc, took = self.go('--late-budget', '1.5', now_fn=now, get=self.stalling(lambda p: p.startswith('public/funding') and 'ETH-' in p))
+        self.assertEqual(rc, S.EXIT_INCOMPLETE, self.out)
+        self.assertLess(took, 10); self.assertIn('ETH-USDT-SWAP', self.out)
+        self.no_signals()
+
+    def test_okx_get_cuts_a_hanging_curl_and_its_silent_retries(self):
+        for script, label in (('exec sleep 60', 'one request that hangs'), ('exit 7', 'fast failures: 1 + 2 + 3 + 4 s of retry sleeps')):
+            fake = self.tmp / f'bin-{len(script)}'
+            fake.mkdir()
+            (fake / 'curl').write_text(f'#!/bin/sh\n{script}\n'); (fake / 'curl').chmod(0o755)
+            with mock.patch.dict(os.environ, PATH=f"{fake}:{os.environ['PATH']}"):
+                t = time.monotonic()
+                with self.assertRaises(D.DeadlineExceeded, msg=label):
+                    OKX_GET('market/candles?instId=X', deadline=t + 1.0)
+                took = time.monotonic() - t
+                self.assertGreater(took, .9, label); self.assertLess(took, 10, label)
+                with self.assertRaises(D.DeadlineExceeded):                            # nothing is started after it
+                    OKX_GET('market/candles?instId=X', deadline=time.monotonic() - 1)
+                with self.assertRaises(RuntimeError):
+                    S.curl_text('http://127.0.0.1:1/x', .3)
+
+    def test_okx_get_without_a_deadline_is_unchanged(self):
+        out = mock.Mock(stdout=json.dumps(dict(code='0', data=[1])))
+        with mock.patch.object(D.subprocess, 'run', return_value=out) as run:
+            self.assertEqual(OKX_GET('x'), [1])
+        self.assertNotIn('timeout', run.call_args[1])                                  # GitHub's run.py: no new limit
+        self.assertEqual(run.call_args[0][0][:4], ['curl', '-sS', '-m', '20'])
+
+    def script(self, *extra, patch='', curl='exec sleep 60', timeout=30):
+        """The real command line in its own process (os._exit, watchdog), every curl hanging."""
+        fake = self.tmp / 'hang'
+        fake.mkdir(exist_ok=True)
+        (fake / 'curl').write_text(f'#!/bin/sh\n{curl}\n'); (fake / 'curl').chmod(0o755)
+        argv = ['--data', str(self.data), '--source', str(self.src), '--commit-api', '', '--master-api', '', '--deadline', '0',
+                '--funding-deadline', '0', *extra]
+        cmd = [sys.executable, str(ROOT / 'tools' / 'evolve' / 'signals_hourly.py'), *argv]
+        if patch:
+            cmd = [sys.executable, '-c', f'import sys, os, time; sys.path.insert(0, {str(ROOT / "tools" / "evolve")!r}); import signals_hourly as S\n'
+                                         f'{patch}\nrc = S.main({argv!r}, watchdog=True); sys.stdout.flush(); os._exit(rc)']
+        t = time.monotonic()
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=dict(os.environ, PATH=f"{fake}:{os.environ['PATH']}"))
+        return p, time.monotonic() - t
+
+    def test_the_process_itself_exits_2_on_time_when_every_request_hangs(self):
+        self.publish(self.simple_state(), HOUR0 - 3 * H)
+        p, took = self.script('--late-budget', '2')
+        self.assertEqual(p.returncode, S.EXIT_INCOMPLETE, p.stdout + p.stderr)
+        self.assertLess(took, 10)                                                       # start-up + 2 s, not 4 × 20 s of retries
+        self.assertIn('K 线不齐', p.stdout)
+        self.no_signals()
+
+    def test_the_watchdog_ends_a_run_stuck_outside_the_requests(self):
+        self.publish(self.simple_state(), HOUR0 - 3 * H)
+        p, took = self.script('--late-budget', '1', patch='S.HARD_GRACE_S = 1\nS.produce = lambda *a, **k: time.sleep(60)')
+        self.assertEqual(p.returncode, S.EXIT_INCOMPLETE, p.stdout + p.stderr)
+        self.assertLess(took, 10); self.assertIn('看门狗', p.stdout)
+        self.no_signals()
+
+    def test_nothing_is_written_once_the_watchdog_has_fired(self):
+        done = threading.Event()
+        dog = S.Watchdog(.01, lambda: None, exit_fn=lambda rc: done.set())
+        self.assertTrue(done.wait(5)); self.assertFalse(dog.disarm())
+        dog = S.Watchdog(30, lambda: self.fail('fired'), exit_fn=lambda rc: self.fail('exit'))
+        self.assertTrue(dog.disarm()); self.assertTrue(dog.timer.finished.is_set())
+
+    def test_a_hanging_github_falls_back_to_the_local_copy_in_time(self):
+        self.publish(self.simple_state(), HOUR0 - 3 * H)
+        self.assertEqual(self.main(), 0)
+        seen = []
+
+        def http(url, timeout=30):
+            seen.append(timeout)
+            raise RuntimeError('timed out')
+        now = HOUR0 + 90_000
+        with redirect_stdout(io.StringIO()):
+            rc = S.main(['--data', str(self.data), '--source', 'https://raw.githubusercontent.com/o/r/paper-data', '--commit-api', 'https://api.github.com/x'],
+                        now_fn=lambda: now, sleep=lambda s: None, get=FakeOKX({'now': now}), http=http)
+        self.assertEqual(rc, 0); self.assertFalse(self.signals()['state']['fetched'])
+        self.assertTrue(all(0 < t <= S.SOURCE_BUDGET_S for t in seen)); self.assertLessEqual(seen[-1], S.MASTER_BUDGET_S)
+        late = S.bound_http(http, now - 1, lambda: now)
+        seen.clear()
+        with self.assertRaises(RuntimeError):
+            late('https://x', 30)
+        self.assertEqual(seen, [])                                                     # nothing starts after the limit
+
+    def test_cache_files_are_replaced_atomically(self):
+        p = self.tmp / 'c' / 'X.json'
+        D._write_cache(p, '{"rows": []}')
+        with mock.patch.object(D.os, 'replace', side_effect=OSError('killed')):
+            with self.assertRaises(OSError):
+                D._write_cache(p, '{"rows": [[1')
+        self.assertEqual(json.loads(p.read_text()), {'rows': []})
 
 
 class SourceTests(Base):
@@ -576,10 +770,10 @@ class FetchSignalsHourlyTests(unittest.TestCase):
         self.src.write_text(json.dumps(doc))
         return doc
 
-    def run_fs(self, mode='hourly'):
+    def run_fs(self, mode='hourly', action=None):
         env = {'OKX_SIGNAL_MODE': mode, 'OKX_HOURLY_SIGNALS': str(self.src)}
         with redirect_stdout(io.StringIO()):
-            FS.main(['--data', str(self.dest)], env=env)
+            FS.main(['--data', str(self.dest), *(['--action', action] if action else [])], env=env)
         return json.loads((self.dest / 'evolve' / 'signals.json').read_text())
 
     def test_copies_a_fresh_hourly_file(self):
@@ -594,6 +788,28 @@ class FetchSignalsHourlyTests(unittest.TestCase):
             self.assertFalse((self.dest / 'evolve' / 'signals.json').exists())
         self.write(age_min=130)
         self.run_fs()                                                            # 2 h 10 min: still inside 2 h 15 min
+
+    def test_a_stale_file_stops_run_but_not_pause_or_snapshot(self):
+        old = self.write(last_bar_ts=HOUR0 - 2 * H)
+        self.run_fs()
+        for bad in (dict(age_min=140), dict(shadow=True)):
+            self.write(**bad)
+            for action in (None, 'run', 'resume', 'follow-current', 'flatten'):
+                with self.assertRaises(SystemExit, msg=action):
+                    self.run_fs(action=action)
+            for action in ('pause', 'snapshot'):
+                self.assertEqual(self.run_fs(action=action), old)                  # goes on, the bad file is not copied
+        self.src.unlink()
+        for action in ('pause', 'snapshot'):
+            self.assertEqual(self.run_fs(action=action), old)                      # no file at all
+        fresh = self.write()
+        self.assertEqual(self.run_fs(action='pause'), fresh)                       # a good file is still copied first
+
+    def test_github_mode_ignores_the_action(self):
+        for action in ('run', 'pause', 'snapshot'):
+            with mock.patch.object(FS, 'fetch', side_effect=SystemExit('download failed')):
+                with self.assertRaises(SystemExit):
+                    FS.main(['--data', str(self.dest), '--action', action], env={})
 
     def test_keeps_a_newer_local_copy(self):
         self.write(last_bar_ts=HOUR0)
@@ -667,6 +883,11 @@ class SystemdUnitTests(unittest.TestCase):
         self.assertEqual(live['ExecStartPre'], ['/usr/bin/python3 tools/fetch_signals.py --data /var/lib/modi-okx-live'])
         self.assertNotIn('OKX_SIGNAL_MODE', '\n'.join(live.get('Environment', [])))   # default = github signals
         drop = unit('okx-live-hourly.conf')['Service']
+        # only the drop-in passes the action; the empty assignment first clears the base unit's command (exactly one is left)
+        self.assertEqual(drop['ExecStartPre'], ['', live['ExecStartPre'][0] + ' --action %i'])
+        self.assertIn('--action %i', live['ExecStart'][0])
+        stop = unit('okx-live-stop.service')['Service']
+        self.assertNotIn('fetch_signals', json.dumps(stop))                          # flatten + pause never needs signals
         self.assertIn('OKX_SIGNAL_MODE=hourly', drop['Environment'])
         self.assertIn('OKX_HOURLY_SIGNALS=/var/lib/modi-okx-signals/evolve/signals.json', drop['Environment'])
         self.assertGreater(int(drop['CPUWeight'][0]), int(unit('okx-signals.service')['Service']['CPUWeight'][0]))

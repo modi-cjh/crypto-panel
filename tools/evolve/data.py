@@ -15,6 +15,7 @@
   and the last part is the final check: never used for fitness or breeding, only to decide who may join the team.
 """
 import json
+import os
 import subprocess
 import threading
 import time
@@ -37,26 +38,52 @@ _next = 0.0
 _lock = threading.Lock()
 
 
-def okx_get(path, retries=4, demo=False):
-    """GET a public OKX endpoint with curl, paced well under the history-candles limit (20 requests / 2 s)."""
+class DeadlineExceeded(RuntimeError):
+    """A request was not started, or was cut off, because the caller's deadline was reached."""
+
+
+def okx_get(path, retries=4, demo=False, deadline=None):
+    """GET a public OKX endpoint with curl, paced well under the history-candles limit (20 requests / 2 s).
+    deadline (time.monotonic() seconds; None = no limit, GitHub's run.py): nothing in here outlasts it — the pacing wait,
+    a running curl (killed) and the retry sleeps are all cut to the time left, then DeadlineExceeded is raised."""
     global _next
+
+    def left():
+        if deadline is None:
+            return None
+        s = deadline - time.monotonic()
+        if s <= 0:
+            raise DeadlineExceeded(f'deadline reached: {path.split("?")[0]}')
+        return s
     for attempt in range(retries):
+        left()
         with _lock:                       # one request every 0.12 s across all threads (limit: 20 per 2 s)
             slot = max(_next, time.monotonic())
             _next = slot + .12
         wait = slot - time.monotonic()
         if wait > 0:
-            time.sleep(wait)
+            time.sleep(wait if deadline is None else min(wait, left()))
         try:
             head = ['-H', 'x-simulated-trading: 1'] if demo else []       # demo = OKX demo-trading environment (public data, no keys)
-            out = subprocess.run(['curl', '-sS', '-m', '20', *head, 'https://www.okx.com/api/v5/' + path], capture_output=True, text=True, check=True).stdout
+            s = left()
+            limit = {} if s is None else {'timeout': s}                   # kills curl itself, whatever it is stuck in
+            out = subprocess.run(['curl', '-sS', '-m', '20', *head, 'https://www.okx.com/api/v5/' + path], capture_output=True, text=True, check=True, **limit).stdout
             body = json.loads(out)
             if body.get('code') == '0':
                 return body['data']
-        except (subprocess.CalledProcessError, ValueError):
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
             pass
-        time.sleep(1 + attempt)
+        time.sleep(1 + attempt if deadline is None else min(1 + attempt, left()))
     raise RuntimeError(f'OKX request failed: {path.split("?")[0]}')
+
+
+def _write_cache(path, text):
+    """Replace a cache file atomically: a run killed while writing must not leave a truncated file that every later run
+    fails to parse. The tmp name is fixed per file, so a leftover is overwritten next time."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name('.' + path.name + '.tmp')
+    tmp.write_text(text)
+    os.replace(tmp, path)
 
 
 def _rows(raw):
@@ -85,8 +112,7 @@ def update_candles(cache_dir, inst, now_ms, get=okx_get):
         oldest = min(r[0] for r in page)
     rows += [r for r in fresh if r[0] not in have and r[0] >= since]
     rows = sorted({r[0]: r for r in rows if r[0] >= since}.values())
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({'inst': inst, 'bar': '1H', 'rows': rows}, separators=(',', ':')))
+    _write_cache(path, json.dumps({'inst': inst, 'bar': '1H', 'rows': rows}, separators=(',', ':')))
     return rows
 
 
@@ -150,8 +176,7 @@ def update_funding(cache_dir, inst, now_ms, get=okx_get):
             break
         after = min(int(r['fundingTime']) for r in page)
     rows = sorted({r[0]: r for r in rows + [r for r in fresh if r[0] not in have]}.values())
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(dict(inst=inst, rows=rows), separators=(',', ':')))
+    _write_cache(path, json.dumps(dict(inst=inst, rows=rows), separators=(',', ':')))
     return rows
 
 

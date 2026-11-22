@@ -685,6 +685,13 @@
 - 依赖：需先合并“纸面改动从下一个整点生效”；GitHub 按新代码运行过一次（state 有 `next_hour_from`）之前，`signals_hourly.py` 拒绝运行（影子可用 `--shadow --legacy-state` 观察）。合并本身不改变线上行为，部署由用户决定。
 - 测试：`tests/test_signals_hourly.py`（完整性：齐 / 缺一币 / 未 confirm / 重试后齐 / 拉取失败 / 停更币剔除 / 截止后一次 / 截止可配 / 资金费等待；来源不回退、CDN 混版、读取失败、按提交号读与未变不下载、StateDrift 与 legacy；影子路径、as-of、原子写、崩溃不写、锁、无凭据、不改 state；与 GitHub 侧 `paper.update` 和 `run.py` 同输入同信号；时效默认 / hourly / 覆盖 / 坏值 / 跟单窗口与 late_ok；fetch_signals hourly；systemd 静态检查；compare_signals）。
 
+### 每小时信号后续修复：截止严格化、过期信号不挡 pause / snapshot（PR #114 第二个提交，2026-11-22）
+- 做了什么：
+  1. `signals_hourly.py` 到截止时间自己失败：`data.okx_get(deadline=)` 把限速等待、进行中的 curl（杀掉）和重试等待都截到剩余时间；每一轮拉取最多等到截止，没完成的线程放弃，进程用 `os._exit` 结束；到齐但已过 H:05 也算失败；GitHub 请求合计最多 60 秒；看门狗在资金费截止后 90 秒（H:09:30）以退出码 2 结束请求以外的卡死，写文件前先解除。资金费 H:08 中止后用缓存费率并告警，没有任何费率的币 → 退出码 2。过了 H:05 才启动的运行有 210 秒（`--late-budget`），不越过本小时。K 线 / 资金费缓存改为原子替换。`TimeoutStartSec=600`（H:11:30）成为真正的兜底。
+  2. hourly 模式：drop-in 的 ExecStartPre 多传 `--action %i`（base 单元不变）；过期 / 无效的每小时信号只挡需要信号的动作，`pause` 和 `snapshot` 不挡。交易程序此时的 `pause` 只设置暂停并读账户（`Mirror.pause_only`），不按过期信号平仓或改止损。github 模式不变。
+- 为什么：原来的截止只在两轮之间检查，一次卡住的请求能越过 H:05（本盒实测 209 s、720 s，后者在服务器上会被 `TimeoutStartSec=600` 杀掉）；hourly 模式的 ExecStartPre 对所有实例生效，信号一过期连 `pause` 都执行不了。
+- 测试：`tests/test_signals_hourly.py` `DeadlineTests`（卡住的 K 线 / 资金费请求、重试循环、晚 1 毫秒到齐、没有费率、`okx_get` 杀掉挂起的 curl 与静默重试、无截止时不变、真实子进程按时退出 2、看门狗、缓存原子替换），fetch_signals 按动作区分、drop-in 静态检查；`tests/test_okx_live_mode.py`（过期时 pause / snapshot 可用且只发 GET、run / resume / follow-current / flatten 仍被挡、读账户失败也保持暂停、github 模式不变）。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

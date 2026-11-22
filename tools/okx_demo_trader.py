@@ -1009,6 +1009,13 @@ class Mirror:
                 continue
             self.open(key, inst, p)
 
+    def pause_only(self):
+        """Pause without the signals: set the flag first (it must hold even if the exchange cannot be read), then refresh
+        the account for the summary. Sends no order, close or stop change."""
+        self.s['paused'] = True
+        self.log('pause', '-', reason='stale_signals')
+        self.load()
+
     def settle(self):
         """load() ran before this run's orders: read the account again so the summary already lists new / closed positions
         (otherwise they only appear after the next scheduled run, 40–60 minutes later)."""
@@ -1062,13 +1069,18 @@ def main():
             raise SystemExit('未配置 OKX 实盘密钥（OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE 环境变量），未运行。')
         print('未配置 OKX 模拟交易密钥，跳过跟单。'); return
     # Signal source: the evolution champion's paper positions when present (tools/evolve), else the retired strategy engine.
+    pause_only = False
     evolved_path, paper_path = args.data / 'evolve' / 'signals.json', args.data / 'combined' / 'state.json'
     if live and not evolved_path.exists():
         raise SystemExit('实盘只跟随进化冠军信号 evolve/signals.json；文件不存在，未运行。')
     if evolved_path.exists():
         sig = json.loads(evolved_path.read_text())
         age = signal_age_ms(sig, datetime.now(timezone.utc))
-        if live and args.action != 'snapshot' and (age is None or age > LIVE_SIGNAL_MAX_AGE):
+        stale = live and (age is None or age > LIVE_SIGNAL_MAX_AGE)
+        # Hourly mode: a pause must work while the signals are stale (that is when it is wanted). It then only sets the
+        # flag and reads the account; a normal pause also manages positions against the signals. github mode: unchanged.
+        pause_only = stale and args.action == 'pause' and signal_mode == 'hourly'
+        if stale and args.action != 'snapshot' and not pause_only:
             # A stale signal file would keep closed paper positions open and follow old entries; the exchange stops stay in place.
             raise SystemExit(f'evolve/signals.json 已过期、时间戳在未来或缺少 updated_at（超过 {LIVE_SIGNAL_MAX_AGE // 60_000} 分钟），实盘本轮不操作。')
         exits = sig.get('exits') if isinstance(sig.get('exits'), dict) else {}
@@ -1099,6 +1111,9 @@ def main():
     try:
         if args.action == 'snapshot':
             mirror.load()  # Read-only exchange refresh: no order, leverage or stop mutations.
+        elif pause_only:
+            print('信号已过期：只设置暂停，不按信号管理仓位（交易所止损 / 止盈仍在）')
+            mirror.pause_only()
         else:
             mirror.run('run' if dry else args.action)
             mirror.settle()

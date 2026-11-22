@@ -26,7 +26,7 @@
 
 ## 每小时信号（可选，默认不启用）
 
-`okx-signals.service` / `.timer`（正式）与 `okx-signals-shadow.service` / `.timer`（影子）在 H:01:30 运行 `tools/evolve/signals_hourly.py`：只用公共数据重放 GitHub 已发布的纸面账户，不读 `okx-live.env`（`/etc/modi-okx-live` 对它不可见）、不持有密钥，以独立的低权限用户 `modi-signals` 运行，状态在 `/var/lib/modi-okx-signals/`。影子只写 `signals.shadow.json`、不触发跟单；正式单元写 `signals.json` 并以 `OnSuccess=` / `OnFailure=` 触发 `okx-live@run`。只有安装 drop-in `okx-live-hourly.conf`（`OKX_SIGNAL_MODE=hourly`）后，跟单才改用本地每小时信号（2 h 15 min / 2 h）；不装就是现状（GitHub 信号，9 h / 5 h），`okx-live@.service` 本身没有改。安装、影子 2–3 天、对账、验收、切换与回退：[`docs/shadow-run-plan.md`](../../docs/shadow-run-plan.md)。
+`okx-signals.service` / `.timer`（正式）与 `okx-signals-shadow.service` / `.timer`（影子）在 H:01:30 运行 `tools/evolve/signals_hourly.py`：只用公共数据重放 GitHub 已发布的纸面账户，不读 `okx-live.env`（`/etc/modi-okx-live` 对它不可见）、不持有密钥，以独立的低权限用户 `modi-signals` 运行，状态在 `/var/lib/modi-okx-signals/`。影子只写 `signals.shadow.json`、不触发跟单；正式单元写 `signals.json` 并以 `OnSuccess=` / `OnFailure=` 触发 `okx-live@run`。只有安装 drop-in `okx-live-hourly.conf`（`OKX_SIGNAL_MODE=hourly`）后，跟单才改用本地每小时信号（2 h 15 min / 2 h）；不装就是现状（GitHub 信号，9 h / 5 h），`okx-live@.service` 本身没有改。hourly 模式下信号过期时 `okx-live@run` 不运行，但 `okx-live@pause`（只设置暂停，不按过期信号管理仓位）和 `okx-live@snapshot` 照常，`okx-live-stop` 始终可用。安装、影子 2–3 天、对账、验收、切换与回退：[`docs/shadow-run-plan.md`](../../docs/shadow-run-plan.md)。
 
 ## 部署步骤（Ubuntu 24.04，139.180.146.42）
 

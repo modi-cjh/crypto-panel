@@ -25,7 +25,8 @@ StateDirectoryMode=0755
 ExecStart=/usr/bin/python3 tools/evolve/signals_hourly.py --data /var/lib/modi-okx-signals --candles /var/lib/modi-okx-signals/candles
 # oneshot 退出后 systemd 255 不再给出 MemoryPeak（$$ = shell 的 $，%% = %）：在 cgroup 删除前把 memory.peak、CPU 与结果追加到 metrics.log（影子期验收用）
 ExecStopPost=-/bin/sh -c 'echo "$$(date -u +%%FT%%TZ) unit=%n result=$$SERVICE_RESULT status=$$EXIT_STATUS memory_peak=$$(cat /sys/fs/cgroup/system.slice/%n/memory.peak 2>/dev/null) $$(grep ^usage_usec /sys/fs/cgroup/system.slice/%n/cpu.stat 2>/dev/null)" >> /var/lib/modi-okx-signals/metrics.log'
-# 脚本自己在 H:05（K 线）/ H:08（资金费）截止；这里只是兜底
+# 脚本自己按时失败：H:05（K 线，连同进行中的请求）/ H:08（资金费），其余卡死由脚本内看门狗在 H:09:30 以退出码 2 结束；
+# 这里（H:11:30）只是最后的兜底，正常不会触发
 TimeoutStartSec=600
 # 本盒实测峰值 RSS 约 409 MiB（418 000 KB）（重放时 execution.Series 的指标缓存约 200 MB）：MemoryHigh 定在 460M（报告建议 420M，
 # 会在正常运行时就被节流），MemoryMax 520M 不变；影子期用 systemctl show -p MemoryPeak 实测后再调
