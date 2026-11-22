@@ -1,13 +1,13 @@
 {
- "updated_at": "2026-11-22T13:07:58Z",
+ "updated_at": "2026-11-22T16:57:35Z",
  "champion": "s23387",
  "team": [
   "s29515",
   "s23178",
-  "s20401",
+  "s21409",
   "s29635",
   "s23735",
-  "s27799",
+  "s30810",
   "s23387",
   "s21608"
  ],
@@ -64,14 +64,5 @@
   "CFX-USDT-SWAP"
  ],
  "positions": {},
- "exits": {
-  "NEAR-USDT-SWAP|1794700800000": "manual_user",
-  "ADA-USDT-SWAP|1794700800000": "manual_user",
-  "LTC-USDT-SWAP|1794700800000": "manual_user",
-  "KAITO-USDT-SWAP|1794816000000": "manual_user",
-  "ICP-USDT-SWAP|1794931200000": "manual_user",
-  "H-USDT-SWAP|1794384000000": "manual_user",
-  "DOGE-USDT-SWAP|1794499200000": "manual_user",
-  "ETH-USDT-SWAP|1795219200000": "stop"
- }
+ "exits": {}
 }
