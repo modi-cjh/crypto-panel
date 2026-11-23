@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "source": "okx-live",
- "updated_at": "2026-11-23T15:50:04Z",
+ "updated_at": "2026-11-23T16:50:05Z",
  "fills": [
   {
    "ts": "2026-11-21T13:50:05Z",
@@ -387,6 +387,13 @@
   }
  ],
  "events": [
+  {
+   "ts": "2026-11-23T16:50:05Z",
+   "action": "skip",
+   "inst": "BTC-USDT-SWAP",
+   "reason": "adopt_position_not_found",
+   "dry_run": false
+  },
   {
    "ts": "2026-11-15T14:50:04Z",
    "action": "skip",
