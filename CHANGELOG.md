@@ -692,6 +692,11 @@
 - 为什么：原来的截止只在两轮之间检查，一次卡住的请求能越过 H:05（本盒实测 209 s、720 s，后者在服务器上会被 `TimeoutStartSec=600` 杀掉）；hourly 模式的 ExecStartPre 对所有实例生效，信号一过期连 `pause` 都执行不了。
 - 测试：`tests/test_signals_hourly.py` `DeadlineTests`（卡住的 K 线 / 资金费请求、重试循环、晚 1 毫秒到齐、没有费率、`okx_get` 杀掉挂起的 curl 与静默重试、无截止时不变、真实子进程按时退出 2、看门狗、缓存原子替换），fetch_signals 按动作区分、drop-in 静态检查；`tests/test_okx_live_mode.py`（过期时 pause / snapshot 可用且只发 GET、run / resume / follow-current / flatten 仍被挡、读账户失败也保持暂停、github 模式不变）。
 
+### 实盘接管一个人工仓位（OKX_ADOPT，CLA-9 第 2 步，2026-11-23）
+- 做了什么：`tools/okx_demo_trader.py` 新增 `adopt_config()`（读 `OKX_ADOPT` JSON）、`Mirror.adopt_positions()` / `manage_adopted()`。只有配置里列出、且实盘上 instId + posSide（+ posId）匹配的仓位才会被接管，记为 `mirrored['adopt|inst|posId']`（`adopted: true`，entry = 实盘均价，stop = floor = 配置的底线）。每轮：消失 → done、不再接管；没有止损单 → 先补挂（不低于底线），价格已越过才市价平；接管后出现的反向纸面信号 → `close-position` 平（`reverse_signal`），本轮不开反向仓；否则用 PR #110 的 `trail_stop_level`，R = 配置的 `r_dist`（缺失则不移动），`amend-algos` 只收紧、失败不撤单。不计入同向数量 / 拥挤 / 全仓检查中的程序仓（仍按人工仓计保证金）；日亏停手不平它，手动 flatten / okx-live-stop 会平它。summary 持仓加 `adopted: true`。删掉变量后下一轮记录改为 `released`、交还人工。
+- 为什么：用户要把一笔手动 BTC 多单（止损已在入场价之上）交给程序按策略仓同样的规则管理出场。实盘 1R = |入场 − 初始止损| 在止损高于入场时不可用，所以 R 由配置给出。默认不设变量时行为与之前逐字节相同。
+- 测试：`tests/test_adopt.py`（19 项：删掉变量即交还人工（`released`，不发请求）、okx-live-stop 照样平、配置解析、不配置时完全相同、posId 不符 / 无仓位不接管、只向上移动且不低于底线、改单失败不撤单、缺止损补挂不平仓、反向信号只平一次且本轮不开空、接管前的旧空单不触发、同向多单不重复开、日亏停手不平 / flatten 平、不计同向、消失后不再接管、无 r_dist 只护底线、暂停时照样移动、其它仓位不动）。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

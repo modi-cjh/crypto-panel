@@ -50,7 +50,7 @@ import sys
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP, ROUND_UP
 from pathlib import Path
 from volume_test import profile as volume_profile, describe as describe_volume
 from runtime_guard import entries_allowed, atomic_json
@@ -420,9 +420,54 @@ def paper_dist(p, px=None):
     return abs(float(ref) - float(p['stop'])) if ref else 0.0
 
 
+ADOPT_ENV = 'OKX_ADOPT'
+
+
+def adopt_config(env=None):
+    """Manual positions the trader is told to adopt (OKX_ADOPT, a JSON list; unset / empty = none, the default).
+    Each item: inst, posSide (long / short / net), stop (the floor: the exchange stop never goes looser than this),
+    optional posId (adopt only that exact position), side (1 / -1, must agree with posSide), algoId (its resting stop) and
+    r_dist (1R as a price distance for the trailing stop; missing or invalid = the stop is protected but never trailed).
+    Invalid items are dropped with a message, so a typo never adopts anything."""
+    raw = (os.environ if env is None else env).get(ADOPT_ENV, '').strip()
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw)
+    except ValueError:
+        print(f'{ADOPT_ENV} 不是合法 JSON，不接管任何仓位'); return []
+    out = []
+    for it in items if isinstance(items, list) else []:
+        try:
+            inst, ps = str(it['inst']), str(it.get('posSide') or 'net')
+            stop = float(it['stop'])
+            side = {'long': 1, 'short': -1}.get(ps) or int(it['side'])
+            if not re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', inst) or ps not in ('long', 'short', 'net') or side not in (1, -1) \
+                    or int(it.get('side', side)) != side or not stop > 0:
+                raise ValueError
+            try:
+                r = float(it.get('r_dist'))
+                r = r if r > 0 else None
+            except (TypeError, ValueError):
+                r = None
+            out.append(dict(inst=inst, posSide=ps, side=side, stop=stop, posId=str(it['posId']) if it.get('posId') else None,
+                            algoId=str(it['algoId']) if it.get('algoId') else None, r_dist=r))
+        except (KeyError, TypeError, ValueError):
+            print(f'{ADOPT_ENV} 中有一项无效，已忽略')
+    return out
+
+
+def adopt_key(cfg):
+    return f"adopt|{cfg['inst']}|{cfg.get('posId') or cfg['posSide']}"
+
+
 class Mirror:
-    def __init__(self, client, state, paper, now, dry_run=False):
+    def __init__(self, client, state, paper, now, dry_run=False, adopt=None):
         self.c, self.s, self.paper, self.now, self.dry = client, state, paper, now, dry_run
+        # OKX_ADOPT (adopt_config): manual positions to adopt. [] = none, and earlier adopted records are released back to
+        # manual; None (tools that do not read the setting, e.g. stop_demo) = keep managing what the state already holds.
+        self.adopt = None if adopt is None else list(adopt)
+        self.adopt_freed = set()          # coins whose adopted position was closed on a reverse signal in this run
         self.actions = []
         self.live = None                  # demo mode only: real_price, to skip entries while the demo price is off the real market
         self.new_order_risk = {}
@@ -458,6 +503,8 @@ class Mirror:
         pos = self.c.request('GET', '/api/v5/account/positions?instType=SWAP')
         self.positions, self.all_positions = {}, {}
         managed = set(INSTRUMENTS) | {m['inst'] for m in self.s['mirrored'].values() if m.get('status') == 'open'}
+        if getattr(self, 'adopt', None):
+            managed |= {a['inst'] for a in self.adopt}
         for p in (pos.get('data') or []) if ok(pos) else []:
             if float(p.get('pos') or 0) == 0:
                 continue
@@ -576,7 +623,7 @@ class Mirror:
         elif evolved:
             r = RISK_RANGE[0]
         if evolved:                                # many positions on one side are one bet: the next one risks less
-            crowd = sum(1 for m in self.s['mirrored'].values() if m.get('status') == 'open' and m.get('side') == side)
+            crowd = sum(1 for m in self.s['mirrored'].values() if m.get('status') == 'open' and m.get('side') == side and not m.get('adopted'))
             if same_side_full(crowd, MAX_SAME_SIDE):   # ... and with MAX_SAME_SIDE already open on this side, none is added
                 return self.log('skip', inst, reason='same_side_count', open_same_side=crowd, max_same_side=MAX_SAME_SIDE)
             r *= next((f for n, f in CROWD_STEPS if crowd >= n), 1.0)
@@ -597,7 +644,7 @@ class Mirror:
         risk = r * self.equity
         same_risk = 0.0
         for existing_key, m in (self.s['mirrored'].items() if SAME_SIDE_CAP is not None else ()):   # only needed for a same-side risk cap
-            if m.get('status') != 'open' or m.get('side') != side:
+            if m.get('status') != 'open' or m.get('side') != side or m.get('adopted'):
                 continue
             if existing_key in self.new_order_risk:
                 same_risk += self.new_order_risk[existing_key]
@@ -640,7 +687,7 @@ class Mirror:
         book, unmanaged, prices, upnl = {}, {}, {}, 0.0
         mirrored_keys = set()
         for existing_key, m in self.s['mirrored'].items():
-            if m.get('status') != 'open':
+            if m.get('status') != 'open' or m.get('adopted'):   # adopted: counted below with the manual ones, as before
                 continue
             held = self.held(m['inst'], m.get('side'))
             if held:
@@ -910,6 +957,147 @@ class Mirror:
             return self.log('error', m['inst'], step='amend_stop', detail=first_error(r))
         self.log('amend_stop', m['inst'], old=m['stop'], new=new_stop); m['stop'] = new_stop
 
+    # ---- adopted manual positions (OKX_ADOPT) -----------------------------------------
+    def adopted_held(self, m):
+        """The live position of an adopted record: same instId + posSide, and the same posId when one is configured."""
+        p = (getattr(self, 'all_positions', None) or self.positions).get((m['inst'], m['posSide']))
+        if not p or (m.get('posId') and str(p.get('posId') or '') != m['posId']):
+            return None
+        n = float(p.get('pos') or 0)
+        if m['posSide'] == 'net' and (n > 0) != (m['side'] == 1):
+            return None
+        return p
+
+    def adopted_of(self, p):
+        return any(m.get('adopted') and m['status'] == 'open' and m['inst'] == p.get('instId') and m['posSide'] == p.get('posSide', 'net')
+                   for m in self.s['mirrored'].values())
+
+    def adopted_algo(self, m):
+        """The adopted position's resting stop: the configured / stored algoId first, else any stop on that position."""
+        sl = self.mirror_algos(m, 'sl')
+        return next((a for a in sl if m.get('algoId') and str(a.get('algoId')) == m['algoId']), None) or next(iter(sl), None)
+
+    def release_adopted(self):
+        """Rollback: an open adopted record whose entry was removed from OKX_ADOPT goes back to being a manual position
+        (status 'released'; nothing is sent to the exchange, its stop stays as it is)."""
+        keys = {adopt_key(c) for c in self.adopt}
+        for key, m in self.s['mirrored'].items():
+            if m.get('adopted') and m.get('status') == 'open' and key not in keys:
+                m['status'] = 'released'; self.log('adopt_release', m['inst'], stop=m.get('stop'))
+
+    def adopt_positions(self):
+        """Adopt each configured manual position once: only when the live position with that instId + posSide (+ posId)
+        exists. A record (done or open) is never adopted again; no other manual position is ever adopted."""
+        pending = self.s.setdefault('adopt_pending', {})
+        for cfg in getattr(self, 'adopt', ()):
+            key = adopt_key(cfg)
+            if key in self.s['mirrored'] and self.s['mirrored'][key].get('status') != 'released':
+                continue                                       # open, or done (stop hit / closed): never adopted again
+            p = self.adopted_held(dict(cfg, posId=cfg.get('posId')))
+            if not p:
+                why = 'position_not_found'
+                alt = (getattr(self, 'all_positions', None) or {}).get((cfg['inst'], cfg['posSide']))
+                if alt and cfg.get('posId') and str(alt.get('posId') or '') != cfg['posId']:
+                    why = 'posId_mismatch'
+                if pending.get(key) != why:                    # log a reason once, not every hour
+                    pending[key] = why; self.log('skip', cfg['inst'], reason='adopt_' + why)
+                continue
+            pending.pop(key, None)
+            stop = cfg['stop']
+            m = dict(inst=cfg['inst'], side=cfg['side'], posSide=cfg['posSide'], posId=cfg.get('posId'), strategy='adopted', adopted=True,
+                     contracts=str(abs(float(p.get('pos') or 0))), entry=float(p.get('avgPx') or 0), stop=stop, floor=stop, init_stop=stop,
+                     target=None, leverage=p.get('lever'), mgnMode=p.get('mgnMode') or 'isolated', algoId=cfg.get('algoId'),
+                     r_dist=cfg.get('r_dist'), best=float(p.get('avgPx') or 0), opened_at=self.now_ms, adopted_at=self.now_ms,
+                     pos_ctime=int(p['cTime']) if str(p.get('cTime') or '').isdigit() else None, status='open', leader=False)
+            algo = self.adopted_algo(m)
+            if algo:
+                m['algoId'] = str(algo.get('algoId'))
+                cur = float(algo['slTriggerPx'])
+                if (cur - stop) * m['side'] > 0:
+                    m['stop'] = cur                            # the resting stop is already tighter than the floor: keep it
+            self.s['mirrored'][key] = m
+            self.log('adopt', m['inst'], side=m['side'], posSide=m['posSide'], contracts=m['contracts'], price=m['entry'], stop=m['stop'],
+                     floor=stop, r_dist=m['r_dist'], mgnMode=m['mgnMode'])
+
+    def manage_adopted(self, key, m, p):
+        """One run for an adopted position, in this order: gone → done (never re-adopted); no resting stop → place one at
+        the stored stop (never looser than the floor) or, only when the price is already past it, close
+        (stop_missing_price_beyond_stop); a NEW paper signal the other way on the coin → close (reverse_signal); else the
+        PR #110 trailing stop with R = the configured r_dist, amended on the existing algo, only ever tightened. Size,
+        leverage and margin mode are never changed; no cancel endpoint is ever called."""
+        held = self.adopted_held(m)
+        if not held:
+            m['status'] = 'done'
+            try:
+                res = self.fill_result(m['inst'], m['posSide'], int(m.get('opened_at') or 0)) or {}
+            except OKXError:
+                res = {}
+            m['closed_reason'] = 'liquidation' if res.get('liquidated') else 'trailing_stop' if m.get('trailing') else 'stop_or_manual'
+            if res.get('pnl') is not None:
+                m['realized_pnl'] = res['pnl']
+            extra = {k: res[k] for k in ('pnl', 'price_pnl', 'funding', 'close_price', 'fee') if k in res}
+            return self.log('closed_on_exchange', m['inst'], strategy='adopted', adopted=True, reason=m['closed_reason'], **extra)
+        floor, side = float(m.get('floor') or m['stop']), m['side']
+        stop = max(float(m['stop']) * side, floor * side) * side       # never looser than the floor
+        algo = self.adopted_algo(m)
+        if not algo:
+            px = self.price(m['inst'])
+            if px and (px - stop) * side <= 0:
+                return self.close(key, m, 'stop_missing_price_beyond_stop', adopted=True)
+            tick = self.spec(m['inst'])['tickSz']
+            body = dict(instId=m['inst'], tdMode=held.get('mgnMode') or m.get('mgnMode') or 'isolated', side='sell' if side == 1 else 'buy',
+                        ordType='conditional', closeFraction='1', reduceOnly=True,
+                        slTriggerPx=fmt(quantize(stop, tick, ROUND_UP if side == 1 else ROUND_DOWN)), slOrdPx='-1', slTriggerPxType='last',
+                        **({'posSide': m['posSide']} if m['posSide'] != 'net' else {}))
+            r = self.post('/api/v5/trade/order-algo', body)
+            if not ok(r):
+                return self.log('error', m['inst'], step='adopt_restore_stop', detail=first_error(r))
+            m['stop'] = stop
+            m['algoId'] = str((r.get('data') or [{}])[0].get('algoId') or '') or None
+            return self.log('restore_stop', m['inst'], adopted=True, stop=body['slTriggerPx'])
+        m['algoId'] = str(algo.get('algoId'))
+        cur = float(algo['slTriggerPx'])
+        if (cur - stop) * side > 0:
+            stop = cur                                         # tightened on the exchange (by hand): never loosen it again
+        m['stop'] = stop
+        if p and p.get('side') == -side and int(p.get('opened') or 0) >= int(m.get('adopted_at') or 0):
+            self.close(key, m, 'reverse_signal', adopted=True)
+            if m['status'] == 'done':
+                self.__dict__.setdefault('adopt_freed', set()).add(m['inst'])
+            return
+        unit = m.get('r_dist')
+        try:
+            unit = float(unit) if unit is not None and float(unit) > 0 else 0.0
+        except (TypeError, ValueError):
+            unit = 0.0
+        if not unit:
+            if not m.get('no_trail_logged'):
+                m['no_trail_logged'] = True; self.log('skip', m['inst'], reason='adopt_no_r_dist_no_trail', stop=stop)
+            want = stop
+        else:
+            entry = float(held.get('avgPx') or m.get('entry') or 0)
+            want, trailing = stop, False
+            if entry:
+                t, on = trail_stop_level(side, entry, self.best_price(m), stop, unit, TRAIL)
+                if on and (t - stop) * side > 0:
+                    want, trailing = t, True
+            if trailing:
+                m['trailing'] = True
+        below_floor = (floor - cur) * side > 0                # a resting stop looser than the floor is always raised to it
+        if (want - cur) * side <= 0 or (abs(want - cur) / cur <= AMEND_TOLERANCE and not below_floor):
+            return
+        px = self.price(m['inst'])
+        if px and (px - want) * side <= 0:
+            return self.close(key, m, 'trailing_stop', adopted=True)
+        tick = self.spec(m['inst'])['tickSz']
+        new = fmt(quantize(want, tick, ROUND_DOWN if side == 1 else ROUND_UP))
+        if (float(new) - floor) * side < 0:
+            new = fmt(quantize(floor, tick, ROUND_UP if side == 1 else ROUND_DOWN))
+        r = self.post('/api/v5/trade/amend-algos', dict(instId=m['inst'], algoId=m['algoId'], newSlTriggerPx=new))
+        if not ok(r):
+            return self.log('error', m['inst'], step='adopt_amend_stop', detail=first_error(r))   # the resting stop stays as it is
+        self.log('amend_stop', m['inst'], adopted=True, old=cur, new=float(new)); m['stop'] = float(new)
+
     def leader_upl(self):
         """Floating PnL of the leader's open positions, and remember each one's so a later close can be booked."""
         total = 0.0
@@ -926,10 +1114,12 @@ class Mirror:
             pnl = (res or {}).get('pnl')
             self.s['leader_realized'] = float(self.s.get('leader_realized') or 0) + float(pnl if pnl is not None else m.get('last_upl') or 0)
 
-    def flatten(self, reason, keep_leader=False):
+    def flatten(self, reason, keep_leader=False, keep_adopted=False):
         for key, m in self.s['mirrored'].items():
             if keep_leader and m.get('leader'):
                 continue
+            if keep_adopted and m.get('adopted'):
+                continue                       # the daily halt leaves the adopted position to its owner (its stop stays)
             if m['status'] == 'open' and self.held(m['inst'], m['side']):
                 self.close(key, m, reason)
             elif m['status'] == 'open':
@@ -938,6 +1128,10 @@ class Mirror:
     # ---- one reconciliation pass ---------------------------------------------------
     def run(self, action='run'):
         self.load()
+        if getattr(self, 'adopt', None) is not None:
+            self.release_adopted()
+        if getattr(self, 'adopt', None):
+            self.adopt_positions()
         day = local_day(self.now)
         leader_upl = self.leader_upl()
         if self.s.get('day') != day:
@@ -961,11 +1155,14 @@ class Mirror:
         if not self.s['halted'] and self.s.get('day_start') and day_pnl <= -self.s['day_start'] * DAILY_HALT:
             self.s['halted'] = True
             self.log('daily_halt', '-', equity=self.equity, day_start=self.s['day_start'], others_day=round(day_pnl, 2), leader_day=0.0)
-            self.flatten('daily_halt', keep_leader=False)
+            self.flatten('daily_halt', keep_leader=False, keep_adopted=True)
         paper_positions = self.paper.get('positions', {})
         # Closes and stop updates for what we mirrored.
         for key, m in self.s['mirrored'].items():
             if m['status'] != 'open':
+                continue
+            if m.get('adopted'):
+                self.manage_adopted(key, m, paper_positions.get(m['inst']))
                 continue
             held = self.held(m['inst'], m['side'])
             p = paper_positions.get(m['inst'])
@@ -1000,6 +1197,9 @@ class Mirror:
                 continue
             if self.s['halted']:                               # halted for the day: no new entries, including the leader
                 continue
+            if inst in getattr(self, 'adopt_freed', ()):                       # adopted position closed on this reverse signal: the entry waits a run
+                self.log('skip', inst, reason='adopted_closed_this_run')
+                continue
             if self.held(inst, p['side']) or any(k[0] == inst for k in self.positions):
                 self.log('skip', inst, reason='exchange_position_exists_not_ours'); self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net')
                 continue
@@ -1025,7 +1225,8 @@ class Mirror:
     def summary(self):
         pos = [dict(inst=p['instId'], side=p.get('posSide', 'net'), contracts=p.get('pos'), avgPx=p.get('avgPx'), markPx=p.get('markPx'),
                     upl=p.get('upl'), uplRatio=p.get('uplRatio'), lever=p.get('lever'), margin=p.get('margin') or p.get('imr'), mgnMode=p.get('mgnMode'), ctVal=self.spec(p['instId'])['ctVal'],
-                    ours=any(m['status'] == 'open' and m['inst'] == p['instId'] for m in self.s['mirrored'].values()))
+                    ours=any(m['status'] == 'open' and m['inst'] == p['instId'] for m in self.s['mirrored'].values()),
+                    **({'adopted': True} if self.adopted_of(p) else {}))
                for p in getattr(self, 'all_positions', self.positions).values()]
         return dict(updated_at=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), equity=self.equity, available=self.available,
                     day_start=self.s.get('day_start'), paused=self.s['paused'], halted=self.s['halted'], dry_run=self.dry, positions=pos,
@@ -1104,7 +1305,7 @@ def main():
     if forced_dry and args.action not in ('run', 'dry-run', 'snapshot'):
         print(f'dry-run：{args.action} 只做预演，不保存状态、不发送订单。')
     mirror = Mirror(OKX(*creds, mode=mode, dry_run=forced_dry or dry), json.loads(json.dumps(state)) if dry else state, paper,
-                    datetime.now(timezone.utc), dry)
+                    datetime.now(timezone.utc), dry, adopt=adopt_config())
     if applied.get('mode') == 'evolved' and not live:
         mirror.live = real_price      # live trades the real market already: nothing to compare against
     error = None
