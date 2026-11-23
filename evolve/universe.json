@@ -1283,12 +1283,12 @@
   ]
  },
  "price_off_now": {
-  "ARB-USDT-SWAP": -0.0707,
-  "ASTER-USDT-SWAP": -0.1421,
-  "H-USDT-SWAP": 0.844,
-  "JUP-USDT-SWAP": -0.0147,
-  "BARD-USDT-SWAP": -0.2713,
-  "HOME-USDT-SWAP": 0.0419
+  "ARB-USDT-SWAP": -0.0671,
+  "ASTER-USDT-SWAP": -0.304,
+  "H-USDT-SWAP": 0.8321,
+  "JUP-USDT-SWAP": -0.0177,
+  "BARD-USDT-SWAP": -0.2679,
+  "HOME-USDT-SWAP": -0.0503
  },
  "trimmed_at": 1794761546503
 }
