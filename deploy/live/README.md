@@ -99,6 +99,21 @@ sudo systemctl disable --now okx-live.timer  # 停止定时运行
 - 服务器断网 / 宕机时程序无法操作，只能依赖已挂在交易所的止损，并通过 OKX App / 网页人工处理。
 - 在程序持有的币上**不要手动开同方向仓**：程序按币种和方向识别自己的仓位，平仓会连同手动部分一起平。其它币上的人工仓位不受影响。
 
+## 接管一个人工仓位（OKX_ADOPT，可选，默认不启用）
+
+默认（变量不设或为空）行为与之前完全相同：人工仓位只显示、不管理。设置后，程序只接管**列出的那一个**仓位（instId + posSide，配置了 posId 时还要 posId 相同），其它人工仓位照旧不动。
+
+```bash
+sudoedit /etc/modi-okx-live/okx-live.env     # 加一行（整段 JSON 用单引号；r_dist 由仓位所有人决定，下面只是示例）
+OKX_ADOPT='[{"inst":"BTC-USDT-SWAP","posId":"4121814466832101378","posSide":"long","side":1,"stop":62300,"algoId":"4125258999062327297","r_dist":1500}]'
+```
+
+- 字段：`stop` = 止损底线（交易所止损永远不会比它更松）；`algoId` = 已挂的止损单；`r_dist` = 1R 的价格距离（移动止损用；缺失或无效时只保护底线、不移动，日志记一次 `adopt_no_r_dist_no_trail`）。无效的条目会被忽略，不会接管任何仓位。
+- 每轮：仓位消失 → 记为完成（`closed_on_exchange`，`strategy: adopted`），同一 posId 不再接管；找不到止损单 → 先按当前止损（不低于底线）补挂 reduce-only、closeFraction=1 的条件止损，只有价格已越过止损才市价平；纸面在接管之后出现该币**反方向**新信号 → `close-position` 平掉（`reverse_signal`），同一轮不开反向仓，下一轮按正常规则跟随；否则按策略仓同一套移动止损（浮盈 ≥ 0.5R 后止损 = 接管后收盘 1H K 线最高价 − 1R），只用 `amend-algos` 改原止损单、只收紧；改单失败只记错误，原止损不动。程序从不调用撤单接口、不改杠杆 / 保证金模式 / 数量。
+- 不算策略仓：不计入同向 20 单与拥挤降风险，不是第一名；全仓开仓检查仍按人工仓位计入它的保证金。日亏 25% 停手**不会**平掉它（交易所止损仍在）；`okx-live-stop`（全部平仓并停止）和 `okx-live@flatten` **会**平掉它；`pause` 时与策略仓一样继续移动止损。
+- 验证：`sudo systemctl start okx-live@dry-run` 后看 `okx_live/dry_run_preview.json` 里有 `adopt` 一行；正式运行后 `state.json` 的 `mirrored` 中有 `adopt|BTC-USDT-SWAP|4121814466832101378`（`adopted: true`），`summary.json` 的该持仓 `ours: true, adopted: true`。
+- 回退：删掉 `OKX_ADOPT` 一行即可。下一轮该条记录改为 `released`（日志 `adopt_release`），不向交易所发任何请求，仓位和当时的止损原样交还人工；之后不再移动止损、不按信号平仓。重新加回变量会重新接管（以当时的均价、底线和止损为准）。`okx-live-stop` 不读这个变量，按 state 里仍为 open 的接管记录处理。
+
 ## 日志与排查
 
 ```bash
