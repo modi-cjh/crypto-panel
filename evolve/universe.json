@@ -463,6 +463,10 @@
    [
     1795359600000,
     1795370400000
+   ],
+   [
+    1795518000000,
+    null
    ]
   ],
   "JUP-USDT-SWAP": [
@@ -554,7 +558,7 @@
    ],
    [
     1795503600000,
-    null
+    1795518000000
    ]
   ],
   "H-USDT-SWAP": [
@@ -1295,12 +1299,12 @@
   ]
  },
  "price_off_now": {
-  "AAVE-USDT-SWAP": 0.0141,
-  "ASTER-USDT-SWAP": -0.0254,
-  "H-USDT-SWAP": 0.5796,
-  "JUP-USDT-SWAP": -0.3133,
-  "BARD-USDT-SWAP": -0.2663,
-  "HOME-USDT-SWAP": -0.3105
+  "INJ-USDT-SWAP": 0.0387,
+  "ASTER-USDT-SWAP": -0.0219,
+  "H-USDT-SWAP": 0.6278,
+  "JUP-USDT-SWAP": -0.3021,
+  "BARD-USDT-SWAP": -0.2657,
+  "HOME-USDT-SWAP": -0.3109
  },
  "trimmed_at": 1794761546503
 }
