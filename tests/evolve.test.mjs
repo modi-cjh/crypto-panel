@@ -134,6 +134,18 @@ test('team table shows each member\'s direction and the rules mention the direct
   assert.match(paperMarkup({ ...d, paper: { ...d.paper, segments: [{ slot: 4, champion: 's1', species: 'trend', reason: 'balance', from_ts: Date.parse(d.updated_at), to_ts: null }] } }), /方向配额调整/);
 });
 
+test('rules mention reserved short-timeframe seats only when champion_rules.short_tf_seats > 0', () => {
+  const rules = r => paperMarkup({ ...d, champion_rules: r }) + teamMarkup({ ...d, champion_rules: r });
+  assert.equal(d.champion_rules.short_tf_seats, undefined);                       // fixture predates the field: old wording
+  assert.doesNotMatch(rules(d.champion_rules), /席留给/);
+  assert.doesNotMatch(rules({ ...d.champion_rules, short_tf_seats: 0 }), /席留给/);
+  assert.equal(paperMarkup({ ...d, champion_rules: { ...d.champion_rules, short_tf_seats: 0 } }), paperMarkup(d));
+  const on = { ...d.champion_rules, short_tf_seats: 2, short_tfs: [1, 4] };
+  assert.match(paperMarkup({ ...d, champion_rules: on }), /其中至少 2 席留给 1 小时 \/ 4 小时周期的合格策略/);
+  assert.match(teamMarkup({ ...d, champion_rules: on }), /其中至少 2 席留给 1 小时 \/ 4 小时周期的合格策略/);
+  assert.match(paperMarkup({ ...d, paper: { ...d.paper, segments: [{ slot: 4, champion: 's1', species: 'trend', reason: 'short_tf', from_ts: Date.parse(d.updated_at), to_ts: null }] } }), /短周期保留席位/);
+});
+
 test('paper positions and trades show contract details: leverage, margin, liquidation, funding', () => {
   const t0 = Date.parse(d.updated_at);
   const paper = { ...d.paper, mode: 'cross',
