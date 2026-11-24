@@ -37,6 +37,13 @@ TEAM_SIZE, TEAM_SPECIES_CAP = 8, 2      # 8 seats (5 before): more trades a day,
 # training window can be one long trend (2025-11 → 2026-07 fell 31–56 %), which breeds a population of short sellers;
 # the quota keeps seats for qualified strategies of the other direction, so a trend reversal does not hit every seat.
 TEAM_DIRECTION_CAP = 5
+# Reserved short-timeframe seats (2026-11-24): at least this many of the TEAM_SIZE seats go to strategies whose 'tf' gene is
+# in SHORT_TFS (1H or 4H bars), when qualified ones exist. Daily strategies trade rarely; generation 762 had 5 of 8 seats on
+# 1D bars and the account opened nothing for ~3 days. The seats are part of TEAM_SIZE (they replace the weakest longer-tf
+# members, the team does not grow), so the number of concurrent positions under the shared cross account is unchanged.
+# Short-tf members already seated count toward the reservation. 0 = off (the old selection exactly).
+TEAM_SHORT_TF_SEATS = 2
+SHORT_TFS = (1, 4)
 UNQUALIFIED_RUNS = 3      # a member that failed the gates this many runs in a row gives its seat to a qualified candidate
 # Paper / OKX-demo entry gate (hard; never live). Each individual on the 8-seat team keeps its
 # own defense streak in state['defense_streaks'][id]. A "defense" is one generation in which that
@@ -457,6 +464,14 @@ def choose_team(state, now_ms):
     Seats prefer at most TEAM_SPECIES_CAP per species and at most TEAM_DIRECTION_CAP long-only / short-only members
     (only exceeded rather than leave a seat empty). When the team is over the direction quota and a qualified strategy of
     another direction exists, the weakest seasoned over-quota member is replaced ('balance'); that is this run's one swap.
+    Reserved short-timeframe seats (TEAM_SHORT_TF_SEATS, tf in SHORT_TFS): while the team has fewer short-tf members than
+    that, a short-tf member that leaves (any reason) is replaced by a short-tf candidate if one is free, and after the
+    seats are filled the weakest longer-tf member (never the leader / champion) gives its seat to the best qualified
+    short-tf strategy in the hall ('short_tf', like an empty seat: tenure does not protect it; its positions wind down
+    as for any replaced member). Such a run makes no challenger / balance swap. A reserved seat is never handed to a
+    longer-tf strategy by 'balance' or 'challenger'; when the weakest seasoned member holds one and no short-tf challenger
+    beats it, the challenger swap is tried against the weakest other seasoned member. Without enough qualified short-tf
+    strategies the remaining seats are filled as before. TEAM_SHORT_TF_SEATS = 0 gives the old selection exactly.
     state['champion'] is the team leader (best training fitness).
     """
     nodes, streaks = state['nodes'], update_streaks(state)
@@ -479,9 +494,32 @@ def choose_team(state, now_ms):
         d = direction(nid)
         return d == 'both' or direction_count(d, replacing) < TEAM_DIRECTION_CAP
 
+    is_short = lambda nid: nodes[nid]['genes'].get('tf', 1) in SHORT_TFS
+    reserve = dict(on=False)                                   # set while a reserved short-tf seat is being refilled
+
+    def short_count(replacing=None):
+        return sum(1 for m in team if m['id'] != replacing and is_short(m['id']))
+
     def candidates(pool, replacing=None):
         ids = {m['id'] for m in team}
-        return [nid for nid in pool if nid not in ids and nid in nodes and species_ok(nid, replacing) and direction_ok(nid, replacing)]
+        return [nid for nid in pool if nid not in ids and nid in nodes and species_ok(nid, replacing) and direction_ok(nid, replacing)
+                and (not reserve['on'] or is_short(nid))]
+
+    def holds_reserved(nid):
+        return TEAM_SHORT_TF_SEATS > 0 and is_short(nid) and short_count(nid) < TEAM_SHORT_TF_SEATS
+
+    def keep_short(pick_fn, replacing, strict=False):
+        """pick_fn() restricted to short-tf candidates when `replacing` holds a reserved short-tf seat. Forced swaps
+        (breakdown / entry gate / unqualified) fall back to any candidate; voluntary ones (strict: challenger) do not,
+        so a reserved seat is never traded for a longer-tf strategy that the reserve would then swap back."""
+        if not holds_reserved(replacing):
+            return pick_fn()
+        reserve['on'] = True
+        try:
+            got = pick_fn()
+        finally:
+            reserve['on'] = False
+        return got if got or strict else pick_fn()
 
     ready = [nid for nid in state['hall'] if streaks.get(nid, 0) >= STREAK]
 
@@ -499,7 +537,7 @@ def choose_team(state, now_ms):
 
     for slot, m in enumerate(team):                            # clear breakdowns are replaced at once
         if breaks_retain(nodes[m['id']]):
-            pick = (candidates(ready, m['id']) or candidates(state['hall'], m['id']) or [None])[0]
+            pick = (keep_short(lambda: candidates(ready, m['id']) or candidates(state['hall'], m['id']), m['id']) or [None])[0]
             if pick:
                 changes.append((slot, m['id'], pick, 'breakdown')); team[slot] = dict(id=pick, since=now_ms)
     # Seats that cannot finish the entry gate (failed OOS or DD > 30 %) are opened to a qualified
@@ -510,7 +548,7 @@ def choose_team(state, now_ms):
     for slot, m in enumerate(team):
         if slot in changed_slots or not blocked_from_gate(m['id']):
             continue
-        pick = (qualified_challengers(m['id']) or [None])[0]
+        pick = (keep_short(lambda: qualified_challengers(m['id']), m['id']) or [None])[0]
         if pick:
             changes.append((slot, m['id'], pick, 'entry_gate')); team[slot] = dict(id=pick, since=now_ms)
     # Members that stopped qualifying: after UNQUALIFIED_RUNS runs in a row the seat goes to a qualified candidate (one per
@@ -521,7 +559,7 @@ def choose_team(state, now_ms):
     if not changes:
         for slot, m in enumerate(team):
             if unq.get(m['id'], 0) >= UNQUALIFIED_RUNS:
-                pick = (candidates(ready, m['id']) or [None])[0]
+                pick = (keep_short(lambda: candidates(ready, m['id']), m['id']) or [None])[0]
                 if pick:
                     changes.append((slot, m['id'], pick, 'unqualified')); team[slot] = dict(id=pick, since=now_ms)
                     break
@@ -533,9 +571,27 @@ def choose_team(state, now_ms):
             break
         team.append(dict(id=pick, since=now_ms)); changes.append((len(team) - 1, None, pick, 'first'))
     seasoned = [i for i, m in enumerate(team) if now_ms - m['since'] >= MIN_TENURE]
+    # Reserved short-tf seats: hand the weakest longer-tf seats (not the leader / champion) to the best qualified short-tf
+    # strategies in the hall. Caps as for an empty seat: species cap first, then only the direction quota, then neither.
+    reserved = False
+    while TEAM_SHORT_TF_SEATS > 0 and short_count() < TEAM_SHORT_TF_SEATS:
+        keep = {state.get('leader'), state.get('champion')}
+        slots = [i for i, m in enumerate(team) if not is_short(m['id']) and m['id'] not in keep]
+        if not slots:
+            break
+        slot = min(slots, key=lambda i: nodes[team[i]['id']]['fitness'])
+        old, ids = team[slot]['id'], {m['id'] for m in team}
+        pool = [nid for nid in state['hall'] if nid in nodes and nid not in ids and nodes[nid].get('qualified') and is_short(nid)]
+        pick = (candidates(pool, old) or [nid for nid in pool if direction_ok(nid, old)] or pool or [None])[0]
+        if not pick:
+            break
+        changes.append((slot, old, pick, 'short_tf')); team[slot] = dict(id=pick, since=now_ms)
+        reserved = True
+    if reserved:
+        seasoned = []                                          # the reserved seats were this run's swaps
     over = [d for d in ('long', 'short') if direction_count(d) > TEAM_DIRECTION_CAP]
     if over and seasoned:                                      # over the direction quota: hand one seat to another direction
-        slots = [i for i in seasoned if direction(team[i]['id']) == over[0]]
+        slots = [i for i in seasoned if direction(team[i]['id']) == over[0] and not holds_reserved(team[i]['id'])]
         if slots:
             slot = min(slots, key=lambda i: nodes[team[i]['id']]['fitness'])
             old = team[slot]['id']
@@ -546,10 +602,17 @@ def choose_team(state, now_ms):
                 seasoned = []                                  # that was this run's one swap
     if seasoned:                                               # one challenger swap per run, against the weakest member
         slot = min(seasoned, key=lambda i: nodes[team[i]['id']]['fitness'])
-        weakest = nodes[team[slot]['id']]
-        for nid in candidates(ready, weakest['id']):   # direction_ok keeps a challenger from re-filling the quota
-            if nodes[nid]['fitness'] > max(weakest['fitness'] * SWITCH_MARGIN, weakest['fitness'] + .01):
-                changes.append((slot, weakest['id'], nid, 'challenger')); team[slot] = dict(id=nid, since=now_ms)
+        targets = [slot]
+        if holds_reserved(team[slot]['id']):   # a reserved short-tf seat only goes to a short-tf challenger; if none
+            rest = [i for i in seasoned if not holds_reserved(team[i]['id'])]  # beats it, try the weakest other seat
+            targets += [min(rest, key=lambda i: nodes[team[i]['id']]['fitness'])] if rest else []
+        for slot in targets:
+            weakest = nodes[team[slot]['id']]
+            pool = keep_short(lambda: candidates(ready, weakest['id']), weakest['id'], strict=True)
+            pick = next((nid for nid in pool      # direction_ok keeps a challenger from re-filling the quota
+                         if nodes[nid]['fitness'] > max(weakest['fitness'] * SWITCH_MARGIN, weakest['fitness'] + .01)), None)
+            if pick:
+                changes.append((slot, weakest['id'], pick, 'challenger')); team[slot] = dict(id=pick, since=now_ms)
                 break
     state['team'] = team
     # The leader (rank 1) has signal priority, so it must not flip between members from run
