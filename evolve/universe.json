@@ -1175,6 +1175,10 @@
    [
     1795089600000,
     1795161600000
+   ],
+   [
+    1795647600000,
+    null
    ]
   ],
   "ZIL-USDT-SWAP": [
@@ -1255,6 +1259,10 @@
    [
     1795089600000,
     1795161600000
+   ],
+   [
+    1795647600000,
+    null
    ]
   ],
   "KAITO-USDT-SWAP": [
@@ -1335,13 +1343,15 @@
   ]
  },
  "price_off_now": {
-  "ARB-USDT-SWAP": -0.0635,
-  "XPL-USDT-SWAP": -0.0104,
-  "ASTER-USDT-SWAP": 0.101,
-  "H-USDT-SWAP": 0.0571,
-  "JUP-USDT-SWAP": -0.3199,
-  "BARD-USDT-SWAP": -0.1747,
-  "HOME-USDT-SWAP": -0.098
+  "ARB-USDT-SWAP": -0.1377,
+  "XPL-USDT-SWAP": -0.0102,
+  "ASTER-USDT-SWAP": 0.0907,
+  "H-USDT-SWAP": 0.0565,
+  "JUP-USDT-SWAP": -0.3438,
+  "ETC-USDT-SWAP": -0.0164,
+  "BARD-USDT-SWAP": -0.1991,
+  "HOME-USDT-SWAP": 0.0892,
+  "2Z-USDT-SWAP": -0.0102
  },
  "trimmed_at": 1794761546503
 }
