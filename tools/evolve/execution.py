@@ -84,6 +84,13 @@ HOUR = 3600_000
 #    (tools/okx_demo_trader.py, runs hourly at :50 UTC) recomputes it from OKX's closed 1H candles since its entry and
 #    amends the exchange stop once per run, so on the exchange the stop can lag the paper stop by up to an hour.
 # 4) No time exit (MAX_HOLD_H and max_hold are legacy, see above).
+# 5) NEGATIVE TP RULE (2026-11-25, user: 「负数止盈时不挂止盈，只靠止损和跟踪止盈出场」): when entry ± target_rr × dist is not
+#    a valid take-profit price (≤ 0 — a short whose target_rr × dist reaches past zero, e.g. daily shorts on H / MAGIC /
+#    INJ / HOME — or not beyond the entry), the position still opens but has NO take-profit (target None, see
+#    take_profit()); it exits by the stop / trailing stop / reverse signal only. Paper and backtests are unchanged by
+#    this: on positive prices a target ≤ 0 could never fill (gap_exit / target_hit need o / l ≤ target), so storing None
+#    instead gives the same fills, exits, PnL and fitness; signals.json then says tp None / no_target true and the OKX
+#    follower places no TP order (tools/okx_demo_trader.py).
 DEFAULT_TARGET_RR = 3.0   # target for genomes that had none (target_rr 0): 3R, see genome.fix()
 TARGET_RR_RANGE = (1.0, 6.0)
 TRAIL_DIST_R = 1.0        # then the stop follows the best price at this many stop distances
@@ -228,6 +235,18 @@ def target_rr(g):
     if rr is None or rr < .5:
         return DEFAULT_TARGET_RR
     return min(TARGET_RR_RANGE[1], max(TARGET_RR_RANGE[0], float(rr)))
+
+
+def take_profit(entry, side, rr, dist):
+    """Take-profit price entry ± rr × dist (EXIT RULES 1), or None when there is no valid one (EXIT RULES 5): rr or dist not
+    positive, the price not finite / ≤ 0, or not beyond the entry on the position's side. Same arithmetic as before
+    (entry + side × rr × dist), so every valid target is bit-for-bit the value it was."""
+    if not (rr and rr > 0 and dist and dist > 0):
+        return None
+    tp = entry + side * rr * dist
+    if not math.isfinite(tp) or tp <= 0 or (tp - entry) * side <= 0:
+        return None
+    return tp
 
 
 def trail_update(p, h, l, trail=None):
@@ -855,7 +874,7 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
             margin = qty * px / lever
             if qty <= 0 or margin > (mark - sum(p['margin'] for p in pos.values())) * MARGIN_USE:
                 continue
-            new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist,
+            new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=take_profit(px, d, rr, dist),
                          opened=s.ts[i], bar=i, best=px, fee=qty * px * FEE, dist=dist, lever=lever, margin=margin,
                          liq=liquidation_price(px, d, lever, mmr=mmr), funding=0.0, mmr=mmr)
             opens_now = marks_at(series, list(pos), i, 'o')
@@ -1171,7 +1190,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             upgraded = True
             for p in pos.values():
                 if not p['target']:
-                    p['target'] = p['entry'] + p['side'] * target_rr(by_id[p['seg']]['genes']) * p['dist']
+                    p['target'] = take_profit(p['entry'], p['side'], target_rr(by_id[p['seg']]['genes']), p['dist'])
         # manual closes (the user's, reason manual_user): only that exact position, at its real price, before this bar
         for m_inst, m_opened, m_at, m_px in manual_at.get(i, ()):
             if m_inst in pos and pos[m_inst]['opened'] == m_opened:
@@ -1221,7 +1240,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 factor = entry_risk_factor(vgroups.get((sid, d), 1), seat_age_h=(ts0[i] - seg.get('tenure_ts', ts0[seg['from_i']])) / HOUR,
                                            first=fb is None or fb == i,
                                            winding=seg.get('wind_i') is not None and i >= seg['wind_i'], rules=risk_new)
-            vpos[inst] = dict(side=d, entry=px, stop=px - d * dist, target=px + d * target_rr(g) * dist, opened=ts0[i], bar=i, dist=dist,
+            vpos[inst] = dict(side=d, entry=px, stop=px - d * dist, target=take_profit(px, d, target_rr(g), dist), opened=ts0[i], bar=i, dist=dist,
                               seg=sid, boost=boost, best=px, risk_factor=factor)
             live_first_fill.setdefault(by_id[sid].get('chain', sid), i)
         for sid, inst, d, dist, boost in sorted(pending, key=lambda x: not x[4]):
@@ -1282,7 +1301,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 old = dict(hold=min(o['max_hold'] * o['tf'], MAX_HOLD_H), trail=o['trail'])
             else:
                 rr, old = target_rr(g), dict(hold=None, trail=0)
-            new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None, opened=ts0[i], bar=i,
+            new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=take_profit(px, d, rr, dist), opened=ts0[i], bar=i,
                          fee=qty * px * FEE, dist=dist, lever=lever, margin=margin, funding=0.0, seg=sid, boost=boost, risk=r, best=px,
                          liq=liquidation_price(px, d, lever, mmr=mmr), mmr=mmr, risk_factor=factor, **old)
             if live_factor != factor:                         # PRICE_OFF LIVE only (off_book_from); never read by the account

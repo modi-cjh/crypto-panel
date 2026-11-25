@@ -75,7 +75,7 @@ tools) update() keeps the old stamps (this run's last bar / the previous run's l
 """
 import copy
 from bisect import bisect_left
-from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, same_side_full, clamp_risk, target_rr
+from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, same_side_full, clamp_risk, target_rr, take_profit
 from execution import entry_risk_factor, live_same_bar_groups, same_bar_groups
 from evolution import TEAM_SIZE, entry_gate
 from genome import fix
@@ -262,10 +262,17 @@ def _idle_equity(slot):
     return base + carry
 
 
+def _tp(target):
+    """signals.json take-profit fields (execution EXIT RULES 5, NEGATIVE TP RULE): {'tp': x} for a valid (positive)
+    target, else {'tp': None, 'no_target': True} — the OKX follower then places no TP order, the position exits by its
+    stop / trailing stop / reverse signal. Older followers read tp None as "no paper target" (see SUMMARY / CHANGELOG)."""
+    return {'tp': target} if target is not None and target > 0 else {'tp': None, 'no_target': True}
+
+
 def _signal_from_pending(inst, d, genes, series, last_ts, member):
     sr = series[inst]
     dist, px, rr = stop_distance(genes, sr, sr.n - 1), sr.c[-1], target_rr(genes)
-    return dict(side=d, entry=px, stop=px - d * dist, tp=px + d * rr * dist, dist=dist, opened=last_ts + HOUR,
+    return dict(side=d, entry=px, stop=px - d * dist, **_tp(take_profit(px, d, rr, dist)), dist=dist, opened=last_ts + HOUR,
                 strategy='evolved', leverage=int(fix(dict(genes)).get('leverage', DEFAULT_LEVERAGE)), champion=member, pending=True)
 
 
@@ -348,7 +355,7 @@ def _legacy_update(state, series, changes):
         member = seg['champion']
         size = _size(seg['genes'], leader=bool(seg.get('boost')))
         for p in res['positions']:
-            signals.setdefault(p['inst'], dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], opened=p['opened'],
+            signals.setdefault(p['inst'], dict(side=p['side'], entry=p['entry'], stop=p['stop'], **_tp(p['target']), opened=p['opened'],
                                                strategy='evolved', champion=member, rank=r + 1, **size))
         for inst, d in (res.get('pending') or {}).items():
             signals.setdefault(inst, dict(_signal_from_pending(inst, d, seg['genes'], series, last_ts, member), rank=r + 1, **size))
@@ -599,7 +606,7 @@ def update(state, series, changes, price_off=None, prev_last=None, now=None, rep
     # Mirror signals: one per coin (the account holds one position per coin). 'rank' orders the mirror's entries.
     signals = {}
     for p in res['positions']:
-        signals[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], dist=p['dist'], trailing=p['trailing'],
+        signals[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], **_tp(p['target']), dist=p['dist'], trailing=p['trailing'],
                                   opened=p['opened'], strategy='evolved',
                                   champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1,
                                   risk_factor=round(p.get('risk_factor', 1.0), 6), seat_from=seg_by[p['seg']]['tenure_ts'],
@@ -679,7 +686,7 @@ def _price_off_live(res, segs, by, seg_by, series, last_ts, left, held_start, bl
         return dict(price_off=True, tf=int(g.get('tf', 1)), stop_atr=g['stop_atr'], target_rr=target_rr(g))
     for p in res['off_book']:
         g = by[p['seg']]
-        out[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], tp=p['target'], dist=p['dist'], trailing=p['trailing'],
+        out[p['inst']] = dict(side=p['side'], entry=p['entry'], stop=p['stop'], **_tp(p['target']), dist=p['dist'], trailing=p['trailing'],
                               opened=p['opened'], strategy='evolved', champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1,
                               risk_factor=round(p.get('risk_factor', 1.0), 6), seat_from=seg_by[p['seg']]['tenure_ts'], winding=wound(g),
                               **_size(g['genes'], leader=p['boost']), **extra(g['genes']))

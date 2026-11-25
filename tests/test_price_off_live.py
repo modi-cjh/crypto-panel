@@ -503,12 +503,16 @@ class LiveFollowTests(unittest.TestCase):
         algo = fake.posts[1][1]['attachAlgoOrds'][0]
         self.assertEqual(algo['tpTriggerPx'], odt.fmt(odt.quantize(1.25 + X.DEFAULT_TARGET_RR * dist, '0.0001', odt.ROUND_HALF_UP)))
 
-    def test_short_whose_target_would_be_below_zero_is_skipped_not_sent(self):
+    def test_short_whose_target_would_be_below_zero_opens_with_the_stop_only(self):
+        """NEGATIVE TP RULE (2026-11-25): the recomputed live TP ≤ 0 → open, SL only, no_target (was: skipped)."""
         fake = self.fake()
         sig = pol_signal(side=-1, opened=self.opened, entry=1.25, stop=1.40, tp=0.5, stop_atr=30.0, target_rr=6.0)
         m, state = self.mirror(fake, doc(pol={'XRP-USDT-SWAP': sig}))
-        self.assertEqual(fake.posts, [])
-        self.assertEqual(m.actions[-1]['reason'], 'target_not_positive')
+        order = next(b for q, b in fake.posts if q == '/api/v5/trade/order')
+        algo, = order['attachAlgoOrds']
+        self.assertEqual(set(algo), {'slTriggerPx', 'slOrdPx', 'slTriggerPxType'})
+        rec = state['mirrored'][f'XRP-USDT-SWAP|{self.opened}']
+        self.assertEqual((rec['target'], rec['no_target'], rec['status']), (None, True, 'open'))
 
     def test_atr_uses_only_closed_real_bars_up_to_the_signal_bar_and_fails_closed(self):
         fake = self.fake()

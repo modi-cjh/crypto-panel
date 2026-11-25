@@ -717,6 +717,20 @@
 - 注意：重放这 16 个信号（/workspace/modi/price-off-live-2026-11-25/replay）有 12 个因 `target_not_positive` 跳过（H / MAGIC / INJ / HOME 的日线空单，止损距离很宽、target_rr 大）；普通信号路径对这种情况会照样发出负的止盈价（原有行为，未改），是否给空单止盈设下限需要另行决定。
 - 测试：`tests/test_price_off_live.py`（33 项：新席位实盘首单是 price_off 时只减半一次（成交与排队两种）、纸面首单不变；虚拟入场受同向上限（纸面 + 虚拟，成交与排队两种），虚拟仓不挡纸面第 N 单；同 K 线普通 + price_off 入场在实盘各 ½、纸面不变、demo 仍为 1（成交与排队两种）、合并组的仓位上限与已持有币；有无跟踪时纸面账户逐字节相同；只有被 price_off 挡的才进入列表；虚拟仓价位 / 止损 / 止盈 / 反向出场；cutover 只设一次；实盘按真实 K 线重算止损止盈（模拟价偏 10%）；target_rr < 0.5 → 3R；只用已收盘 K 线、缺 K 线不下单；1D / 4H 用 UTC K 线；demo 不跟；旧格式行为不变；人工 ETH 空单下 ETH 信号跳过且不碰该仓；去重；出场平仓与原因；缺字段不平仓；移动止损不用纸面价；普通信号优先；late_ok / 日亏停手；字段校验；main() 只在 live 跟）；`tests/test_signals_hourly.py` 端到端检查两边发布的字段一致。
 
+### 止盈价 ≤ 0 时不挂止盈，只靠止损和移动止损出场（NEGATIVE TP RULE，实盘 / 模拟盘跟单 / 纸面 / 进化，2026-11-25）
+- 做了什么：
+  1. `execution.take_profit(entry, side, rr, dist)`：止盈 = entry ± rr × dist（算法与以前逐位相同）；算出 ≤ 0、不是有限数、或不在入场价有利一侧时返回 `None`。`simulate()`、`simulate_account()`（含 `exit_rules_from` 之后给旧仓补止盈的那一步，只做一次）和 PRICE_OFF LIVE 虚拟仓（`off_book_entry`）都改用它：这类仓位照常开，`target = None`，只靠止损 / 移动止损 / 反向信号（纸面另有日亏停手、强平、人工平仓）出场。
+  2. `paper.py`：`signals.json` 的普通持仓、排队信号（`_signal_from_pending`）、`price_off_live` 在没有有效止盈时发布 `tp: null` + `no_target: true`；正常的正止盈仍是 `tp: <数>`，不带 `no_target`。
+  3. `okx_demo_trader`（live 与 demo 共用）：新函数 `target_of()` 决定新单的止盈——`no_target` → 不挂（不再回退 3R）；`tp` ≤ 0 / 非数字 / 不在入场价有利一侧 → 不挂（旧 signals.json 里的负 `tp` 也一样）；有效 `tp` 而现价已越过 → 照旧 `target_already_reached` 跳过；没有 `tp` 字段的旧格式 → 现价 ± 3R，3R ≤ 0 时不挂；按 `tickSz` 取整后 ≤ 0 也不挂。不挂止盈时 `attachAlgoOrds` 只有 `slTriggerPx / slOrdPx / slTriggerPxType`，镜像记录与 `open` 日志写 `target: null, no_target: true`。
+  4. `real_levels()`（PRICE_OFF LIVE）：实盘重算的止盈 ≤ 0 时不再跳过，按无止盈开仓；**止损 ≤ 0 仍跳过**（新原因 `stop_not_positive`，原来合并在 `target_not_positive`），每个仓都必须有有效止损。是否有止盈只看实盘自己的重算结果：纸面说 `no_target` 而实盘止盈有效时照常挂止盈，反之亦然；管理已开 price_off 仓时 `no_target` 和 stop / tp / dist / trailing 一起从纸面信号里去掉。
+  5. `ensure_target()`：`no_target` 的仓位不补挂、不修改、不按 `take_profit` 平仓，也不报 `target unknown`；任何 ≤ 0 的候选止盈（纸面 tp、已存 target、3R 回退）都不会被挂出或用来改单，全部 ≤ 0 时把该镜像记为 `no_target`。`outcome()`：没有止盈的仓位被交易所平掉一律算止损（有移动止损时记 `trailing_stop`，否则 `stop_loss`），即使盈利也不算 `take_profit`；强平仍是 `liquidation`。
+  6. 风险、仓位大小、杠杆、全仓、止损逻辑和其他所有门槛都不变；人工 ETH 空单照旧 `exchange_position_exists_not_ours` 跳过。`live_sync.py` / `fetch_signals.py` / 看板无需改动（`target` 为 null 时不写入 live-data、页面显示“—”），有测试覆盖。
+  7. 不需要新的 cutover 键：价格都为正时，≤ 0 的止盈在 `gap_exit`（要求开盘价 ≤ 止盈）和 `target_hit`（要求最低价 ≤ 止盈）里永远不会触发，多头止盈恒为正，`trail_update` / 反向信号不读止盈。所以换成 `None` 后成交、出场、盈亏、权益曲线、适应度完全相同，历史重放不会变，GitHub 与服务器每小时信号也不会分叉（`tests/test_neg_tp.py`：`simulate()` 12 组随机基因、`simulate_account()` 8 组 × 3 席（含旧出场段与虚拟仓），把大量空单的止损距离放大到止盈 < 0，新旧算法结果除 `target` 字段外完全相同）。
+- 为什么：用户决定「负数止盈时不挂止盈，只靠止损和跟踪止盈出场」。H / MAGIC / INJ / HOME 这类币的日线（也有 1H）空单，止损距离 stop_atr × ATR 很宽，target_rr 最高 6，算出的止盈 < 0：PRICE_OFF LIVE 重放的 16 个信号里有 12 个因此被 `target_not_positive` 跳过；普通信号路径则会把负的 `tpTriggerPx` 发给 OKX。
+- 重放（/workspace/modi/neg-tp-2026-11-25/replay）：同样 16 个信号，原来 4 开 12 跳过，现在 16 个都开；新开的 12 个只挂止损；原来开的 4 个请求体与 358ef95 逐字节相同。
+- 向后兼容：旧 trader（7dabb1b / 358ef95）读新 signals.json 不会出错（`fetch_signals.valid` 不检查 tp）；普通信号的 `tp: null` 会被旧代码当成“没有纸面止盈”而回退 3R：3R > 0 时挂 3R 止盈，3R ≤ 0 时仍会发负止盈（和旧代码读旧 signals.json 时的负 tp 一样，不比现在更差）；358ef95 的 price_off_live 照旧 `target_not_positive` 跳过，7dabb1b 不读该字段。服务器要部署新 trader 才真正生效。
+- 测试：`tests/test_neg_tp.py`（36 项）；`tests/test_price_off_live.py` 中“负止盈跳过”一项改为“负止盈只挂止损开仓”。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |
