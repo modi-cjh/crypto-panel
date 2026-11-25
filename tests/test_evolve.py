@@ -17,6 +17,9 @@ import run as R         # noqa: E402
 
 H = 3600_000
 T0 = 1_760_000_000_000 // H * H
+# These tests pin the stop-risk sizing engine (risk ÷ stop distance), the rule in force before MARGIN SIZING (2026-11-25,
+# sizing.py) and still used for fills on or before account['margin_sizing_from']; tests/test_margin_sizing.py covers margin.
+STOP_RISK = mock.patch.dict(X.ACCOUNT_RULES, {'sizing': 'stop_risk'})
 
 
 def series_from(closes, inst='BTC-USDT-SWAP', spread=.004, opens=None):
@@ -77,6 +80,7 @@ class ExecutionTests(unittest.TestCase):
         self.assertAlmostEqual(p['entry'], s.o[41] * (1 + X.SLIP))
         self.assertLess(r['equity'], X.START_EQUITY + p['qty'] * (s.c[-1] - p['entry']) + 1e-6)   # entry fee paid
 
+    @STOP_RISK
     def test_stop_first_when_a_bar_touches_both_and_gaps_fill_at_open(self):
         closes = [100.0] * 40 + [110.0, 110.0]
         s = series_from(closes)
@@ -528,6 +532,7 @@ class EvolutionTests(unittest.TestCase):
             self.assertAlmostEqual(b['pnl']['x'], b['equity'] - 5000.0, places=6)
 
     @mock.patch.dict(X.ACCOUNT_RULES, PRIOR_ERA)   # sizing mechanics of the earlier eras: no trail/risk factors
+    @STOP_RISK
     def test_shared_account_rules_one_position_per_coin_crowding_cap_leader_and_wind_down(self):
         sr = self._breakout_market(coins=13)
         g = base_genes(risk=.01)
@@ -622,6 +627,7 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(acc['side_cap_from'], T0)
 
     @mock.patch.dict(X.ACCOUNT_RULES, PRIOR_ERA)   # sizing mechanics of the earlier eras: no trail/risk factors
+    @STOP_RISK
     def test_majors_risk_twice_as_much_in_the_shared_account(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 30
         sr = {k: series_from(list(closes), k) for k in ('BTC-USDT-SWAP', 'PEPE-USDT-SWAP')}
@@ -642,6 +648,7 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(X.position_risk(.15, 'BTC-USDT-SWAP'), .10)
         self.assertEqual(X.position_risk(.05, 'PEPE-USDT-SWAP'), .05)
 
+    @STOP_RISK
     def test_trade_risk_is_kept_inside_5_to_10_percent_with_crowding_at_10(self):
         self.assertEqual((X.MIN_TRADE_RISK, X.MAX_TRADE_RISK), (.05, .10))
         self.assertEqual((X.ACCOUNT_RULES['min_risk'], X.ACCOUNT_RULES['max_risk'], X.ACCOUNT_RULES['leader_risk']), (.05, .10, .10))
@@ -669,6 +676,7 @@ class EvolutionTests(unittest.TestCase):
         self.assertAlmostEqual(lo['qty'] * (lo['entry'] - lo['stop']) / 10000.0, .05, delta=.001)
 
     @mock.patch.dict(X.ACCOUNT_RULES, PRIOR_ERA)   # sizing mechanics of the earlier eras: no trail/risk factors
+    @STOP_RISK
     def test_risk_from_keeps_the_size_of_fills_made_before_the_sizing_change(self):
         sr = self._breakout_market(coins=12)
         g = base_genes(risk=.12, leverage=20, stop_atr=5.0)                    # new band; the seat's stored gene was 2 %
@@ -687,6 +695,7 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(size(X.simulate_account(segs, sr, 30, 71, equity=10000.0, rules=rules, risk_from=41, risk_cap_from=50)), size(old))
 
     @mock.patch.dict(X.ACCOUNT_RULES, PRIOR_ERA)   # sizing mechanics of the earlier eras: no trail/risk factors
+    @STOP_RISK
     def test_risk_cap_from_keeps_the_size_of_fills_made_under_the_5_to_20_percent_rules(self):
         sr = self._breakout_market(coins=12)
         g = base_genes(risk=.12, leverage=20, stop_atr=5.0)                    # a seat stored under the 5–20 % band at 12 %
@@ -1220,6 +1229,7 @@ class LeverageRiskAndLiquidationTests(unittest.TestCase):
         self.assertTrue(r2['positions'])
         self.assertEqual(r2['positions'][0]['lever'], 20)
 
+    @STOP_RISK
     def test_funding_is_charged_to_shared_cash_and_can_trigger_cross_liquidation(self):
         closes = [100.0] * 40 + [110.0] + [111.0] * 16
         s = series_from(closes, 'BTC-USDT-SWAP')
@@ -1301,7 +1311,7 @@ class CrossReviewFixTests(unittest.TestCase):
     ZEC = 'ZEC-USDT-SWAP'
 
     def setUp(self):
-        self.raised = [mock.patch.object(X, 'LEVERAGE', 100), mock.patch.dict(X.ACCOUNT_RULES, lever=100, leader_lever=100, **PRIOR_ERA)]
+        self.raised = [mock.patch.object(X, 'LEVERAGE', 100), mock.patch.dict(X.ACCOUNT_RULES, lever=100, leader_lever=100, sizing='stop_risk', **PRIOR_ERA)]   # stop-risk engine
         for p in self.raised:
             p.start()
         self.addCleanup(lambda: [p.stop() for p in self.raised])
@@ -1310,6 +1320,8 @@ class CrossReviewFixTests(unittest.TestCase):
         for p in self.raised:
             p.stop()
         self.raised.clear()
+        pin = mock.patch.dict(X.ACCOUNT_RULES, sizing='stop_risk')   # stop-risk sizing (the 20× cap mechanics of that rule)
+        pin.start(); self.addCleanup(pin.stop)
         self.assertEqual((X.LEVERAGE, X.ACCOUNT_RULES['lever'], X.ACCOUNT_RULES['leader_lever']), (20, 20, 20))
         # at 20× the ZEC scenario needs ~1.9 × equity of margin, so even with the stop gate bypassed nothing opens
         acc, one = self.run_both(self.ZEC, self.bars(self.ZEC, 99.7), self.genes())
@@ -1868,6 +1880,7 @@ class ManualCloseTests(unittest.TestCase):
         self.assertEqual([t['reason'] for t in gone['trades']], ['stop'])
         self.assertEqual(self.run_acc({0: [(self.A, -1, 5.0)]}, sr, manual={(self.A, ts[1]): (ts[8], 98.0, None)}), gone)
 
+    @STOP_RISK
     def test_after_the_close_the_coin_reopens_and_it_no_longer_counts_for_same_side_or_crowding(self):
         sr = self.sr(); ts = sr[self.A].ts
         close_a = {(self.A, ts[1]): (ts[5], 98.0, None)}
@@ -2003,12 +2016,14 @@ class TrailRiskRuleTests(unittest.TestCase):
         self.assertEqual(X.same_bar_groups(pend[:2], set(), {}, eligible=lambda k: k != self.B), {('a', 1): 1})
         self.assertEqual(X.same_bar_groups([('a', self.A, 1, 0.0)], set(), {}), {})
 
+    @STOP_RISK
     def test_same_champion_same_bar_same_direction_share_one_risk(self):
         r = self.run_acc({'a': {0: [(self.A, 1, 5.0), (self.B, 1, 5.0)]}}, [self.seg('a')])
         self.assertEqual(self.risks(r), {self.A: (.025, .5), self.B: (.025, .5)})
         total = sum(p['risk'] for p in r['positions'])
         self.assertAlmostEqual(total, .05)                              # the group ≤ one position's normal risk
 
+    @STOP_RISK
     def test_different_direction_champion_or_bar_are_not_grouped(self):
         full = (.05, 1.0)
         r = self.run_acc({'a': {0: [(self.A, 1, 5.0), (self.B, -1, 5.0)]}}, [self.seg('a')])
@@ -2021,6 +2036,7 @@ class TrailRiskRuleTests(unittest.TestCase):
         r = self.run_acc({'a': {0: [(self.A, 1, 5.0)]}, 'b': {0: [(self.A, 1, 5.0), (self.B, 1, 5.0)]}}, [self.seg('a'), self.seg('b')])
         self.assertEqual(self.risks(r), {self.A: full, self.B: full})
 
+    @STOP_RISK
     def test_new_seat_first_entry_half_then_full(self):
         sr = self.sr(); ts = sr[self.A].ts
         sets = {'a': {0: [(self.A, 1, 5.0)], 5: [(self.B, 1, 5.0)]}}
@@ -2034,12 +2050,14 @@ class TrailRiskRuleTests(unittest.TestCase):
         r = self.run_acc({'a': {0: [(self.A, 1, 5.0), (self.B, 1, 5.0)]}}, [self.seg('a', tenure_ts=ts[0])], sr)
         self.assertEqual(self.risks(r), {self.A: (.0125, .25), self.B: (.0125, .25)})
 
+    @STOP_RISK
     def test_a_seat_chain_keeps_its_first_fill(self):
         sr = self.sr(); ts = sr[self.A].ts
         segs = [self.seg('a', tenure_ts=ts[0], chain='s', wind_i=4), self.seg('b', tenure_ts=ts[0], chain='s', from_i=4)]
         r = self.run_acc({'a': {0: [(self.A, 1, 5.0)]}, 'b': {5: [(self.B, 1, 5.0)]}}, segs, sr)
         self.assertEqual(self.risks(r)[self.B], (.05, 1.0))            # the seat already traded: not its first entry
 
+    @STOP_RISK
     def test_winding_seat_entry_is_half(self):
         r = self.run_acc({'a': {0: [(self.A, 1, 5.0)]}}, [self.seg('a', wind_i=1)])
         self.assertEqual(self.risks(r), {self.A: (.025, .5)})           # filled on the bar the seat was wound
