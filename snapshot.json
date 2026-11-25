@@ -2,7 +2,7 @@
  "schema_version": 1,
  "source": "okx-live",
  "trading_mode": "live",
- "updated_at": "2026-11-25T21:50:00Z",
+ "updated_at": "2026-11-25T22:50:04Z",
  "equity": 202.26358,
  "available": 202.26358,
  "day_start": 202.26358,
@@ -1018,6 +1018,10 @@
   ],
   [
    1795643400977,
+   202.26
+  ],
+  [
+   1795647004589,
    202.26
   ]
  ]
