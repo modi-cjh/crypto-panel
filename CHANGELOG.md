@@ -731,6 +731,11 @@
 - 向后兼容：旧 trader（7dabb1b / 358ef95）读新 signals.json 不会出错（`fetch_signals.valid` 不检查 tp）；普通信号的 `tp: null` 会被旧代码当成“没有纸面止盈”而回退 3R：3R > 0 时挂 3R 止盈，3R ≤ 0 时仍会发负止盈（和旧代码读旧 signals.json 时的负 tp 一样，不比现在更差）；358ef95 的 price_off_live 照旧 `target_not_positive` 跳过，7dabb1b 不读该字段。服务器要部署新 trader 才真正生效。
 - 测试：`tests/test_neg_tp.py`（36 项）；`tests/test_price_off_live.py` 中“负止盈跳过”一项改为“负止盈只挂止损开仓”。
 
+### 安装 Binance Agentic Wallet 技能（仅给编码助手用，2026-11-25）
+
+- 做了什么：用 `npx skills add binance/binance-skills-hub --skill binance-agentic-wallet` 安装官方技能（commit `7d1b1f7`，v1.15.0），文件在 `.agents/skills/binance-agentic-wallet/`，`.claude/skills/` 下是指向它的链接，`skills-lock.json` 记录来源与哈希。
+- 为什么：用户要求安装。内容只有 Markdown 说明（驱动 `baw` CLI 管理 Binance Web3 钱包），不含脚本；看板、跟单和实盘代码都不使用它，也没有安装 `baw` 或任何密钥。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |
