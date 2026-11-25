@@ -45,7 +45,7 @@ def fix(g):
     behave as before except out-of-range risk/leverage is clamped into the current 5–10 % / 1–20× bands (a gene saved
     under the old 2–10 % band below 5 % becomes 5 %; one saved under the 5–20 % band above 10 % becomes 10 %).
     A missing risk gene becomes 5 %.
-    target_rr (2026-11-21, every position has a take-profit): a missing gene or one below .5 — the old 'no target', in
+    target_rr (2026-11-21, every position has a take-profit unless it would be ≤ 0, execution.take_profit): a missing gene or one below .5 — the old 'no target', in
     practice a stored 0 — becomes DEFAULT_TARGET_RR (3R); .5–1 becomes 1R (the new lower bound); above 6 becomes 6R.
     New genomes never reach the mapping: random_genome draws inside [1, 6] and mutate() clamps its step to the range."""
     if g.get('risk') is None:

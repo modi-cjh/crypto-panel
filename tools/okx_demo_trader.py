@@ -20,7 +20,10 @@ Each run, against <data>/combined/state.json:
     mean-reversion target) attached as exchange-side algo orders;
   - exits (2026-11-21, the same for every strategy; execution.py EXIT RULES): every mirrored position keeps BOTH an
     exchange stop and an exchange take-profit (a missing take-profit is placed again at the paper target, else at
-    entry ± DEFAULT_TARGET_RR × stop distance); the trailing stop / breakeven (execution TRAIL & RISK RULES a:
+    entry ± DEFAULT_TARGET_RR × stop distance) — except a NO-TARGET position (2026-11-25, execution EXIT RULES 5: the
+    take-profit would be ≤ 0 / not a valid price; signals 'no_target' / tp None, see target_of()): it opens with the
+    stop only (no TP fields in attachAlgoOrds), is stored with target None / no_target True, never gets a TP placed or
+    amended later, and exits by the stop / trailing stop / paper close only; the trailing stop / breakeven (execution TRAIL & RISK RULES a:
     execution.trail_stop_level with R = trail_unit(paper dist, live dist) = the smaller of the paper stop distance and
     |live entry − live initial stop|, from OKX's closed 1H candles since the entry, or the paper's own trailed stop when
     that is tighter) is applied by amending the exchange stop once per run, only in the position's favour. Granularity: paper moves the stop on every 1H
@@ -58,7 +61,7 @@ from runtime_guard import entries_allowed, atomic_json
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
 from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, cross_open_allowed, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FEE, MAX_SAME_SIDE_POSITIONS, same_side_full  # noqa: E402
 from execution import DEFAULT_TARGET_RR, TRAIL_START_R, TRAIL_DIST_R, TRAIL, trail_stop_level, trail_unit  # noqa: E402
-from execution import Series, target_rr  # noqa: E402
+from execution import Series, target_rr, take_profit  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -113,7 +116,8 @@ EVOLVED_INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-U
 # coin's OKX DEMO price was off the real market (data.price_check). Followed by the LIVE trader only (Mirror.follow_price_off,
 # set in main() for live; demo keeps its own demo_price_off check and ignores the list). Stop / take-profit are never
 # copied: real_levels() recomputes them from REAL OKX candles of the genome's timeframe at the signal bar, at the live
-# entry price (stop = px ∓ stop_atr × ATR14, tp = px ± target_rr × that distance, execution.target_rr). Exits: the
+# entry price (stop = px ∓ stop_atr × ATR14, tp = px ± target_rr × that distance, execution.target_rr; no TP when that is
+# ≤ 0, no entry when the stop is ≤ 0). Exits: the
 # exchange stop / take-profit, the trailing stop from the live entry, and the strategy's own exits published in
 # 'price_off_live_exits' (the entry leaves the list → closed at market, as a paper close closes a mirror). A signals.json
 # WITHOUT the field (older publisher) opens nothing new and closes nothing: those positions keep their exchange orders.
@@ -431,6 +435,41 @@ def paper_dist(p, px=None):
     return abs(float(ref) - float(p['stop'])) if ref else 0.0
 
 
+def valid_tp(x):
+    """A take-profit price usable on OKX: a finite float > 0, else None (NEGATIVE TP RULE, execution EXIT RULES 5)."""
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return None
+    return x if 0 < x < float('inf') else None
+
+
+def target_of(p, px):
+    """(tp, skip_reason) for a new entry of signal p at the live price px (NEGATIVE TP RULE, 2026-11-25: 「负数止盈时不挂止盈，
+    只靠止损和跟踪止盈出场」). tp None = open with NO take-profit (stop / trailing stop / paper exits only):
+      - p['no_target'] (paper: target ≤ 0, or real_levels(): live target ≤ 0) → None, never the 3R fallback;
+      - p['tp'] given: ≤ 0 / not a number / not beyond the paper entry on the signal's side → None (an older signals.json
+        can carry a negative tp); a valid tp the live price has already reached → skip 'target_already_reached' (as before);
+      - p['tp'] missing (signals from before 2026-11-21): px ± DEFAULT_TARGET_RR × the paper stop distance, None when that
+        is ≤ 0; at or past px → 'target_already_reached' (as before)."""
+    side = p['side']
+    if p.get('no_target'):
+        return None, None
+    if p.get('tp') is not None:
+        tp = valid_tp(p['tp'])
+        # beyond the entry it was computed from: the paper entry, or for PRICE_OFF LIVE (real_levels) the live price
+        entry = px if p.get('price_off_live') else valid_tp(p.get('entry'))
+        if tp is None or (entry and (tp - entry) * side <= 0):
+            return None, None
+    else:
+        tp = px + side * DEFAULT_TARGET_RR * paper_dist(p, px)
+        if tp <= 0:
+            return None, None
+    if (tp - px) * side <= 0:
+        return tp, 'target_already_reached'
+    return tp, None
+
+
 def price_off_live_fields(sig):
     """PRICE_OFF LIVE fields of a signals.json for the live follower: price_off_live (None when the document has no such
     dict: an older publisher; then nothing is opened or closed for it), price_off_live_invalid (coins whose entry is
@@ -646,12 +685,14 @@ class Mirror:
         dist = (px - p['stop']) / px * side
         if dist < MIN_STOP_DIST:
             return self.log('skip', inst, reason='stop_too_close_or_crossed', price=px, stop=p['stop'])
-        tp = p.get('tp') or px + side * DEFAULT_TARGET_RR * paper_dist(p, px)   # every position has a take-profit
-        if (tp - px) * side <= 0:
-            return self.log('skip', inst, reason='target_already_reached', price=px, target=tp)
+        tp, why = target_of(p, px)             # tp None: no take-profit (NEGATIVE TP RULE), stop / trailing stop only
+        if why:
+            return self.log('skip', inst, reason=why, price=px, target=tp)
         sp = self.spec(inst)
         if not sp['ctVal']:
             return self.log('skip', inst, reason='no_instrument_spec')
+        if tp is not None and quantize(tp, sp['tickSz'], ROUND_HALF_UP) <= 0:
+            tp = None                          # a target that rounds to 0 on the tick is no valid TP either
         inst_cap = self.inst_max_lever(inst)
         if not inst_cap:                       # fail closed: without OKX's own leverage cap for this coin, no new entry
             return self.log('skip', inst, reason='no_leverage_spec')
@@ -779,7 +820,7 @@ class Mirror:
             return self.log('error', inst, step='set_leverage', detail=first_error(r))
         tick = sp['tickSz']
         algo = dict(slTriggerPx=fmt(quantize(p['stop'], tick, ROUND_HALF_UP)), slOrdPx='-1', slTriggerPxType='last',
-                    tpTriggerPx=fmt(quantize(tp, tick, ROUND_HALF_UP)), tpOrdPx='-1', tpTriggerPxType='last')
+                    **(dict(tpTriggerPx=fmt(quantize(tp, tick, ROUND_HALF_UP)), tpOrdPx='-1', tpTriggerPxType='last') if tp is not None else {}))
         cl = f"{TAG.get(p.get('strategy'), 'px')}{inst.split('-')[0].lower()}{int(p['opened']) // 1000}"[:32]
         order = dict(instId=inst, tdMode=MARGIN_MODE, side='buy' if side == 1 else 'sell', ordType='market', sz=fmt(contracts),
                      clOrdId=cl, attachAlgoOrds=[algo], **({'posSide': pos_side} if pos_side else {}))
@@ -789,13 +830,14 @@ class Mirror:
         self.s['mirrored'][key] = dict(inst=inst, side=side, posSide=pos_side or 'net', strategy=p.get('strategy'), contracts=fmt(contracts),
                                        stop=p['stop'], target=tp, leverage=lever, entry=px, init_stop=p['stop'], dist=paper_dist(p, px), best=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader, mgnMode=MARGIN_MODE, champion=p.get('champion'),
                                        live_dist=abs(px - float(p['stop'])), risk_factor=factor,
-                                       ordId=(r.get('data') or [{}])[0].get('ordId'),
+                                       ordId=(r.get('data') or [{}])[0].get('ordId'), **({'no_target': True} if tp is None else {}),
                                        **({'price_off_live': True, 'sim_stop': p.get('sim_stop'), 'sim_tp': p.get('sim_tp'),
                                            'real_atr': p.get('real_atr'), 'atr_bar': p.get('atr_bar')} if p.get('price_off_live') else {}))
         self.new_order_risk[key] = float(contracts) * sp['ctVal'] * abs(px - p['stop'])
         self.available -= margin
         self.log('open', inst, side=side, strategy=p.get('strategy'), contracts=fmt(contracts), price=px, stop=algo['slTriggerPx'],
                  target=algo.get('tpTriggerPx'), leverage=lever, risk_usdt=round(risk, 2), **({'leader': True} if leader else {}),
+                 **({'no_target': True} if tp is None else {}),
                  **({'price_off_live': True, 'sim_stop': p.get('sim_stop'), 'sim_tp': p.get('sim_tp')} if p.get('price_off_live') else {}),
                  **({'risk_factor': round(factor, 4)} if factor != 1.0 else {}))
 
@@ -804,10 +846,12 @@ class Mirror:
         prices): ATR(14) of the genome's timeframe (execution.Series.atr, the same formula as execution.stop_distance) on
         OKX's closed real candles up to the signal bar (the bar that closes at the fill time `opened`), then
         stop = px ∓ stop_atr × ATR and tp = px ± target_rr × that distance at the live price px (target_rr mapped by
-        execution.target_rr: a gene < .5 is DEFAULT_TARGET_RR, every position has a take-profit). Only the live follower
-        calls this (its client reads the real market); None (logged skip) when the real candles are not usable, or when the
-        recomputed take-profit (or stop) is not a positive price (target_not_positive: a short whose target_rr × distance
-        exceeds the price; OKX would reject the order, and the TP rule itself is not changed here)."""
+        execution.target_rr: a gene < .5 is DEFAULT_TARGET_RR). Only the live follower calls this (its client reads the
+        real market); None (logged skip) when the real candles are not usable, or when the recomputed STOP is not a positive
+        price (stop_not_positive: every position must have a valid stop). A recomputed take-profit that is not a valid price
+        (≤ 0: a short whose target_rr × distance exceeds the price) opens WITHOUT a take-profit (tp None, no_target True;
+        NEGATIVE TP RULE 2026-11-25). The live decision replaces the sim's: a sim no_target is dropped when the live tp is
+        valid, and set when it is not."""
         if not getattr(self, 'follow_price_off', False):
             self.log('skip', inst, reason='price_off_live_not_live'); return None
         try:
@@ -839,11 +883,14 @@ class Mirror:
         if not dist > 0:
             self.log('skip', inst, reason='real_atr_unavailable', bars=len(ts)); return None
         rr = target_rr({'target_rr': p.get('target_rr')})
-        stop, tp = px - side * dist, px + side * rr * dist
-        if tp <= 0 or stop <= 0:                   # a short whose target_rr × distance is more than the price: no valid TP
-            self.log('skip', inst, reason='target_not_positive', price=px, stop=stop, target=tp); return None
-        return dict(p, stop=stop, tp=tp, dist=dist, sim_stop=p.get('stop'), sim_tp=p.get('tp'),
-                    real_atr=atr, atr_bar=ts[-1])
+        stop, tp = px - side * dist, take_profit(px, side, rr, dist)
+        if stop <= 0:                              # a long whose distance is more than the price: no valid stop, no entry
+            self.log('skip', inst, reason='stop_not_positive', price=px, stop=stop); return None
+        out = dict({k: v for k, v in p.items() if k != 'no_target'}, stop=stop, tp=tp, dist=dist, sim_stop=p.get('stop'),
+                   sim_tp=p.get('tp'), real_atr=atr, atr_bar=ts[-1])
+        if tp is None:                             # a short whose target_rr × distance is more than the price: no TP
+            out['no_target'] = True
+        return out
 
     def fill_result(self, inst, pos_side='net', since_ms=0, until_ms=None):
         """Realised result of the latest close of `inst` from OKX position history (read only), or None."""
@@ -859,12 +906,15 @@ class Mirror:
                     closed_at=int(x.get('uTime') or 0), liquidated=str(x.get('type')) in ('3', '4'))
 
     def outcome(self, m, res):
-        """Which exchange order closed it: the stop, the target, or a liquidation."""
+        """Which exchange order closed it: the stop, the target, or a liquidation. A position without a take-profit
+        (no_target / target None) can only have been closed by its stop (or trailing stop), even in profit."""
         if not res:
             return {}
         px, stop, target = res.get('close_price'), m.get('stop'), m.get('target')
         kind = 'liquidation' if res.get('liquidated') else None
-        if not kind and px and stop and target:
+        if not kind and (m.get('no_target') or target is None):
+            kind = 'stop'
+        elif not kind and px and stop and target:
             kind = 'stop' if abs(px - float(stop)) <= abs(px - float(target)) else 'target'
         elif not kind and res.get('pnl') is not None:
             kind = 'target' if res['pnl'] >= 0 else 'stop'
@@ -919,20 +969,30 @@ class Mirror:
         """Every mirrored position must have a take-profit resting on the exchange, as well as its stop. Target = the paper
         target (signals 'tp'), else the one stored at entry, else entry ± DEFAULT_TARGET_RR × the stop distance. Missing:
         place a reduce-only conditional TP order (or close at market when the price is already past it, take_profit);
-        resting but away from the paper target by more than AMEND_TOLERANCE: amend it. Returns False when it closed."""
+        resting but away from the paper target by more than AMEND_TOLERANCE: amend it. Returns False when it closed.
+        NO-TARGET positions (NEGATIVE TP RULE: m / p no_target) are left alone: nothing placed, amended or closed here.
+        A target ≤ 0 (paper tp of an older signals.json, stored, or the 3R fallback) is never placed or amended: the next
+        valid candidate is used, and when every known one is ≤ 0 the mirror becomes no_target."""
+        if m.get('no_target') or (p and p.get('no_target')):
+            return True                                            # no take-profit by rule: stop / trailing stop only
         if int(m.get('opened_at') or 0) >= self.now_ms:
             return True                                            # opened in this run with its TP attached
         dist = self.mirror_dist(m, p)
         entry = float(m.get('entry') or 0)
-        tp = float((p or {}).get('tp') or m.get('target') or (entry + m['side'] * DEFAULT_TARGET_RR * dist if entry and dist else 0))
+        fallback = entry + m['side'] * DEFAULT_TARGET_RR * dist if entry and dist else None
+        paper_tp = valid_tp((p or {}).get('tp'))
+        tp = paper_tp or valid_tp(m.get('target')) or valid_tp(fallback)
         if not tp:
+            if fallback is not None or any((x or {}).get(k) is not None for x, k in ((p, 'tp'), (m, 'target'))):
+                m['no_target'], m['target'] = True, None           # every known target is ≤ 0: no TP, never a negative one
+                return True
             self.log('error', m['inst'], step='ensure_target', detail='target unknown')
             return True
         tick = self.spec(m['inst'])['tickSz']
         resting = self.mirror_algos(m, 'tp')
         if resting:
             cur = float(resting[0]['tpTriggerPx'])
-            if (p or {}).get('tp') and abs(tp - cur) / cur > AMEND_TOLERANCE:
+            if paper_tp and abs(tp - cur) / cur > AMEND_TOLERANCE:
                 r = self.post('/api/v5/trade/amend-algos', dict(instId=m['inst'], algoId=resting[0]['algoId'],
                                                                  newTpTriggerPx=fmt(quantize(tp, tick, ROUND_HALF_UP))))
                 if not ok(r):
@@ -1266,7 +1326,7 @@ class Mirror:
             # nothing about this position: keep managing it on its own exchange orders, never close it for that.
             unknown = off and (book is None or m['inst'] in (self.paper.get('price_off_live_invalid') or ()))
             if off:
-                p = {k: v for k, v in p.items() if k not in ('stop', 'tp', 'dist', 'trailing')} if same else None   # live's own levels only
+                p = {k: v for k, v in p.items() if k not in ('stop', 'tp', 'dist', 'trailing', 'no_target')} if same else None   # live's own levels only
             if not held:
                 m['status'] = 'done'
                 try:
