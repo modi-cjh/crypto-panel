@@ -1071,8 +1071,9 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
       dist > 0, coin not held, the seat's MAX_POSITIONS, not halted, i.e. every check before the price_off one) are
       tracked as VIRTUAL positions: they never touch cash, pos, pnl, the curve, the daily halt, liquidation, crowding or
       any count of the real account, so the paper account is byte-identical with or without them. A virtual entry
-      needs its coin free of another virtual position, the seat's real + virtual positions < MAX_POSITIONS and the
-      fill's stop distance >= MIN_STOP_DIST; it fills at the open with slippage like a real one, gets
+      needs its coin free of another virtual position, the seat's real + virtual positions < MAX_POSITIONS, the
+      account's real + virtual positions on its side < rules['max_same_side'] (after side_cap_from; the live follower
+      holds both books; the paper's own check still counts the real ones only) and the fill's stop distance >= MIN_STOP_DIST; it fills at the open with slippage like a real one, gets
       stop = entry ∓ dist, target = entry ± target_rr(genes) × dist (always the current EXIT RULES), and exits by the
       same price rules as a real position: gap through stop / target at the open, stop ('stop' / 'trailing_stop'),
       target, then at the close the trailing stop (rules['trail'] after trail_risk_from) and the reverse signal
@@ -1200,6 +1201,11 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             """PRICE_OFF LIVE: a signal refused only by price_off becomes a virtual position (never touches the account)."""
             g = by_id[sid]['genes']
             if inst in vpos or sum(1 for p in pos.values() if p['seg'] == sid) + sum(1 for p in vpos.values() if p['seg'] == sid) >= MAX_POSITIONS:
+                return
+            # the live follower holds the paper AND the virtual positions: max_same_side counts both (the paper
+            # account's own check below still counts only pos, so virtual entries never block a paper entry)
+            if (side_cap_from is None or i > side_cap_from) and same_side_full(
+                    sum(1 for p in pos.values() if p['side'] == d) + sum(1 for p in vpos.values() if p['side'] == d), rules.get('max_same_side')):
                 return
             px = series[inst].o[i] * (1 + SLIP * d)
             if dist / px < MIN_STOP_DIST:

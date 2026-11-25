@@ -164,6 +164,48 @@ class SimulateAccountOffBookTests(unittest.TestCase):
         self.assertTrue(all(live.get(k, 0) >= n for k, n in paper.items()))
 
 
+    # ---- PRICE_OFF LIVE max_same_side (Codex re-review P1): virtual entries count against the cap with the paper ones,
+    # but never block a paper entry
+    def _capped(self, entries, blocked, cap=3, off_book_from=1, n=14):
+        coins = [f'{c}-USDT-SWAP' for c in 'ABCDEFG']
+        sr = {k: series_from([100.0] * n, k) for k in coins}
+        segs = []
+        for j, lb in enumerate((11, 12)):
+            g = G.random_genome(random.Random(1), 'momentum'); g.update(target_rr=2.0, stop_atr=2.0, risk=.05, leverage=5, lookback=lb)
+            segs.append(dict(id=f's{j}', genes=g, from_i=0, wind_i=None, boosts=[], tenure_ts=T0 - 100 * H))
+        with mock.patch.object(X, 'signal_sets', side_effect=lambda gg, series: (entries.get(int(gg['lookback']), {}), {})):
+            return X.simulate_account(segs, sr, 2, n, blocked=blocked, off_book_from=off_book_from,
+                                      rules={**X.ACCOUNT_RULES, 'max_same_side': cap})
+
+    def test_virtual_entry_refused_when_paper_plus_virtual_reach_the_side_cap(self):
+        k = lambda c: f'{c}-USDT-SWAP'
+        blocked = {k('A'): [(2, None)], k('E'): [(2, None)], k('G'): [(2, None)]}
+        # bar 3 fills: s0 C, D (paper), s1 A (virtual) → 2 + 1 = 3 longs. bar 5 fills: s1 E long (virtual) refused by the cap;
+        # s1 B long (paper) still fills (the paper counts 2 < 3); s1 F long (paper) refused by the paper cap (3); s1 G short
+        # (virtual) fine: the other side
+        entries = {11: {2: [(k('C'), 1, 4.0), (k('D'), 1, 4.0)]},
+                   12: {2: [(k('A'), 1, 4.0)], 4: [(k('E'), 1, 4.0), (k('B'), 1, 4.0), (k('F'), 1, 4.0), (k('G'), -1, 4.0)]}}
+        on = self._capped(entries, blocked)
+        off = self._capped(entries, blocked, off_book_from=None)
+        self.assertEqual(sorted(p['inst'] for p in on['positions']), [k('B'), k('C'), k('D')])
+        self.assertEqual(sorted((p['inst'], p['side']) for p in on['off_book']), [(k('A'), 1), (k('G'), -1)])
+        strip = lambda r: dict({x: y for x, y in r.items() if x not in ('off_book', 'off_book_trades')},
+                               positions=[{x: y for x, y in q.items() if x != 'live_risk_factor'} for q in r['positions']])
+        self.assertEqual(strip(on), off)                     # paper account identical (live_risk_factor is live-only)
+        # the same bar: 2 paper + 1 virtual already filled on that bar, a 2nd virtual long refused
+        entries = {11: {2: [(k('C'), 1, 4.0), (k('D'), 1, 4.0)]}, 12: {2: [(k('A'), 1, 4.0), (k('E'), 1, 4.0)]}}
+        on = self._capped(entries, blocked)
+        self.assertEqual([p['inst'] for p in on['off_book']], [k('A')])
+        # 3 paper longs already: no virtual long at all, the paper account unchanged
+        entries = {11: {2: [(k('C'), 1, 4.0), (k('D'), 1, 4.0)]}, 12: {2: [(k('B'), 1, 4.0)], 4: [(k('A'), 1, 4.0)]}}
+        on = self._capped(entries, blocked)
+        self.assertEqual(on['off_book'], [])
+        self.assertEqual(len(on['positions']), 3)
+        # the real cap (20) by default: a single virtual entry with nothing else open is taken
+        r = self._capped({12: {2: [(k('A'), 1, 4.0)]}}, blocked, cap=X.MAX_SAME_SIDE_POSITIONS)
+        self.assertEqual([p['inst'] for p in r['off_book']], [k('A')])
+
+
 def fix_genes(g):
     return G.fix(dict(g))
 
@@ -250,6 +292,36 @@ class PaperPublishTests(unittest.TestCase):
         self.entries = {11: {39: [('B-USDT-SWAP', 1, 4.0)]}}
         _, s4 = self.update(self.state(), 40, off)
         self.assertNotIn('live_risk_factor', s4['B-USDT-SWAP'])
+
+    def test_queued_price_off_entries_respect_the_side_cap_with_paper_and_virtual(self):
+        # max_same_side patched to 2 (one seat holds at most MAX_POSITIONS = 3): the queued price_off entries count the
+        # surviving paper positions (left) + the open virtual ones (off_book) + the queued entries before them
+        off = {'A-USDT-SWAP': [[T0, None]], 'C-USDT-SWAP': [[T0, None]]}
+        with mock.patch.dict(X.ACCOUNT_RULES, max_same_side=2):
+            # B paper + A virtual open = 2 longs: the queued C long is refused by the cap
+            self.entries = {11: {5: [('A-USDT-SWAP', 1, 4.0), ('B-USDT-SWAP', 1, 4.0)], 39: [('C-USDT-SWAP', 1, 4.0)]}}
+            v, _ = self.update(self.state(), 40, off)
+            self.assertEqual(sorted(v['price_off_live']), ['A-USDT-SWAP'])
+            # only A virtual open (1 long): the queued C long is published; the next replay fills it the same way
+            self.entries = {11: {5: [('A-USDT-SWAP', 1, 4.0)], 39: [('C-USDT-SWAP', 1, 4.0)]}}
+            v, _ = self.update(self.state(), 40, off)
+            self.assertEqual(sorted(v['price_off_live']), ['A-USDT-SWAP', 'C-USDT-SWAP'])
+            self.assertTrue(v['price_off_live']['C-USDT-SWAP']['pending'])
+            v2, _ = self.update(self.state(), 41, off)
+            self.assertEqual(sorted(v2['price_off_live']), ['A-USDT-SWAP', 'C-USDT-SWAP'])
+            # A virtual open + queued B paper long (fills first) = 2: the queued C long after it is refused, B is not
+            self.entries = {11: {5: [('A-USDT-SWAP', 1, 4.0)], 39: [('B-USDT-SWAP', 1, 4.0), ('C-USDT-SWAP', 1, 4.0)]}}
+            v, s = self.update(self.state(), 40, off)
+            self.assertEqual(sorted(v['price_off_live']), ['A-USDT-SWAP'])
+            self.assertTrue(s['B-USDT-SWAP']['pending'])
+            v2, s2 = self.update(self.state(), 41, off)                               # the next replay agrees
+            self.assertEqual(sorted(v2['price_off_live']), ['A-USDT-SWAP'])
+            self.assertIn('B-USDT-SWAP', s2)
+            # the paper account never sees the virtual book: same paper result with the feature off
+            v_off, s_off = self.update(self.state(live_from=None), 40, off)
+            self.assertEqual(s_off.keys(), s.keys())
+            for x in ('equity', 'positions', 'pending', 'trades', 'curve'):
+                self.assertEqual(v[x], v_off[x], x)
 
     def test_virtual_exit_is_published_for_the_live_close(self):
         self.entries = {11: {5: [('A-USDT-SWAP', 1, 4.0)]}}

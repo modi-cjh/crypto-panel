@@ -683,12 +683,16 @@ def _price_off_live(res, segs, by, seg_by, series, last_ts, left, held_start, bl
     if n > from_i and not res['halted']:          # queued for the next open (bar n): only when the next fill is in the new era
         held, vheld = dict(held_start), {x['id']: sum(1 for p in res['off_book'] if p['seg'] == x['id']) for x in segs}
         seen, sides = {p['inst'] for p in left}, {d: sum(1 for p in left if p['side'] == d) for d in (1, -1)}
+        # max_same_side: the paper queue counts the paper positions only (sides, as in update()); a virtual entry counts
+        # what the live follower holds, paper AND virtual (live_sides, as simulate_account's off_book_entry)
+        live_sides = {d: sides[d] + sum(1 for p in res['off_book'] if p['side'] == d) for d in (1, -1)}
         order = sorted(res['pending'], key=lambda x: not x[4])
         for sid, inst, d, dist, b in order:
             if inst in seen or held[sid] >= MAX_POSITIONS:
                 continue
             if inst in blocked_next:                  # the paper queue skips it; only price_off refuses it
-                if dist > 0 and inst not in out and held[sid] + vheld[sid] < MAX_POSITIONS:
+                if dist > 0 and inst not in out and held[sid] + vheld[sid] < MAX_POSITIONS \
+                        and not same_side_full(live_sides[d], ACCOUNT_RULES['max_same_side']):
                     g = by[sid]
                     fb = res.get('first_fill', {}).get(seg_by[sid]['chain'])
                     factor = entry_risk_factor(groups.get((sid, d), 1), seat_age_h=(last_ts + HOUR - seg_by[sid]['tenure_ts']) / HOUR,
@@ -696,10 +700,10 @@ def _price_off_live(res, segs, by, seg_by, series, last_ts, left, held_start, bl
                     out[inst] = dict(_signal_from_pending(inst, d, g['genes'], series, last_ts, g['champion']), rank=rank.get(g['champion'], 99) + 1,
                                      risk_factor=round(factor, 6), seat_from=seg_by[sid]['tenure_ts'], winding=False,
                                      **_size(g['genes'], leader=b), **extra(g['genes']))
-                    vheld[sid] += 1
+                    vheld[sid] += 1; live_sides[d] += 1
                 continue
             if same_side_full(sides[d], ACCOUNT_RULES['max_same_side']):
                 continue
-            seen.add(inst); held[sid] += 1; sides[d] += 1          # the paper queue's own entry (same tests as above)
+            seen.add(inst); held[sid] += 1; sides[d] += 1; live_sides[d] += 1   # the paper queue's own entry (same tests as above)
     exits = {f"{t['inst']}|{int(t['opened'])}": t['reason'] for t in res['off_book_trades'] if t['closed'] >= last_ts - EXIT_WINDOW}
     return out, exits
