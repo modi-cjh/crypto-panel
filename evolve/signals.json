@@ -1,5 +1,5 @@
 {
- "updated_at": "2026-11-25T09:25:23Z",
+ "updated_at": "2026-11-25T13:36:13Z",
  "champion": "s23387",
  "team": [
   "s29515",
@@ -64,5 +64,7 @@
   "CFX-USDT-SWAP"
  ],
  "positions": {},
- "exits": {}
+ "exits": {},
+ "price_off_live": {},
+ "price_off_live_exits": {}
 }
