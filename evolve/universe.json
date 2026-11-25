@@ -412,7 +412,7 @@
    ],
    [
     1795561200000,
-    null
+    1795590000000
    ]
   ],
   "SPK-USDT-SWAP": [
@@ -588,7 +588,7 @@
    ],
    [
     1794470400000,
-    null
+    1795590000000
    ]
   ],
   "YGG-USDT-SWAP": [
@@ -1319,12 +1319,10 @@
   ]
  },
  "price_off_now": {
-  "ARB-USDT-SWAP": -0.082,
-  "ASTER-USDT-SWAP": -0.2996,
-  "H-USDT-SWAP": 0.6614,
-  "JUP-USDT-SWAP": -0.2999,
-  "BARD-USDT-SWAP": -0.1994,
-  "HOME-USDT-SWAP": -0.0154
+  "ARB-USDT-SWAP": -0.0515,
+  "ASTER-USDT-SWAP": -0.3006,
+  "JUP-USDT-SWAP": -0.3079,
+  "BARD-USDT-SWAP": -0.1695
  },
  "trimmed_at": 1794761546503
 }
