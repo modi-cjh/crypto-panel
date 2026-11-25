@@ -62,8 +62,8 @@ class SimulateAccountOffBookTests(unittest.TestCase):
                          wind_i=None, boosts=[]) for j in range(3)]
             a = X.simulate_account(segs, sr, 60, 900, blocked=blocked)
             b = X.simulate_account(segs, sr, 60, 900, blocked=blocked, off_book_from=59)
-            self.assertEqual(set(b) - set(a), {'off_book', 'off_book_trades'})
-            self.assertEqual({k2: v for k2, v in b.items() if k2 not in ('off_book', 'off_book_trades')}, a)   # byte-identical account
+            self.assertEqual(set(b) - set(a), {'off_book', 'off_book_trades', 'live_first_fill'})
+            self.assertEqual({k2: v for k2, v in b.items() if k2 not in ('off_book', 'off_book_trades', 'live_first_fill')}, a)   # byte-identical account
             for t in b['off_book_trades'] + b['off_book']:
                 bar = (t['opened'] - T0) // H
                 self.assertTrue(any(x <= bar and (y is None or bar < y) for x, y in blocked[t['inst']]), t)  # only price_off-blocked fills
@@ -164,6 +164,47 @@ class SimulateAccountOffBookTests(unittest.TestCase):
         self.assertTrue(all(live.get(k, 0) >= n for k, n in paper.items()))
 
 
+    # ---- PRICE_OFF LIVE first fill (Codex review 3 P2): a seat's first live fill may be a price_off one; the live book
+    # tracks it (live_first_fill) so the new-seat half applies once on live, while the paper's first_fill is untouched
+    def test_new_seat_half_applies_once_when_the_first_live_fill_is_price_off(self):
+        coins = ('A-USDT-SWAP', 'B-USDT-SWAP', 'C-USDT-SWAP')
+        n = 16
+        sr = {k: series_from([100.0] * n, k) for k in coins}
+        g = G.random_genome(random.Random(1), 'momentum'); g.update(target_rr=2.0, stop_atr=2.0, risk=.05, leverage=5)
+        seg = dict(id='s', genes=g, from_i=0, wind_i=None, boosts=[], tenure_ts=T0)       # seated at bar 0: new seat (< 24 h)
+        blocked = {'A-USDT-SWAP': [(1, None)], 'C-USDT-SWAP': [(1, None)]}
+        # bar 4 → fills 5: A (price_off); bar 8 → fills 9: C (price_off); bar 11 → fills 12: B (paper)
+        entries = {4: [('A-USDT-SWAP', 1, 4.0)], 8: [('C-USDT-SWAP', 1, 4.0)], 11: [('B-USDT-SWAP', 1, 4.0)]}
+        with mock.patch.object(X, 'signal_sets', side_effect=lambda gg, series: (entries, {})):
+            on = X.simulate_account([seg], sr, 2, n, blocked=blocked, off_book_from=1)
+            off = X.simulate_account([seg], sr, 2, n, blocked=blocked)
+        v = {p['inst']: p for p in on['off_book']}
+        self.assertEqual(v['A-USDT-SWAP']['risk_factor'], .5)          # the seat's first live fill: ×½
+        self.assertEqual(v['C-USDT-SWAP']['risk_factor'], 1.0)         # not first again on live
+        self.assertEqual(on['live_first_fill'], {'s': 5})
+        b, = on['positions']
+        self.assertEqual(b['risk_factor'], .5)                         # the paper's own first fill: unchanged ×½
+        self.assertEqual(b['live_risk_factor'], 1.0)                   # live already filled A: full risk
+        self.assertEqual(on['first_fill'], {'s': 12}); self.assertEqual(off['first_fill'], {'s': 12})
+        self.assertNotIn('live_first_fill', off)
+        self.assertEqual({k: x for k, x in b.items() if k != 'live_risk_factor'}, off['positions'][0])
+        self.assertEqual({k: x for k, x in on.items() if k not in ('off_book', 'off_book_trades', 'live_first_fill', 'positions')},
+                         {k: x for k, x in off.items() if k != 'positions'})
+        # only price_off fills: the paper first_fill stays unset
+        entries = {4: [('A-USDT-SWAP', 1, 4.0)], 8: [('C-USDT-SWAP', 1, 4.0)]}
+        with mock.patch.object(X, 'signal_sets', side_effect=lambda gg, series: (entries, {})):
+            on = X.simulate_account([seg], sr, 2, n, blocked=blocked, off_book_from=1)
+            off = X.simulate_account([seg], sr, 2, n, blocked=blocked)
+        self.assertEqual((on['first_fill'], off['first_fill']), ({}, {}))
+        self.assertEqual(sorted((p['inst'], p['risk_factor']) for p in on['off_book']), [('A-USDT-SWAP', .5), ('C-USDT-SWAP', 1.0)])
+        # a paper fill before off_book_from counts as the live book's first fill too
+        entries = {2: [('B-USDT-SWAP', 1, 4.0)], 8: [('C-USDT-SWAP', 1, 4.0)]}
+        with mock.patch.object(X, 'signal_sets', side_effect=lambda gg, series: (entries, {})):
+            on = X.simulate_account([seg], sr, 2, n, blocked=blocked, off_book_from=5)
+        self.assertEqual(on['live_first_fill'], {'s': 3})
+        self.assertEqual([(p['inst'], p['risk_factor']) for p in on['off_book']], [('C-USDT-SWAP', 1.0)])
+
+
     # ---- PRICE_OFF LIVE max_same_side (Codex re-review P1): virtual entries count against the cap with the paper ones,
     # but never block a paper entry
     def _capped(self, entries, blocked, cap=3, off_book_from=1, n=14):
@@ -189,7 +230,7 @@ class SimulateAccountOffBookTests(unittest.TestCase):
         off = self._capped(entries, blocked, off_book_from=None)
         self.assertEqual(sorted(p['inst'] for p in on['positions']), [k('B'), k('C'), k('D')])
         self.assertEqual(sorted((p['inst'], p['side']) for p in on['off_book']), [(k('A'), 1), (k('G'), -1)])
-        strip = lambda r: dict({x: y for x, y in r.items() if x not in ('off_book', 'off_book_trades')},
+        strip = lambda r: dict({x: y for x, y in r.items() if x not in ('off_book', 'off_book_trades', 'live_first_fill')},
                                positions=[{x: y for x, y in q.items() if x != 'live_risk_factor'} for q in r['positions']])
         self.assertEqual(strip(on), off)                     # paper account identical (live_risk_factor is live-only)
         # the same bar: 2 paper + 1 virtual already filled on that bar, a 2nd virtual long refused
@@ -322,6 +363,32 @@ class PaperPublishTests(unittest.TestCase):
             self.assertEqual(s_off.keys(), s.keys())
             for x in ('equity', 'positions', 'pending', 'trades', 'curve'):
                 self.assertEqual(v[x], v_off[x], x)
+
+    def test_queued_price_off_entry_is_not_first_again_after_a_virtual_fill(self):
+        # Codex review 3 P2: the seat (seated at T0) first fills A on live only (price_off, bar 6, ×½); the queued C
+        # (signal on the last bar 12, seat 13 h old) is not the seat's first live fill: full risk, not ×½ again
+        off = {'A-USDT-SWAP': [[T0, None]], 'C-USDT-SWAP': [[T0, None]]}
+        self.entries = {11: {5: [('A-USDT-SWAP', 1, 4.0)], 12: [('C-USDT-SWAP', 1, 4.0)]}}
+        v, s = self.update(self.state(), 13, off)
+        pol = v['price_off_live']
+        self.assertEqual(pol['A-USDT-SWAP']['risk_factor'], .5)
+        self.assertTrue(pol['C-USDT-SWAP']['pending'])
+        self.assertEqual(pol['C-USDT-SWAP']['risk_factor'], 1.0)
+        v2, _ = self.update(self.state(), 14, off)                       # the next replay fills it with the same factor
+        c2 = v2['price_off_live']['C-USDT-SWAP']
+        self.assertFalse(c2.get('pending')); self.assertEqual(c2['risk_factor'], 1.0)
+        # the paper account is the same with the feature off (no paper fill at all: its first fill is still ahead)
+        v_off, s_off = self.update(self.state(live_from=None), 13, off)
+        self.assertEqual(s, s_off)
+        for x in ('equity', 'positions', 'pending', 'trades', 'curve'):
+            self.assertEqual(v[x], v_off[x], x)
+        # a queued paper entry after the virtual first fill: paper ×½ (its own first fill), live full risk
+        self.entries = {11: {5: [('A-USDT-SWAP', 1, 4.0)], 12: [('B-USDT-SWAP', 1, 4.0)]}}
+        v, s = self.update(self.state(), 13, off)
+        b = s['B-USDT-SWAP']
+        self.assertTrue(b['pending']); self.assertEqual((b['risk_factor'], b['live_risk_factor']), (.5, 1.0))
+        v2, s2 = self.update(self.state(), 14, off)
+        self.assertEqual((s2['B-USDT-SWAP']['risk_factor'], s2['B-USDT-SWAP']['live_risk_factor']), (.5, 1.0))
 
     def test_virtual_exit_is_published_for_the_live_close(self):
         self.entries = {11: {5: [('A-USDT-SWAP', 1, 4.0)]}}

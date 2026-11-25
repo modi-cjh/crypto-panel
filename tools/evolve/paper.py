@@ -570,8 +570,8 @@ def update(state, series, changes, price_off=None, prev_last=None, now=None, rep
                                    lambda k: k in blocked_next) \
         if 'off_book' in res and s.n > ci['price_off_live_from'] and not res['halted'] else None
 
-    def queue_factor(sid, d, grp=None):
-        fb = res.get('first_fill', {}).get(seg_by[sid]['chain'])
+    def queue_factor(sid, d, grp=None, ff=None):
+        fb = (res.get('first_fill', {}) if ff is None else ff).get(seg_by[sid]['chain'])
         return entry_risk_factor((groups if grp is None else grp).get((sid, d), 1), seat_age_h=(last_ts + HOUR - seg_by[sid]['tenure_ts']) / HOUR,
                                  first=fb is None or fb == s.n, winding=False)
 
@@ -579,7 +579,10 @@ def update(state, series, changes, price_off=None, prev_last=None, now=None, rep
         """{'live_risk_factor': x} for a queued paper entry whose live share is smaller than its paper one, else {}."""
         if lgroups is None:
             return {}
-        x = min(factor, queue_factor(sid, d, lgroups))
+        # the live book's first fill (paper OR virtual) and the larger of the two groups: a seat whose first live
+        # fill was a price_off entry is no longer on its first fill on live, even if the paper has not filled yet
+        grp = {k: max(v, groups.get(k, 1)) for k, v in lgroups.items()}
+        x = queue_factor(sid, d, grp, res.get('live_first_fill', res.get('first_fill', {})))
         return {'live_risk_factor': round(x, 6)} if round(x, 6) != round(factor, 6) else {}
     members = []
     for g in acc['segs']:
@@ -694,7 +697,7 @@ def _price_off_live(res, segs, by, seg_by, series, last_ts, left, held_start, bl
                 if dist > 0 and inst not in out and held[sid] + vheld[sid] < MAX_POSITIONS \
                         and not same_side_full(live_sides[d], ACCOUNT_RULES['max_same_side']):
                     g = by[sid]
-                    fb = res.get('first_fill', {}).get(seg_by[sid]['chain'])
+                    fb = res.get('live_first_fill', res.get('first_fill', {})).get(seg_by[sid]['chain'])   # live book's first fill
                     factor = entry_risk_factor(groups.get((sid, d), 1), seat_age_h=(last_ts + HOUR - seg_by[sid]['tenure_ts']) / HOUR,
                                                first=fb is None or fb == n, winding=False)
                     out[inst] = dict(_signal_from_pending(inst, d, g['genes'], series, last_ts, g['champion']), rank=rank.get(g['champion'], 99) + 1,
