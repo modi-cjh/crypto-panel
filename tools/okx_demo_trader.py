@@ -97,6 +97,12 @@ LIVE_SIGNAL_MAX_AGE = SIGNAL_TIMING['github'][0]   # live refuses to act on evol
 MAJOR_FACTOR = 2.0   # majors (execution.MAJORS) risk twice as much (execution.ACCOUNT_RULES)
 PRICE_TOLERANCE = .01             # demo mode: no entry while the demo price is further than this from the real market (data.PRICE_TOLERANCE)
 CROWD_STEPS = ((10, .5),)  # 2026-11-20: <10 same-side already open → full risk; ≥10 → half. Paper/evolution execution.CROWD_STEPS is the same (synced).
+# MARGIN SIZING (2026-11-25, tools/evolve/sizing.py): a signal carrying sizing='margin' (paper: filled after
+# account['margin_sizing_from']) is sized by margin = base equity × m (risk gene 5–10 % → 2–10 %, majors × 2, crowding
+# half at 10, clamped to 2–10 %, then × risk_factor / live_risk_factor), notional = margin × leverage; base = OKX equity
+# minus the unrealised PnL of every position that is not one of our own open mirrors (manual / adopted). Signals without
+# the marker keep the stop-risk sizing below. No per-trade stop-loss cap; every other gate is unchanged.
+from sizing import MARGIN_SIZING, margin_fraction, margin_qty, live_base_equity  # noqa: E402
 SAME_SIDE_CAP = .05
 MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 20 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
@@ -666,6 +672,40 @@ class Mirror:
         ps = 'long' if side == 1 else 'short'
         return self.positions.get((inst, ps)) or self.positions.get((inst, 'net'))
 
+    def own_position_keys(self):
+        """(instId, posSide) of the exchange positions that are the program's own open mirrors — the same match as the
+        cross-margin rule in open() (held() of every open, non-adopted mirrored record). Everything else on the account
+        (manual positions, OKX_ADOPT adopted ones, i.e. what open() treats as unmanaged / 'exchange_position_exists_not_ours')
+        is not the program's."""
+        keys = set()
+        for m in self.s['mirrored'].values():
+            if m.get('status') != 'open' or m.get('adopted'):
+                continue
+            h = self.held(m['inst'], m.get('side'))
+            if h:
+                keys.add((h.get('instId'), h.get('posSide', 'net')))
+        return keys
+
+    def margin_contracts(self, inst, p, px, sp, crowd, factor, inst_cap):
+        """MARGIN SIZING (sizing.py) for a signal with sizing='margin': (contracts, stop-loss USDT, base, m, lever), or None
+        after a logged skip. base = live_base_equity (exchange equity minus the unrealised PnL of positions that are not ours,
+        floored at 0); m = margin_fraction(risk gene, major, crowding, × factor); lever = the same gene / 20× / coin cap as
+        below in open(); contracts = (base × m × lever ÷ px ÷ ctVal) rounded down to the lot."""
+        own = self.own_position_keys() | (getattr(self, 'own_keys_at_load', None) or set())
+        base, foreign, why = live_base_equity(self.equity, getattr(self, 'all_positions', None) or {}, own, lambda i: self.spec(i)['ctVal'])
+        if base is None:
+            self.log('skip', inst, reason='base_equity_unknown', detail=why)
+            return None
+        m = margin_fraction(p.get('risk'), major=inst in MAJORS, crowd=next((f for n, f in CROWD_STEPS if crowd >= n), 1.0), factor=factor,
+                            major_factor=MAJOR_FACTOR)
+        try:
+            want = int(p.get('leverage') or DEFAULT_LEVERAGE)
+        except (TypeError, ValueError):
+            want = DEFAULT_LEVERAGE
+        lever = max(1, min(clamp_leverage(max(1, min(want, EVOLVED_MAX_LEVERAGE)), cap=EVOLVED_MAX_LEVERAGE), inst_cap))
+        contracts = quantize(margin_qty(base, m, lever, px) / sp['ctVal'], sp['lotSz'])
+        return contracts, float(contracts) * sp['ctVal'] * abs(px - float(p['stop'])), base, m, lever
+
     # ---- actions ---------------------------------------------------------------
     def open(self, key, inst, p):
         if not entries_allowed():
@@ -727,6 +767,12 @@ class Mirror:
         if r <= 0:
             return self.log('skip', inst, reason='zero_risk_factor')
         risk = r * self.equity
+        sized = None                               # MARGIN SIZING: only signals the paper itself sized by margin
+        if evolved and p.get('sizing') == MARGIN_SIZING:
+            sized = self.margin_contracts(inst, p, px, sp, crowd, factor, inst_cap)
+            if sized is None:
+                return
+            risk = sized[1]                        # what this entry loses at its stop (logged as risk_usdt)
         same_risk = 0.0
         for existing_key, m in (self.s['mirrored'].items() if SAME_SIDE_CAP is not None else ()):   # only needed for a same-side risk cap
             if m.get('status') != 'open' or m.get('side') != side or m.get('adopted'):
@@ -743,7 +789,7 @@ class Mirror:
             same_risk += max((avg - float(m['stop'])) * side, 0) * abs(float(held['pos'])) * self.spec(m['inst'])['ctVal']
         if SAME_SIDE_CAP is not None and same_risk + risk > SAME_SIDE_CAP * self.equity * (1 + 1e-9):   # None = evolved mode: no same-side risk cap
             return self.log('skip', inst, reason='same_side_risk')
-        contracts = quantize(risk / (px * dist) / sp['ctVal'], sp['lotSz'])
+        contracts = quantize(risk / (px * dist) / sp['ctVal'], sp['lotSz']) if sized is None else sized[0]
         if float(contracts) < sp['minSz'] or contracts <= 0:
             return self.log('skip', inst, reason='size_below_minimum', contracts=fmt(contracts), min=sp['minSz'])
         if evolved:
@@ -1281,6 +1327,7 @@ class Mirror:
     # ---- one reconciliation pass ---------------------------------------------------
     def run(self, action='run'):
         self.load()
+        self.own_keys_at_load = self.own_position_keys()   # MARGIN SIZING base equity: our mirrors as loaded (one closed later in this run stays ours)
         if getattr(self, 'adopt', None) is not None:
             self.release_adopted()
         if getattr(self, 'adopt', None):

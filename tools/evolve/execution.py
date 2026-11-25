@@ -36,6 +36,8 @@ import json
 import math
 from pathlib import Path
 
+import sizing as SZ   # MARGIN SIZING (2026-11-25): margin = base × m, notional = margin × leverage (sizing.py)
+
 FEE = .0005          # taker fee per side
 SLIP = .0002         # slippage per fill
 LEVERAGE = 20        # most leverage a gene may request (paper account; the OKX demo mirror still has its own cap)
@@ -861,7 +863,11 @@ def simulate(g, series, start, end, equity=START_EQUITY, close_at_end=False, cur
             if dist / px < MIN_STOP_DIST:
                 continue
             mark = cash + sum(p['qty'] * (series[k].o[i] - p['entry']) * p['side'] for k, p in pos.items()) + extra
-            qty = mark * risk * entry_risk_factor(groups.get((None, d), 1), rules=dict(same_bar_share=rules.get('same_bar_share', SAME_BAR_SHARE), new_seat_h=None)) / dist
+            share = entry_risk_factor(groups.get((None, d), 1), rules=dict(same_bar_share=rules.get('same_bar_share', SAME_BAR_SHARE), new_seat_h=None))
+            if rules.get('sizing', SZ.SIZING) == SZ.MARGIN_SIZING:   # MARGIN SIZING: m from the risk gene, × leverage (sizing.py)
+                qty = SZ.margin_qty(mark, SZ.margin_fraction(risk, factor=share), clamp_leverage(cap, cap=inst_max_leverage(inst, cap=LEVERAGE)), px)
+            else:                                                     # stop-risk sizing (before 2026-11-25)
+                qty = mark * risk * share / dist
             if s.spec:
                 ct, lot, mn = s.spec
                 qty = math.floor(qty / ct / lot + 1e-9) * lot
@@ -1015,7 +1021,8 @@ def position_risk(base, inst, same_side_open=0, rules=None):
 
 
 def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None, side_cap_from=None,
-                     risk_from=None, risk_cap_from=None, exit_from=None, manual=None, trail_risk_from=None, off_book_from=None):
+                     risk_from=None, risk_cap_from=None, exit_from=None, manual=None, trail_risk_from=None, off_book_from=None,
+                     margin_from=None):
     """ONE shared-equity account traded by several strategies at once, with cross (全仓) liquidation: the paper account of the champion team.
 
     segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
@@ -1040,6 +1047,12 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
       at 6) and the segment's `old_risk` (its stored gene, when given); risk_cap_from = a later bar index: fills after
       risk_from (or from the start when risk_from is None) and on or before it are sized with PRIOR_SIZING (5–20 %,
       cap 20 %, half at 10) and `old_risk`; later fills use `rules` (None = that era is skipped);
+    - MARGIN SIZING (sizing.py): margin_from = a bar index (paper: account['margin_sizing_from']): later fills are sized
+      by margin, qty = mark × m × leverage ÷ price with m = sizing.margin_fraction(risk gene, major, crowding) × risk
+      factor (2–10 % before the factor); fills after the eras above and on or before margin_from keep the frozen
+      stop-risk rules (sizing.STOP_RISK_SIZING). None = margin sizing for every fill after the eras above (paper.update
+      always passes the index; a pending key = the last bar + 1). rules['sizing'] = sizing.STOP_RISK switches margin
+      sizing off on every bar (analysis / tests of the stop-risk engine), the same switch simulate() reads;
     - one position per coin for the whole account, at most MAX_POSITIONS per strategy;
     - margin = notional ÷ leverage (leverage = the gene, 1–20×, then the per-coin OKX cap;
       cap = rules['lever'] / 'leader_lever', both 20×), and a new entry needs it to fit into 95 % of the free margin
@@ -1131,6 +1144,7 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                     max_hold=o.get('max_hold', g['max_hold']), tf=o.get('tf', g.get('tf', 1)))
     upgraded = exit_from is None
     new_era = lambda i: trail_risk_from is None or i > trail_risk_from     # TRAIL & RISK RULES apply
+    margin_on = lambda i: rules.get('sizing', SZ.SIZING) == SZ.MARGIN_SIZING and (margin_from is None or i > margin_from)   # MARGIN SIZING
     trail_new = rules.get('trail', TRAIL)
     risk_new = dict(same_bar_share=rules.get('same_bar_share', SAME_BAR_SHARE), new_seat_h=rules.get('new_seat_h', NEW_SEAT_HOURS),
                     new_seat_factor=rules.get('new_seat_factor', NEW_SEAT_FACTOR))
@@ -1262,8 +1276,12 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 r = position_risk(by_id[sid].get('old_risk', g['risk']), inst, n_same, {**rules, **LEGACY_SIZING})
             elif risk_cap_from is not None and i <= risk_cap_from:   # filled under the 5–20 % rules: original size
                 r = position_risk(by_id[sid].get('old_risk', g['risk']), inst, n_same, {**rules, **PRIOR_SIZING})
-            else:
-                r = position_risk(g['risk'], inst, n_same, rules)
+            elif not margin_on(i):                            # filled under the stop-risk rules (frozen): original size
+                r = position_risk(g['risk'], inst, n_same, rules if rules.get('sizing', SZ.SIZING) == SZ.STOP_RISK else {**rules, **SZ.STOP_RISK_SIZING})
+            else:                                             # MARGIN SIZING: r = m, the margin share (2–10 %), below × factor
+                r = SZ.margin_fraction(g['risk'], inst in rules.get('majors', ()), crowd_factor(n_same, rules.get('crowd_steps')),
+                                       major_factor=rules.get('major_factor', SZ.MAJOR_FACTOR))
+            by_margin = not (risk_from is not None and i <= risk_from) and not (risk_cap_from is not None and i <= risk_cap_from) and margin_on(i)
             factor = live_factor = 1.0
             if new_era(i):                                    # TRAIL & RISK RULES b, c
                 seg = by_id[sid]
@@ -1278,7 +1296,11 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                     lfb = live_first_fill.get(chain)          # the live book may have filled first on a price_off coin
                     live_factor = entry_risk_factor(max(vgroups.get((sid, d), 1), groups.get((sid, d), 1)), seat_age_h=age_h,
                                                     first=lfb is None or lfb == i, winding=wind, rules=risk_new)
-            qty = mark * r / dist
+            if by_margin:                                     # notional = mark × m × leverage (same leverage as below)
+                qty = SZ.margin_qty(mark, r, clamp_leverage(g.get('leverage', DEFAULT_LEVERAGE),
+                                                           cap=inst_max_leverage(inst, cap=rules['leader_lever'] if boost else rules['lever'])), px)
+            else:
+                qty = mark * r / dist
             if s.spec:
                 ct, lot, mn = s.spec
                 qty = math.floor(qty / ct / lot + 1e-9) * lot

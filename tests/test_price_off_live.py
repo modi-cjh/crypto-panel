@@ -116,6 +116,7 @@ class SimulateAccountOffBookTests(unittest.TestCase):
         with mock.patch.object(X, 'signal_sets', side_effect=lambda gg, series: (entries, {})):
             return X.simulate_account([seg], sr, 2, n, blocked=blocked, off_book_from=off_book_from)
 
+    @mock.patch.dict(X.ACCOUNT_RULES, {'sizing': 'stop_risk'})   # stop-risk sizing (shares compared as risk ratios)
     def test_mixed_same_bar_entries_share_one_risk_on_live_and_paper_is_unchanged(self):
         for order in ((('A-USDT-SWAP', 1, 4.0), ('B-USDT-SWAP', 1, 4.0)), (('B-USDT-SWAP', 1, 4.0), ('A-USDT-SWAP', 1, 4.0))):
             entries, blocked = {5: list(order)}, {'A-USDT-SWAP': [(3, None)]}

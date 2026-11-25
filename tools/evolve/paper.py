@@ -13,7 +13,11 @@ so fills that already happened (including positions still open) keep their origi
   10 %, half at 3 / quarter at 6) with their seat's stored risk gene;
 - fills after it and on or before account['risk_cap_from'] (the first run with the 5–10 % band): execution.PRIOR_SIZING
   (5–20 %, cap 20 %, half at 10) with their seat's stored risk gene;
-- later fills: the current ACCOUNT_RULES (5–10 %, cap 10 %, half at 10).
+- fills after that and on or before account['margin_sizing_from'] (the first run with MARGIN SIZING, 2026-11-25):
+  the stop-risk rules 5–10 %, cap 10 %, half at 10 (frozen as sizing.STOP_RISK_SIZING);
+- later fills: MARGIN SIZING (sizing.py): margin = equity × m (risk gene 5–10 % mapped to 2–10 %, majors × 2, crowding
+  half at 10, clamped to 2–10 %, then × risk_factor), notional = margin × leverage; no per-trade stop-loss cap. Their
+  signals carry sizing='margin' so the OKX follower switches on the same bar.
 Both stamps are set once (setdefault) and never moved.
 Exit rules (2026-11-21, execution.py EXIT RULES: stop + take-profit on every position, reverse-signal close per
 ACCOUNT_RULES['reverse_close'], trailing stop for every position, no time exit) work the same way:
@@ -79,6 +83,7 @@ from execution import simulate, simulate_account, stop_distance, START_EQUITY, A
 from execution import entry_risk_factor, live_same_bar_groups, same_bar_groups
 from evolution import TEAM_SIZE, entry_gate
 from genome import fix
+import sizing as SZ
 
 HOUR = 3600_000
 EXIT_WINDOW = 24 * HOUR      # closes this recent are published with their reason, so the OKX follow can log why it closes
@@ -104,7 +109,10 @@ MANUAL_CLOSES = {
     ('DOGE-USDT-SWAP', 1794499200000): (1795262400000, 0.05372),
 }
 # Account keys that switch a rule on from a bar (eras); set once with cutover() and never moved. Add new keys here.
-CUTOVER_KEYS = ('side_cap_from', 'risk_rules_from', 'risk_cap_from', 'exit_rules_from', 'trail_risk_from', 'price_off_live_from')
+# margin_sizing_from (MARGIN SIZING, sizing.py): fills after it are sized by margin (base × m × leverage); fills on or
+# before it keep the frozen stop-risk rules (sizing.STOP_RISK_SIZING); signals filled after it carry sizing='margin'.
+CUTOVER_KEYS = ('side_cap_from', 'risk_rules_from', 'risk_cap_from', 'exit_rules_from', 'trail_risk_from', 'price_off_live_from',
+                'margin_sizing_from')
 _CTX = dict(extra={})        # per update(): {slot index: {ts: equity of the other slots}} for boosted segments
 
 
@@ -537,7 +545,8 @@ def update(state, series, changes, price_off=None, prev_last=None, now=None, rep
     res = simulate_account(segs, series, idx(acc['from_ts']), s.n, equity=acc['start_equity'], blocked=blocked,
                            side_cap_from=ci['side_cap_from'], risk_from=ci['risk_rules_from'],
                            risk_cap_from=ci['risk_cap_from'], exit_from=ci['exit_rules_from'], manual=manual,
-                           trail_risk_from=ci['trail_risk_from'], off_book_from=ci['price_off_live_from'])
+                           trail_risk_from=ci['trail_risk_from'], off_book_from=ci['price_off_live_from'],
+                           margin_from=ci['margin_sizing_from'])
     by = {g['id']: g for g in acc['segs']}
     rank = {m['id']: r for r, m in enumerate(sorted(team, key=lambda m: (m['id'] != leader, -nodes[m['id']]['fitness'])))}   # the leader is rank 1
     who = lambda sid: by[sid]['champion']
@@ -620,6 +629,9 @@ def update(state, series, changes, price_off=None, prev_last=None, now=None, rep
                                       **live_factor(sid, d, queue_factor(sid, d)), **_size(g['genes'], leader=b)))
     price_off_live, price_off_live_exits = _price_off_live(res, segs, by, seg_by, series, last_ts, left, held_start, blocked_next, rank, who, wound,
                                                            ci['price_off_live_from'], lgroups or {})
+    # MARGIN SIZING: the OKX follower sizes by margin exactly the signals the paper sizes by margin (filled after the
+    # stamp); a pending key (replay of an unstamped state) marks nothing, so every follower keeps the stop-risk sizing
+    SZ.mark_margin(signals, cut['margin_sizing_from']); SZ.mark_margin(price_off_live, cut['margin_sizing_from'])
     legacy = paper.get('legacy') or {}
     seats = [dict(champion=g['champion'], slot=g['slot'], species=g['species'], reason=g['reason'], from_ts=g['from_ts'], to_ts=g['wind_ts']) for g in acc['segs']]
     seats += [dict(champion=g['champion'], slot=g['slot'], species=g['species'], reason='leader', from_ts=a, to_ts=b) for g in acc['segs'] for a, b in g['boosts']]

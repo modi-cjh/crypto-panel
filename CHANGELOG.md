@@ -730,6 +730,17 @@
 - 重放（/workspace/modi/neg-tp-2026-11-25/replay）：同样 16 个信号，原来 4 开 12 跳过，现在 16 个都开；新开的 12 个只挂止损；原来开的 4 个请求体与 358ef95 逐字节相同。
 - 向后兼容：旧 trader（7dabb1b / 358ef95）读新 signals.json 不会出错（`fetch_signals.valid` 不检查 tp）；普通信号的 `tp: null` 会被旧代码当成“没有纸面止盈”而回退 3R：3R > 0 时挂 3R 止盈，3R ≤ 0 时仍会发负止盈（和旧代码读旧 signals.json 时的负 tp 一样，不比现在更差）；358ef95 的 price_off_live 照旧 `target_not_positive` 跳过，7dabb1b 不读该字段。服务器要部署新 trader 才真正生效。
 - 测试：`tests/test_neg_tp.py`（36 项）；`tests/test_price_off_live.py` 中“负止盈跳过”一项改为“负止盈只挂止损开仓”。
+### 开仓尺寸改为按保证金：保证金 = 本金 × 2%–10%，仓位 = 保证金 × 杠杆（MARGIN SIZING，实盘 / 模拟盘跟单 / 纸面 / 进化，2026-11-25）
+- 做了什么：
+  1. 新模块 `tools/evolve/sizing.py`（纯函数，纸面与跟单共用）：`m = 2% + (风险基因夹到 5–10% − 5%) ÷ 5% × 8%`（5%→2%、7.5%→6%、10%→10%）→ × 拥挤（同向已开 ≥ 10 仓 × 0.5）× 主流币 2 → 夹到 [2%, 10%] → **再 × risk_factor**（同 K 线合并、新席位 / 离任 ×0.5、PRICE_OFF LIVE 的 `live_risk_factor`；可以低于 2%）；保证金 = 本金 × m，名义 = 保证金 × 杠杆（杠杆不变：基因 1–20× 再受该币 OKX 上限），张数 = 名义 ÷ 价格 ÷ ctVal 向下取整，不足 minSz 不开。**不设单笔止损上限**（用户决定），一笔止损亏损 = 本金 × m × 杠杆 × 止损距离。
+  2. 本金：纸面 / 回测 = 账户自己的含浮盈权益（不变）；跟单 = 交易所 USDT 权益 − 所有“不是本程序仓位”的浮盈（人工仓、OKX_ADOPT 接管仓，与 `open()` 全仓规则里的 unmanaged 判定相同：本程序仓位 = 状态 open 且非 adopted 的镜像记录在交易所上对应的仓位；本轮刚平掉的镜像按本轮开始时的判定仍算本程序的），正负都扣（人工盈利不放大、人工亏损不缩小我们的仓位），下限 0；人工仓 `upl` 缺失时用 (标记价 − 均价) × 张数 × ctVal 计算，仍读不到就跳过这笔按保证金定尺寸的开仓（`base_equity_unknown`），不猜。
+  3. 纸面：新 cutover 键 `account['margin_sizing_from']`（加进 `paper.CUTOVER_KEYS`，`cutover()` 只设一次，NEXT-HOUR：合并后第一次 GitHub 纸面运行盖在 C = floor(now, 1h) + 1h 上）；C 及之前成交的仓位按冻结的止损风险规则（`sizing.STOP_RISK_SIZING` = 5–10% / 10% / 满 10 仓减半，与 `LEGACY_SIZING` / `PRIOR_SIZING` 一样不能改），之后成交的按保证金。已成交仓位从不改尺寸，C 之前的已发布历史逐字节不变。`execution.simulate_account(margin_from=)`（None = 每根都按保证金；`rules['sizing'] = 'stop_risk'` = 全程旧规则，供分析和旧引擎测试）。
+  4. `signals.json`：纸面在 C 之后成交的每个信号（普通持仓、排队信号、`price_off_live`）带 `sizing: 'margin'`；跟单只对带这个标记的信号按保证金定尺寸，其他信号仍按原来的止损风险（所以先部署跟单、再等 GitHub 盖章也安全；每小时服务器 `signals_hourly` 重放未盖章的 state 时键为 pending，不会出标记，与纸面一致）。
+  5. 进化适应度 `simulate()`：从合并后第一次运行起按保证金定尺寸（`rules['sizing']`，默认 `sizing.SIZING = 'margin'`；单基因回测没有已发布历史，用将来实际交易的规则打分）。该次运行的 `refresh` 会用新规则重新给在世种群、名人堂和团队打分，可能因保留线（样本外 / 终审亏 > 5% 或回撤 > 30%）提前换下成员（每次最多换一席的规则不变）。
+  6. 不变：日亏 25% 停手、同向最多 20 单、95% 可用保证金、`cross_open_allowed`、minSz、全仓、杠杆上限 20、ETH 人工仓照旧 `exchange_position_exists_not_ours` 跳过、止损 / 止盈 / 移动止损、price_off_live 逻辑（尺寸同样走新公式，用 `live_risk_factor`）；不改交易所账户设置。
+- 为什么：用户决定「保证金是本金的2%-10%，乘杠杆就是仓位大小」「按新规则改，不加单笔止损上限」；分析见 /workspace/modi/sizing-2026-11-25/SUMMARY.md。
+- 影响（/workspace/modi/sizing-2026-11-25/pr/compare_pr.md，用本分支生产代码）：低杠杆基因（1–3×）的仓位缩到原来的 2%–6%；主流币（原来加倍到 10% 风险）一笔止损降到本金的 1.9%–4.2%；20× 加宽止损会变大（NEAR 止损 27%：一笔止损 15% 本金，原来 7%）。m = 10% 时约第 9–10 仓就撞 95% 保证金上限，拥挤减半基本用不上；m = 2% 的成员拥挤减半被夹回 2%。
+- 测试：`tests/test_margin_sizing.py`（20 项，含 2 项与 NEGATIVE TP RULE（#118）的组合：止盈无效的空单按保证金定尺寸、只挂止损；另含人工 ETH 空单 14:58Z 平仓后的情形：无持仓时本金 = 交易所权益 202.26 U，ETH 按保证金信号不再跳过）；`tests/test_evolve.py` 中 18 项、`tests/test_price_off_live.py` 中 1 项是止损风险引擎的机制测试，改为显式固定 `ACCOUNT_RULES['sizing'] = 'stop_risk'`（断言未改）。
 
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
