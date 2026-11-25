@@ -58,6 +58,7 @@ from runtime_guard import entries_allowed, atomic_json
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'evolve'))
 from execution import LEVERAGE as GENE_MAX_LEVERAGE, clamp_leverage, cross_open_allowed, DEFAULT_LEVERAGE, maintenance_rate, MAJORS, FEE, MAX_SAME_SIDE_POSITIONS, same_side_full  # noqa: E402
 from execution import DEFAULT_TARGET_RR, TRAIL_START_R, TRAIL_DIST_R, TRAIL, trail_stop_level, trail_unit  # noqa: E402
+from execution import Series, target_rr  # noqa: E402
 
 BASE = 'https://www.okx.com'
 INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
@@ -108,6 +109,16 @@ PAPER_EXIT_REASONS = {'reverse_signal': 'reverse_signal', 'trailing_stop': 'trai
 EXCHANGE_EXIT_REASONS = {'target': 'take_profit', 'stop': 'stop_loss', 'liquidation': 'liquidation'}
 TAG = {'mean_reversion': 'mr', 'breakout_long': 'bl', 'breakout_daily': 'bd', 'evolved': 'ev'}
 EVOLVED_INSTRUMENTS = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP', 'DOGE-USDT-SWAP']
+# PRICE_OFF LIVE (2026-11-25): signals.json 'price_off_live' = qualified signals the paper account refused ONLY because the
+# coin's OKX DEMO price was off the real market (data.price_check). Followed by the LIVE trader only (Mirror.follow_price_off,
+# set in main() for live; demo keeps its own demo_price_off check and ignores the list). Stop / take-profit are never
+# copied: real_levels() recomputes them from REAL OKX candles of the genome's timeframe at the signal bar, at the live
+# entry price (stop = px ∓ stop_atr × ATR14, tp = px ± target_rr × that distance, execution.target_rr). Exits: the
+# exchange stop / take-profit, the trailing stop from the live entry, and the strategy's own exits published in
+# 'price_off_live_exits' (the entry leaves the list → closed at market, as a paper close closes a mirror). A signals.json
+# WITHOUT the field (older publisher) opens nothing new and closes nothing: those positions keep their exchange orders.
+PRICE_OFF_LIVE_BAR = {1: '1H', 4: '4H', 24: '1Dutc'}   # OKX bar per genome tf; 1Dutc = UTC-aligned days, like evolve's 1D
+PRICE_OFF_LIVE_MIN_BARS = 30                            # fewer closed real candles than this: no ATR, no entry
 SCAN_LIMIT = 50           # coins scanned for new entries: the first 50 of the evolution's list (most traded first); same as evolve.data.UNIVERSE_SIZE
 ACTIVE_PROFILE = None
 
@@ -420,6 +431,30 @@ def paper_dist(p, px=None):
     return abs(float(ref) - float(p['stop'])) if ref else 0.0
 
 
+def price_off_live_fields(sig):
+    """PRICE_OFF LIVE fields of a signals.json for the live follower: price_off_live (None when the document has no such
+    dict: an older publisher; then nothing is opened or closed for it), price_off_live_invalid (coins whose entry is
+    malformed: never opened, and their open position is never closed for missing from the list) and
+    price_off_live_exits."""
+    raw = sig.get('price_off_live')
+    if not isinstance(raw, dict):
+        return dict(price_off_live=None, price_off_live_invalid=set(), price_off_live_exits={})
+    book, bad = {}, set()
+    for inst, p in raw.items():
+        try:
+            if not (isinstance(inst, str) and re.fullmatch(r'[A-Z0-9]+-USDT-SWAP', inst) and isinstance(p, dict)):
+                raise ValueError
+            if p['side'] not in (1, -1) or int(p['opened']) <= 0 or not float(p['entry']) > 0 or not float(p['stop']) > 0 \
+                    or int(p['tf']) not in PRICE_OFF_LIVE_BAR or not float(p['stop_atr']) > 0:
+                raise ValueError
+            book[inst] = p
+        except (KeyError, TypeError, ValueError):
+            bad.add(inst) if isinstance(inst, str) else None
+    ex = sig.get('price_off_live_exits') if isinstance(sig.get('price_off_live_exits'), dict) else {}
+    return dict(price_off_live=book, price_off_live_invalid=bad,
+                price_off_live_exits={k: v for k, v in ex.items() if isinstance(k, str) and isinstance(v, str)})
+
+
 ADOPT_ENV = 'OKX_ADOPT'
 
 
@@ -470,6 +505,7 @@ class Mirror:
         self.adopt_freed = set()          # coins whose adopted position was closed on a reverse signal in this run
         self.actions = []
         self.live = None                  # demo mode only: real_price, to skip entries while the demo price is off the real market
+        self.follow_price_off = False     # live mode only (main): follow signals.json price_off_live (PRICE_OFF LIVE)
         self.new_order_risk = {}
         self.now_ms = int(now.timestamp() * 1000)
         self.specs = {}
@@ -603,6 +639,10 @@ class Mirror:
             real = self.live(inst)
             if real and abs(px / real - 1) > PRICE_TOLERANCE:
                 return self.log('skip', inst, reason='demo_price_off', price=px, real_price=real)
+        if p.get('price_off_live'):            # PRICE_OFF LIVE: stop / take-profit from real candles at this live price
+            p = self.real_levels(inst, p, px)
+            if p is None:
+                return
         dist = (px - p['stop']) / px * side
         if dist < MIN_STOP_DIST:
             return self.log('skip', inst, reason='stop_too_close_or_crossed', price=px, stop=p['stop'])
@@ -632,10 +672,14 @@ class Mirror:
             r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 10 %
         # TRAIL & RISK RULES b, c (execution.entry_risk_factor, decided by the paper account): same-champion same-bar share
         # and new / winding seat half risk. Missing (older signals.json) = 1. May take the risk below 5 % (intended).
+        # PRICE_OFF LIVE: a follower that also opens price_off_live (live) uses the paper signal's live_risk_factor when
+        # present: the seat's same-bar group counted with its price_off entries (1 paper + 1 price_off = ½ + ½); demo /
+        # a follower ignoring price_off_live opens only the paper entry and keeps risk_factor.
         factor = 1.0
-        if evolved and p.get('risk_factor') is not None:
+        rf = p.get('live_risk_factor') if getattr(self, 'follow_price_off', False) and p.get('live_risk_factor') is not None else p.get('risk_factor')
+        if evolved and rf is not None:
             try:
-                factor = min(1.0, max(0.0, float(p['risk_factor'])))
+                factor = min(1.0, max(0.0, float(rf)))
             except (TypeError, ValueError):
                 factor = 1.0
         r *= factor
@@ -745,12 +789,61 @@ class Mirror:
         self.s['mirrored'][key] = dict(inst=inst, side=side, posSide=pos_side or 'net', strategy=p.get('strategy'), contracts=fmt(contracts),
                                        stop=p['stop'], target=tp, leverage=lever, entry=px, init_stop=p['stop'], dist=paper_dist(p, px), best=px, clOrdId=cl, opened_at=self.now_ms, status='open', leader=leader, mgnMode=MARGIN_MODE, champion=p.get('champion'),
                                        live_dist=abs(px - float(p['stop'])), risk_factor=factor,
-                                       ordId=(r.get('data') or [{}])[0].get('ordId'))
+                                       ordId=(r.get('data') or [{}])[0].get('ordId'),
+                                       **({'price_off_live': True, 'sim_stop': p.get('sim_stop'), 'sim_tp': p.get('sim_tp'),
+                                           'real_atr': p.get('real_atr'), 'atr_bar': p.get('atr_bar')} if p.get('price_off_live') else {}))
         self.new_order_risk[key] = float(contracts) * sp['ctVal'] * abs(px - p['stop'])
         self.available -= margin
         self.log('open', inst, side=side, strategy=p.get('strategy'), contracts=fmt(contracts), price=px, stop=algo['slTriggerPx'],
                  target=algo.get('tpTriggerPx'), leverage=lever, risk_usdt=round(risk, 2), **({'leader': True} if leader else {}),
+                 **({'price_off_live': True, 'sim_stop': p.get('sim_stop'), 'sim_tp': p.get('sim_tp')} if p.get('price_off_live') else {}),
                  **({'risk_factor': round(factor, 4)} if factor != 1.0 else {}))
+
+    def real_levels(self, inst, p, px):
+        """PRICE_OFF LIVE: the signal's stop / take-profit recomputed from the REAL market (never the paper's or the demo's
+        prices): ATR(14) of the genome's timeframe (execution.Series.atr, the same formula as execution.stop_distance) on
+        OKX's closed real candles up to the signal bar (the bar that closes at the fill time `opened`), then
+        stop = px ∓ stop_atr × ATR and tp = px ± target_rr × that distance at the live price px (target_rr mapped by
+        execution.target_rr: a gene < .5 is DEFAULT_TARGET_RR, every position has a take-profit). Only the live follower
+        calls this (its client reads the real market); None (logged skip) when the real candles are not usable, or when the
+        recomputed take-profit (or stop) is not a positive price (target_not_positive: a short whose target_rr × distance
+        exceeds the price; OKX would reject the order, and the TP rule itself is not changed here)."""
+        if not getattr(self, 'follow_price_off', False):
+            self.log('skip', inst, reason='price_off_live_not_live'); return None
+        try:
+            tf, k, side, opened = int(p['tf']), float(p['stop_atr']), int(p['side']), int(p['opened'])
+        except (KeyError, TypeError, ValueError):
+            self.log('skip', inst, reason='price_off_live_bad_signal'); return None
+        bar = PRICE_OFF_LIVE_BAR.get(tf)
+        if not bar or not k > 0:
+            self.log('skip', inst, reason='price_off_live_bad_signal'); return None
+        try:
+            r = self.c.request('GET', f'/api/v5/market/candles?instId={inst}&bar={bar}&limit=300')
+        except OKXError:
+            r = {}
+        rows = {}
+        for row in (r.get('data') or []) if ok(r) else []:
+            try:
+                ts = int(row[0])
+                if (len(row) > 8 and str(row[8]) != '1') or ts + tf * 3600_000 > opened:
+                    continue                                   # open candles and bars after the signal bar are not used
+                rows[ts] = (float(row[1]), float(row[2]), float(row[3]), float(row[4]))
+            except (TypeError, ValueError, IndexError):
+                continue
+        ts = sorted(rows)
+        if len(ts) < PRICE_OFF_LIVE_MIN_BARS or ts[-1] + tf * 3600_000 != opened:
+            self.log('skip', inst, reason='real_atr_unavailable', bars=len(ts)); return None
+        x = Series(inst, ts, *[[rows[t][j] for t in ts] for j in range(4)])
+        atr = x.atr()[-1]
+        dist = k * atr
+        if not dist > 0:
+            self.log('skip', inst, reason='real_atr_unavailable', bars=len(ts)); return None
+        rr = target_rr({'target_rr': p.get('target_rr')})
+        stop, tp = px - side * dist, px + side * rr * dist
+        if tp <= 0 or stop <= 0:                   # a short whose target_rr × distance is more than the price: no valid TP
+            self.log('skip', inst, reason='target_not_positive', price=px, stop=stop, target=tp); return None
+        return dict(p, stop=stop, tp=tp, dist=dist, sim_stop=p.get('stop'), sim_tp=p.get('tp'),
+                    real_atr=atr, atr_bar=ts[-1])
 
     def fill_result(self, inst, pos_side='net', since_ms=0, until_ms=None):
         """Realised result of the latest close of `inst` from OKX position history (read only), or None."""
@@ -1165,8 +1258,15 @@ class Mirror:
                 self.manage_adopted(key, m, paper_positions.get(m['inst']))
                 continue
             held = self.held(m['inst'], m['side'])
-            p = paper_positions.get(m['inst'])
+            off = bool(m.get('price_off_live'))
+            book = self.paper.get('price_off_live') if off else paper_positions
+            p = (book or {}).get(m['inst'])
             same = p and f"{m['inst']}|{int(p['opened'])}" == key
+            # PRICE_OFF LIVE: a signals.json without the list (None), or whose entry for this coin was not valid, says
+            # nothing about this position: keep managing it on its own exchange orders, never close it for that.
+            unknown = off and (book is None or m['inst'] in (self.paper.get('price_off_live_invalid') or ()))
+            if off:
+                p = {k: v for k, v in p.items() if k not in ('stop', 'tp', 'dist', 'trailing')} if same else None   # live's own levels only
             if not held:
                 m['status'] = 'done'
                 try:
@@ -1179,9 +1279,10 @@ class Mirror:
                     m['realized_pnl'] = res['pnl']
                 self.book_leader(m, res)
                 self.log('closed_on_exchange', m['inst'], strategy=m.get('strategy'), reason=m['closed_reason'], **res)
-            elif not same:
-                paper_why = (self.paper.get('exits') or {}).get(key)
-                self.close(key, m, PAPER_EXIT_REASONS.get(paper_why, 'paper_closed'), **({'paper_reason': paper_why} if paper_why else {}))
+            elif not same and not unknown:
+                paper_why = (self.paper.get('price_off_live_exits' if off else 'exits') or {}).get(key)
+                self.close(key, m, PAPER_EXIT_REASONS.get(paper_why, 'paper_closed'), **({'paper_reason': paper_why} if paper_why else {}),
+                           **({'price_off_live': True} if off else {}))
             elif not self.ensure_stop(key, m, p):
                 continue
             elif self.ensure_target(key, m, p):
@@ -1206,6 +1307,37 @@ class Mirror:
             if self.now_ms - int(p['opened']) > OPEN_WINDOW and action != 'follow-current' and not self.late_ok(inst, p):
                 self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net', reason='too_old')
                 self.log('skip', inst, reason='paper_entry_too_old')
+                continue
+            self.open(key, inst, p)
+        if getattr(self, 'follow_price_off', False):
+            self.follow_price_off_entries(action, order)
+
+    def follow_price_off_entries(self, action, order):
+        """PRICE_OFF LIVE entries (live only), after the paper ones, with every gate of the paper entries above (dedupe by
+        inst|opened, scan list, daily halt, a position on the coin that is not ours, OPEN_WINDOW / late_ok) and all of
+        open() (size, leverage, margin, same-side count, cross stop rule); open() recomputes stop / take-profit from real
+        candles. A coin already held by one of our own mirrors is skipped (one position per coin)."""
+        for inst, p in sorted((self.paper.get('price_off_live') or {}).items(), key=order):
+            p = dict(p, price_off_live=True)
+            key = f"{inst}|{int(p['opened'])}"
+            if key in self.s['mirrored'] or inst not in INSTRUMENTS:
+                continue
+            if self.s['halted']:
+                continue
+            if inst in getattr(self, 'adopt_freed', ()):
+                self.log('skip', inst, reason='adopted_closed_this_run', price_off_live=True)
+                continue
+            if any(m.get('status') == 'open' and m.get('inst') == inst for m in self.s['mirrored'].values()):
+                self.log('skip', inst, reason='coin_already_mirrored', price_off_live=True)
+                self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net', price_off_live=True, reason='coin_already_mirrored')
+                continue
+            if self.held(inst, p['side']) or any(k[0] == inst for k in self.positions):
+                self.log('skip', inst, reason='exchange_position_exists_not_ours', price_off_live=True)
+                self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net', price_off_live=True)
+                continue
+            if self.now_ms - int(p['opened']) > OPEN_WINDOW and action != 'follow-current' and not self.late_ok(inst, p):
+                self.s['mirrored'][key] = dict(inst=inst, status='skipped', side=p['side'], posSide='net', reason='too_old', price_off_live=True)
+                self.log('skip', inst, reason='paper_entry_too_old', price_off_live=True)
                 continue
             self.open(key, inst, p)
 
@@ -1287,6 +1419,8 @@ def main():
         exits = sig.get('exits') if isinstance(sig.get('exits'), dict) else {}
         paper = {'positions': sig.get('positions', {}), 'exits': {k: v for k, v in exits.items() if isinstance(k, str) and isinstance(v, str)},
                  'source': 'evolve'}
+        if live:                                   # PRICE_OFF LIVE: the live follower only; demo never reads it
+            paper.update(price_off_live_fields(sig))
         applied = configure_evolved(sig.get('instruments'))
         print(f"跟随进化冠军 · 每笔风险按策略 {RISK_RANGE[0]:.0%}–{RISK_RANGE[1]:.0%} · 杠杆 1–{EVOLVED_MAX_LEVERAGE}×（按币种 OKX 上限，规格缺失则不开新仓）· 全仓 · 同向风险不设上限、≤ {MAX_SAME_SIDE} 仓 · 日亏 {DAILY_HALT:.0%} 停手 · {len(INSTRUMENTS)} 币")
     else:
@@ -1308,6 +1442,8 @@ def main():
                     datetime.now(timezone.utc), dry, adopt=adopt_config())
     if applied.get('mode') == 'evolved' and not live:
         mirror.live = real_price      # live trades the real market already: nothing to compare against
+    if applied.get('mode') == 'evolved' and live:
+        mirror.follow_price_off = True    # PRICE_OFF LIVE: only the live account follows signals the demo price check refused
     error = None
     try:
         if args.action == 'snapshot':

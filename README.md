@@ -125,6 +125,7 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 - **改动的生效时间：下一个整点规则**（2026-11-22，`paper.py` NEXT-HOUR RULE，为服务器每小时算信号做准备）：GitHub 纸面运行（每 4 小时、通常晚约 1 小时）做出的改动，不再盖在“本次运行看到的最后一根 K 线”上，而是盖在**生效 K 线 C = floor(now, 1 小时) + 1 小时**（C 是 K 线的开盘时间，UTC 毫秒；`now` = 运行在价格检查 / 纸面更新前读的时钟；`paper.effective_bar()`）。例：16:57:12 运行 → C = 17:00；恰好 17:00:00 → 18:00；16:59:59 → 17:00。各类改动：
   - 换席位 / 离任（`from_ts` / `wind_ts` = C）、第一名头衔（`boosts` 起止 = C）：新席位的第一个信号、第一名的优先权从 **C 这根 K 线收盘**起算（下一根 C + 1h 开盘成交）；旧席位最后一个信号是 C − 1h 那根收盘。
   - `price_off` 区间（`data.price_check`，存的是成交 K 线）：起止都记为 **C + 1h**，即从 C + 1h 开盘的成交起暂停 / 恢复。
+    （只暂停纸面账户与模拟盘跟单；被它挡掉的合格信号发布在 `signals.json` 的 `price_off_live`，只有实盘跟单会跟，止损止盈按真实 K 线 ATR 重算，见 CHANGELOG “PRICE_OFF LIVE”。）
   - 人工平仓（`account['manual_from'][币|开仓时间]` = C）：在 C 之后、且不早于平仓时间的第一根 K 线开盘入账，最早是 **C + 1h 开盘**。
   - cutover 键（`side_cap_from`、`risk_rules_from`、`risk_cap_from`、`exit_rules_from`、`trail_risk_from` 及以后新增的，`paper.CUTOVER_KEYS`）：首次设置时 = C（C 这根仍按旧规则，C + 1h 起按新规则）；已有的值不动。
   - 新 cutover 键 `account['next_hour_from']`：第一次按本规则运行的 C（只设一次），表示这份 state 遵守本规则。之后的时间戳映射到“不早于它的第一根 K 线”（时间戳都在整点，只在时间轴缺小时时才有区别）；更早的时间戳保持原映射，所以已发布历史逐字节不变。

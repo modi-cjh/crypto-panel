@@ -691,6 +691,10 @@ class DeterminismTests(Base):
         self.assertEqual(server['last_bar_ts'], dash['paper']['curve'][-1][0])
         self.assertEqual(server['positions'], published['positions'])
         self.assertEqual(server['exits'], published['exits'])
+        # PRICE_OFF LIVE: both producers publish the live-only list (and keep it out of dashboard.json)
+        self.assertEqual(server['price_off_live'], published['price_off_live'])
+        self.assertEqual(server['price_off_live_exits'], published['price_off_live_exits'])
+        self.assertNotIn('price_off_live', dash['paper'])
         self.assertEqual(server['equity'], dash['paper']['equity'])
         self.assertEqual(server['instruments'], published['instruments'])
         # a second replay of the same input is byte-identical apart from the clock fields
