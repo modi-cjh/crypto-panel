@@ -963,7 +963,7 @@ def position_risk(base, inst, same_side_open=0, rules=None):
 
 
 def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUNT_RULES, curve_every=1, blocked=None, side_cap_from=None,
-                     risk_from=None, risk_cap_from=None, exit_from=None, manual=None, trail_risk_from=None):
+                     risk_from=None, risk_cap_from=None, exit_from=None, manual=None, trail_risk_from=None, off_book_from=None):
     """ONE shared-equity account traded by several strategies at once, with cross (全仓) liquidation: the paper account of the champion team.
 
     segs: [dict(id, genes, from_i, wind_i=None, boosts=[(i0, i1 or None), ...])]. A segment takes signals on bars
@@ -995,7 +995,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
       at or below total maintenance margin;
     - a trade on one of rules['majors'] risks rules['major_factor'] times as much, still never above the 10 % cap;
     - `blocked` = {inst: [(i0, i1 or None)]}: bar ranges in which a coin takes no new entry (its OKX demo price was
-      away from the real market, data.price_check); positions already open run on;
+      away from the real market, data.price_check); positions already open run on. The live follower does not lose
+      these signals: see PRICE_OFF LIVE below;
     - crowding (rules['crowd_steps'], default CROWD_STEPS): with 10+ positions already open on a side the next entry on that side risks half;
     - same-side cap: when rules['same_side_cap'] is set, the open risk of one side plus the new entry stays within
       that × equity; None (the default since 2026-11-15) = no total-risk cap per side, only the count below;
@@ -1032,6 +1033,19 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
       segments of one champion, default the id; its first fill is tracked over the whole replay) risks
       × rules['new_seat_factor']. The factor multiplies the risk after the band / crowding / majors / 10 % cap (it may go
       below 5 %), and is kept as the position's `risk_factor`. None = the new rules on every bar;
+    - PRICE_OFF LIVE (off_book_from, 2026-11-25): None (default) = off, nothing below runs and the result is unchanged.
+      A bar index = entries filled after that bar that are refused ONLY because their coin is in `blocked` (they passed
+      dist > 0, coin not held, the seat's MAX_POSITIONS, not halted, i.e. every check before the price_off one) are
+      tracked as VIRTUAL positions: they never touch cash, pos, pnl, the curve, the daily halt, liquidation, crowding or
+      any count of the real account, so the paper account is byte-identical with or without them. A virtual entry
+      needs its coin free of another virtual position, the seat's real + virtual positions < MAX_POSITIONS and the
+      fill's stop distance >= MIN_STOP_DIST; it fills at the open with slippage like a real one, gets
+      stop = entry ∓ dist, target = entry ± target_rr(genes) × dist (always the current EXIT RULES), and exits by the
+      same price rules as a real position: gap through stop / target at the open, stop ('stop' / 'trailing_stop'),
+      target, then at the close the trailing stop (rules['trail'] after trail_risk_from) and the reverse signal
+      (rules['reverse_close']). Its risk_factor is entry_risk_factor() with the same-bar group counted as if no coin
+      were blocked. They are published for the OKX LIVE follower only (paper.update → signals.json price_off_live);
+      returned as off_book (open) and off_book_trades (closed), only when off_book_from is not None.
     Returns dict(equity, curve, trades, positions, pending, pnl={seg id: realised + floating}, halted, metrics,
     liquidations = number of cross liquidations of the whole account, insurance = total insurance-fund compensation,
     adjustments = [dict(ts, kind='insurance', amount)]). Trades and pnl keep the full loss, so
@@ -1059,6 +1073,13 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
     risk_new = dict(same_bar_share=rules.get('same_bar_share', SAME_BAR_SHARE), new_seat_h=rules.get('new_seat_h', NEW_SEAT_HOURS),
                     new_seat_factor=rules.get('new_seat_factor', NEW_SEAT_FACTOR))
     first_fill = {}     # {seat chain: bar of its first fill} (TRAIL & RISK RULES c)
+    track = off_book_from is not None        # PRICE_OFF LIVE: virtual positions, see the docstring; never read by the account
+    vpos, vtrades = {}, []
+
+    def vclose(inst, px, why, i):
+        p = vpos.pop(inst)
+        vtrades.append(dict(inst=inst, side=p['side'], entry=p['entry'], exit=px, opened=p['opened'], closed=ts0[i], reason=why,
+                            seg=p['seg'], boost=p['boost'], dist=p['dist'], risk_factor=p['risk_factor']))
     boosted = lambda s, i: any(a <= i and (b is None or i < b) for a, b in s.get('boosts') or ())
     cash, pos, trades, curve, pending = equity, {}, [], [], []
     liquidations, insurance, adjustments = 0, 0.0, []
@@ -1128,11 +1149,33 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         is_blocked = lambda k: bool(blocked) and any(a <= i and (b is None or i < b) for a, b in blocked.get(k, ()))
         groups = same_bar_groups(sorted(pending, key=lambda x: not x[4]), pos, {sid: sum(1 for p in pos.values() if p['seg'] == sid) for sid in by_id},
                                  eligible=lambda k: not is_blocked(k)) if new_era(i) and not halted else {}
+        vgroups = same_bar_groups(sorted(pending, key=lambda x: not x[4]), pos, {sid: sum(1 for p in pos.values() if p['seg'] == sid) for sid in by_id}) \
+            if track and i > off_book_from and new_era(i) and not halted else {}
+
+        def off_book_entry(sid, inst, d, dist, boost):
+            """PRICE_OFF LIVE: a signal refused only by price_off becomes a virtual position (never touches the account)."""
+            g = by_id[sid]['genes']
+            if inst in vpos or sum(1 for p in pos.values() if p['seg'] == sid) + sum(1 for p in vpos.values() if p['seg'] == sid) >= MAX_POSITIONS:
+                return
+            px = series[inst].o[i] * (1 + SLIP * d)
+            if dist / px < MIN_STOP_DIST:
+                return
+            factor = 1.0
+            if new_era(i):
+                seg = by_id[sid]
+                fb = first_fill.get(seg.get('chain', sid))
+                factor = entry_risk_factor(vgroups.get((sid, d), 1), seat_age_h=(ts0[i] - seg.get('tenure_ts', ts0[seg['from_i']])) / HOUR,
+                                           first=fb is None or fb == i,
+                                           winding=seg.get('wind_i') is not None and i >= seg['wind_i'], rules=risk_new)
+            vpos[inst] = dict(side=d, entry=px, stop=px - d * dist, target=px + d * target_rr(g) * dist, opened=ts0[i], bar=i, dist=dist,
+                              seg=sid, boost=boost, best=px, risk_factor=factor)
         for sid, inst, d, dist, boost in sorted(pending, key=lambda x: not x[4]):
             s, g = series[inst], by_id[sid]['genes']
             if dist <= 0 or inst in pos or sum(1 for p in pos.values() if p['seg'] == sid) >= MAX_POSITIONS or halted:
                 continue
             if blocked and any(a <= i and (b is None or i < b) for a, b in blocked.get(inst, ())):
+                if track and i > off_book_from:
+                    off_book_entry(sid, inst, d, dist, boost)
                 continue
             if (side_cap_from is None or i > side_cap_from) and same_side_full(sum(1 for p in pos.values() if p['side'] == d), rules.get('max_same_side')):
                 continue
@@ -1205,6 +1248,16 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 for inst in list(pos):                               # d) targets
                     if target_hit(pos[inst], series[inst].h[i], series[inst].l[i]):
                         close(inst, pos[inst]['target'], 'target', i)
+        if track:                                                    # PRICE_OFF LIVE: virtual exits, same price rules (a, c, d)
+            for inst in list(vpos):
+                p, s = vpos[inst], series[inst]
+                hit = gap_exit(p, s.o[i])
+                if hit:
+                    vclose(inst, hit[0], hit[1], i)
+                elif stop_hit(p, s.h[i], s.l[i]):
+                    vclose(inst, p['stop'], 'trailing_stop' if p.get('trailing') else 'stop', i)
+                elif target_hit(p, s.h[i], s.l[i]):
+                    vclose(inst, p['target'], 'target', i)
         # 3) at the close: cross-liquidation check first, then trailing stops and reverse signals (old era: time exits and
         #    the trail gene instead); daily halt, curve
         liq_now(marks_at(series, list(pos), i, 'c'), i)
@@ -1226,6 +1279,15 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 who = [p['seg']] if mode == 'own' else [p['seg']] + seated
                 if any(rev[w].get(i, {}).get(inst) == -p['side'] for w in who):
                     close(inst, series[inst].c[i], 'reverse_signal', i)
+        if track:                                                    # PRICE_OFF LIVE: virtual trailing stop, then reverse signal
+            trail_v = trail_new if new_era(i) else PRIOR_TRAIL
+            seated_v = [x['id'] for x in segs if x['from_i'] <= i and (x.get('wind_i') is None or i < x['wind_i'])] if mode == 'team' else []
+            for inst in list(vpos):
+                p = vpos[inst]
+                trail_update(p, series[inst].h[i], series[inst].l[i], trail_v)
+                who = [p['seg']] if mode == 'own' else [p['seg']] + seated_v
+                if any(rev[w].get(i, {}).get(inst) == -p['side'] for w in who):
+                    vclose(inst, series[inst].c[i], 'reverse_signal', i)
         unreal = {k: p['qty'] * (series[k].c[i] - p['entry']) * p['side'] for k, p in pos.items()}
         eq = cash + sum(unreal.values())
         d_now = (ts0[i] + rules['day_shift']) // (24 * HOUR)
@@ -1264,5 +1326,11 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                            lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4), seg=p['seg'], boost=p['boost'], risk=p['risk'],
                            dist=p['dist'], best=p['best'], trailing=bool(p.get('trailing')), risk_factor=p.get('risk_factor', 1.0))
                       for k, p in pos.items()]
-    return dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, pending=pending, pnl=pnl, halted=halted, metrics=metrics, liquidations=liquidations,
-                insurance=insurance, adjustments=adjustments, first_fill=first_fill)
+    out = dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, pending=pending, pnl=pnl, halted=halted, metrics=metrics, liquidations=liquidations,
+               insurance=insurance, adjustments=adjustments, first_fill=first_fill)
+    if track:
+        out['off_book'] = [dict(inst=k, side=p['side'], entry=p['entry'], stop=p['stop'], target=p['target'], opened=p['opened'], seg=p['seg'],
+                                boost=p['boost'], dist=p['dist'], best=p['best'], trailing=bool(p.get('trailing')), risk_factor=p['risk_factor'])
+                           for k, p in vpos.items()]
+        out['off_book_trades'] = vtrades
+    return out

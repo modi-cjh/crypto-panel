@@ -25,7 +25,8 @@ One run:
   5. replay: paper.update(state, series, [], price_off, replay=True), which never changes the state (raises paper.StateDrift when the state
      predates the next-hour rule or its seats disagree with its team → exit 3, nothing written);
   6. write <data>/evolve/signals.json atomically (tmp + rename; --shadow: signals.shadow.json) with the usual fields
-     (updated_at, champion, team, instruments, positions, exits — what okx_demo_trader reads) plus source / version /
+     (updated_at, champion, team, instruments, positions, exits, price_off_live, price_off_live_exits — what
+     okx_demo_trader reads) plus source / version /
      last_bar / state generation + paper-data commit / code commit / timing; append the same line to an hourly
      archive (<data>/archive or, --shadow, <data>/shadow, one jsonl per UTC day) and write <data>/last_run.json.
 
@@ -470,6 +471,7 @@ def produce(args, now_fn=lambda: int(time.time() * 1000), sleep=time.sleep, get=
         legacy = True
         view, signals = P.update(copy.deepcopy(state), series, [], price_off, prev_last=src.get('prev_last'))
     exits = view.pop('exits', {})
+    price_off_live, price_off_live_exits = view.pop('price_off_live', {}), view.pop('price_off_live_exits', {})
     t_end = now_fn()
     code = code_commit()
     if master and code and master != code:
@@ -479,6 +481,8 @@ def produce(args, now_fn=lambda: int(time.time() * 1000), sleep=time.sleep, get=
         # the fields run.py writes and okx_demo_trader / fetch_signals read
         updated_at=iso(t0), champion=state.get('champion'), team=[m['id'] for m in state.get('team', [])],
         instruments=list(series), positions=signals, exits=exits,
+        # PRICE_OFF LIVE: followed by the OKX live trader only (an older trader ignores both)
+        price_off_live=price_off_live, price_off_live_exits=price_off_live_exits,
         # provenance for the trader's freshness check and for compare_signals.py
         source=SOURCE_NAME, version=VERSION, shadow=bool(args.shadow), legacy_state=legacy,
         **({'as_of': iso(t0)} if cut else {}),

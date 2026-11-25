@@ -702,6 +702,18 @@
 - 为什么：第 762 代组合 8 人中 5 个日线，账户约 3 天没开仓；用户要求保证组合里有短周期策略。选“替换”而非“加席位”：总席位不变，共享全仓账户里同时持仓的数量上限不变。注意第 762 代组合本来就有 3 个短周期成员（s21409 4H、s29515 4H 且为第一名、s23735 1H），所以按现在的数据这条规则不会换人，只防以后被日线挤掉。
 - 测试：`tests/test_short_tf_seats.py`（11 项：`TEAM_SHORT_TF_SEATS = 0` 时与改动前（origin/master 7dabb1b）的 `choose_team` 在 13 个 40 轮随机场景上逐项相同（夹具 `tests/fixtures/team_selection_seats0.json`，场景生成 `tests/team_scenarios.py`）；替换最弱日线、已在席短周期计入、候选不足、保留席位失守后由短周期接替 / 无候选不空席不来回换、challenger 不用日线占保留席位、不替换第一名、确定性、物种上限）；`tests/evolve.test.mjs` 规则文字（有 / 无字段）。
 
+### price_off 不再挡实盘：被模拟盘价格偏离挡掉的合格信号单独发布给实盘（PRICE_OFF LIVE，2026-11-25）
+- 做了什么：
+  1. 纸面不变：`price_off`（OKX 模拟盘价格偏离真实盘 > 1%，`data.price_check`）仍然禁止纸面账户在这些币上开新仓，纸面权益 / 持仓 / 成交 / `signals.json positions` 与改动前逐字节相同。
+  2. `execution.simulate_account(off_book_from=)`：只因 price_off 被拒、其他检查（止损距离、币未持有、每策略 3 仓、未停手）都过的入场，记成**虚拟仓**（不碰资金、保证金、计数、日亏、强平），按同样的价格规则出场（开盘跳空、止损 / 移动止损、止盈、收盘反向信号）。`None` = 关闭，结果与以前完全相同。
+  3. `paper.update` 新增 cutover 键 `account['price_off_live_from']`（加进 `CUTOVER_KEYS`，下一个整点 C 生效，只设一次）；之后把仍持有的虚拟仓和下一根开盘只因 price_off 不排队的信号，发布到 `signals.json` 新字段 `price_off_live`（字段与普通信号相同，另带 `price_off: true`、`tf`、`stop_atr`、`target_rr`），最近 24 h 的虚拟仓出场原因发布到 `price_off_live_exits`。`run.py` 和服务器 `signals_hourly.py` 都写这两个字段，dashboard.json 不含。
+  4. `okx_demo_trader`：**只有 live 模式**（`Mirror.follow_price_off`，main() 里只给 live 打开）跟这个列表；demo 不读，仍用自己的 `demo_price_off`。在普通信号之后处理，门槛与普通信号一致（inst|opened 去重、扫描币池、日亏停手、`exchange_position_exists_not_ours`、OPEN_WINDOW / late_ok，以及 open() 里的风险 / 杠杆 / 保证金 / 同向 20 单 / 全仓止损检查，全部未改）；本币已有自己的镜像仓时跳过（`coin_already_mirrored`）。
+  5. 止损 / 止盈**不照抄**：`Mirror.real_levels()` 用实盘真实 K 线（`market/candles`，bar 1H / 4H / 1Dutc，只用已收盘且不晚于信号 K 线的）按 `execution.Series.atr` 算 ATR14，止损 = 实盘现价 ∓ stop_atr × ATR，止盈 = 现价 ± target_rr × 距离（`execution.target_rr`：< 0.5 按 3R）。K 线不足 30 根 / 缺信号那根 → `real_atr_unavailable`；算出的止盈或止损 ≤ 0（空单 target_rr × 距离 > 价格）→ `target_not_positive`，都不下单。
+  6. 出场：交易所止损 + 止盈、按实盘自己入场价的移动止损（不使用纸面虚拟仓的 stop / tp / dist）；虚拟仓从列表消失时市价平仓，原因取 `price_off_live_exits`（反向信号 / 移动止损，其他记 `paper_closed`）。旧版 signals.json（没有这个字段）或该币条目格式不对时：不开新仓、也不因此平仓，只按交易所挂单管理。
+- 为什么：用户决定「先改过滤，让它不再挡实盘」。price_off 比较的是模拟盘价格，实盘在真实盘下单；2026-11-11 起当前 8 人通过基因门槛的 22 个信号里有 16 个落在被封的币上，实盘全部跟不了（/workspace/modi/no-entry-2026-11-25）。
+- 注意：重放这 16 个信号（/workspace/modi/price-off-live-2026-11-25/replay）有 12 个因 `target_not_positive` 跳过（H / MAGIC / INJ / HOME 的日线空单，止损距离很宽、target_rr 大）；普通信号路径对这种情况会照样发出负的止盈价（原有行为，未改），是否给空单止盈设下限需要另行决定。
+- 测试：`tests/test_price_off_live.py`（24 项：有无跟踪时纸面账户逐字节相同；只有被 price_off 挡的才进入列表；虚拟仓价位 / 止损 / 止盈 / 反向出场；cutover 只设一次；实盘按真实 K 线重算止损止盈（模拟价偏 10%）；target_rr < 0.5 → 3R；只用已收盘 K 线、缺 K 线不下单；1D / 4H 用 UTC K 线；demo 不跟；旧格式行为不变；人工 ETH 空单下 ETH 信号跳过且不碰该仓；去重；出场平仓与原因；缺字段不平仓；移动止损不用纸面价；普通信号优先；late_ok / 日亏停手；字段校验；main() 只在 live 跟）；`tests/test_signals_hourly.py` 端到端检查两边发布的字段一致。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

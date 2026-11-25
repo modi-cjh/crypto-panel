@@ -128,6 +128,8 @@ def main(argv=None):
         print('模拟盘价格偏离真实行情 > 1%，暂停开新仓：' + '、'.join(f"{k.split('-')[0]} {v * 100:+.0f}%" if v is not None else k.split('-')[0] for k, v in off_now.items()))
     paper_view, signals = P.update(state, series, changes, price_off, prev_last=previous_last_bar(out / 'dashboard.json'), now=now_eff)
     exits = paper_view.pop('exits', {})
+    # PRICE_OFF LIVE (paper._price_off_live): signals refused only by the demo price check, for the OKX live follower only
+    price_off_live, price_off_live_exits = paper_view.pop('price_off_live', {}), paper_view.pop('price_off_live_exits', {})
     E.prune(state)
     timing = dict(seconds=round(time.time() - t0, 1), generations=len(rows), switched=switched, changes=[dict(slot=c[0], old=c[1], new=c[2], reason=c[3]) for c in changes],
                   effective_bar=iso(eff))
@@ -135,7 +137,8 @@ def main(argv=None):
     (out / 'dashboard.json').write_text(json.dumps(dashboard(state, series, split, obs, paper_view, timing), ensure_ascii=False, separators=(',', ':')))
     (out / 'nodes.json').write_text(json.dumps(node_details(state), ensure_ascii=False, separators=(',', ':')))
     (out / 'signals.json').write_text(json.dumps(dict(updated_at=iso(now), champion=champion, team=[m['id'] for m in state.get('team', [])],
-                                                  instruments=list(series), positions=signals, exits=exits), indent=1))
+                                                  instruments=list(series), positions=signals, exits=exits,
+                                                  price_off_live=price_off_live, price_off_live_exits=price_off_live_exits), indent=1))
     for r in rows:
         print(f"第 {r['gen']} 代 · 波动 {r['regime']} ({r['vol']}) · 最佳适应度 {r['best']} · 平均 {r['mean']} · 合格 {r['qualified']} · 新生 {r['born']} · 淘汰 {r['killed']}")
     for c in changes:
