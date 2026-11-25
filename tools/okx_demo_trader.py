@@ -672,10 +672,14 @@ class Mirror:
             r = min(r, MAX_TRADE_RISK)             # major doubling and crowding still never exceed 10 %
         # TRAIL & RISK RULES b, c (execution.entry_risk_factor, decided by the paper account): same-champion same-bar share
         # and new / winding seat half risk. Missing (older signals.json) = 1. May take the risk below 5 % (intended).
+        # PRICE_OFF LIVE: a follower that also opens price_off_live (live) uses the paper signal's live_risk_factor when
+        # present: the seat's same-bar group counted with its price_off entries (1 paper + 1 price_off = ½ + ½); demo /
+        # a follower ignoring price_off_live opens only the paper entry and keeps risk_factor.
         factor = 1.0
-        if evolved and p.get('risk_factor') is not None:
+        rf = p.get('live_risk_factor') if getattr(self, 'follow_price_off', False) and p.get('live_risk_factor') is not None else p.get('risk_factor')
+        if evolved and rf is not None:
             try:
-                factor = min(1.0, max(0.0, float(p['risk_factor'])))
+                factor = min(1.0, max(0.0, float(rf)))
             except (TypeError, ValueError):
                 factor = 1.0
         r *= factor

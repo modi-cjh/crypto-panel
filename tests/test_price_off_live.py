@@ -107,6 +107,63 @@ class SimulateAccountOffBookTests(unittest.TestCase):
         self.assertEqual(r['off_book'], [])
 
 
+    # ---- PRICE_OFF LIVE same-bar share (Codex P1): paper + price_off entries of one seat / bar / side share ONE risk on live
+    def _mixed(self, entries, blocked, n=14, off_book_from=1, held_first=None):
+        coins = ('A-USDT-SWAP', 'B-USDT-SWAP', 'C-USDT-SWAP', 'D-USDT-SWAP')
+        sr = {k: series_from([100.0] * n, k) for k in coins}
+        g = G.random_genome(random.Random(1), 'momentum'); g.update(target_rr=2.0, stop_atr=2.0, risk=.05, leverage=5)
+        seg = dict(id='s', genes=g, from_i=0, wind_i=None, boosts=[], tenure_ts=T0 - 100 * H)    # seated long ago: no new-seat half
+        with mock.patch.object(X, 'signal_sets', side_effect=lambda gg, series: (entries, {})):
+            return X.simulate_account([seg], sr, 2, n, blocked=blocked, off_book_from=off_book_from)
+
+    def test_mixed_same_bar_entries_share_one_risk_on_live_and_paper_is_unchanged(self):
+        for order in ((('A-USDT-SWAP', 1, 4.0), ('B-USDT-SWAP', 1, 4.0)), (('B-USDT-SWAP', 1, 4.0), ('A-USDT-SWAP', 1, 4.0))):
+            entries, blocked = {5: list(order)}, {'A-USDT-SWAP': [(3, None)]}
+            on = self._mixed(entries, blocked)
+            off = self._mixed(entries, blocked, off_book_from=None)
+            b, = on['positions']; v, = on['off_book']
+            self.assertEqual((b['inst'], v['inst']), ('B-USDT-SWAP', 'A-USDT-SWAP'))
+            self.assertEqual(b['risk_factor'], 1.0)                      # the paper account takes one entry: full risk, unchanged
+            self.assertEqual(b['live_risk_factor'], .5)                  # live opens both: ½ + ½ = one position's risk
+            self.assertEqual(v['risk_factor'], .5)
+            self.assertEqual(b['live_risk_factor'] + v['risk_factor'], 1.0)
+            pb, = off['positions']                                       # paper sizing byte-identical without tracking
+            self.assertEqual({k: x for k, x in b.items() if k != 'live_risk_factor'}, pb)
+            self.assertNotIn('live_risk_factor', pb)
+            self.assertEqual((on['equity'], on['cash'], on['curve'], on['trades']), (off['equity'], off['cash'], off['curve'], off['trades']))
+            self.assertAlmostEqual(b['risk'], .05); self.assertEqual(b['qty'], pb['qty'])
+
+    def test_live_group_counts_paper_and_virtual_slots_in_fill_order(self):
+        # the seat already holds 2 (C, D at bar 3); bar 5: A (price_off) and B (paper) compete for the last slot
+        blocked = {'A-USDT-SWAP': [(4, None)]}
+        held = [('C-USDT-SWAP', 1, 4.0), ('D-USDT-SWAP', 1, 4.0)]
+        a_first = self._mixed({3: held, 5: [('A-USDT-SWAP', 1, 4.0), ('B-USDT-SWAP', 1, 4.0)]}, blocked)
+        b = next(p for p in a_first['positions'] if p['inst'] == 'B-USDT-SWAP'); v, = a_first['off_book']
+        # A takes the virtual slot first (2 + 0 < 3), then B the paper one (2 < 3; the paper ignores the virtual book): both
+        # open on live, so they share: ½ + ½
+        self.assertEqual((b['risk_factor'], b['live_risk_factor'], v['risk_factor']), (1.0, .5, .5))
+        b_first = self._mixed({3: held, 5: [('B-USDT-SWAP', 1, 4.0), ('A-USDT-SWAP', 1, 4.0)]}, blocked)
+        b = next(p for p in b_first['positions'] if p['inst'] == 'B-USDT-SWAP')
+        self.assertEqual(b_first['off_book'], [])                       # B filled the seat: no virtual A, so B keeps its full risk
+        self.assertEqual(b['risk_factor'], 1.0); self.assertNotIn('live_risk_factor', b)
+        # a coin already in the virtual book is not counted again (the live follower holds one position per coin)
+        r = self._mixed({5: [('A-USDT-SWAP', 1, 4.0)], 8: [('A-USDT-SWAP', 1, 4.0), ('B-USDT-SWAP', 1, 4.0)]}, {'A-USDT-SWAP': [(3, None)]})
+        b, = r['positions']; v, = r['off_book']
+        self.assertEqual((v['opened'], v['risk_factor']), (T0 + 6 * H, 1.0))
+        self.assertEqual(b['risk_factor'], 1.0); self.assertNotIn('live_risk_factor', b)
+
+    def test_live_same_bar_groups_helper(self):
+        blk = lambda k: k == 'A'
+        pend = [('s', 'A', 1, 4.0), ('s', 'B', 1, 4.0), ('s', 'C', -1, 4.0), ('t', 'D', 1, 0.0)]
+        self.assertEqual(X.live_same_bar_groups(pend, set(), {}, {}, blk), {('s', 1): 2, ('s', -1): 1})
+        self.assertEqual(X.live_same_bar_groups(pend, {'A'}, {}, {}, blk), {('s', 1): 1, ('s', -1): 1})     # held coin
+        self.assertEqual(X.live_same_bar_groups(pend, set(), {'s': 2}, {'s': 1}, blk), {('s', 1): 1})       # A refused (2 + 1 = 3)
+        # never below the paper's own groups for the paper entries
+        paper = X.same_bar_groups(pend, set(), {'s': 1}, eligible=lambda k: not blk(k))
+        live = X.live_same_bar_groups(pend, set(), {'s': 1}, {}, blk)
+        self.assertTrue(all(live.get(k, 0) >= n for k, n in paper.items()))
+
+
 def fix_genes(g):
     return G.fix(dict(g))
 
@@ -162,6 +219,37 @@ class PaperPublishTests(unittest.TestCase):
         # the cutover: virtual fills only after price_off_live_from
         late_v, _ = self.update(self.state(live_from=T0 + 10 * H), 20, off)
         self.assertEqual(sorted(late_v['price_off_live']), ['C-USDT-SWAP'])
+
+    def test_mixed_entries_queued_and_filled_carry_matching_live_factors(self):
+        off = {'A-USDT-SWAP': [[T0, None]]}
+        # queued for the next open (signal on the last bar 39; the seat is 40 h old: no new-seat half)
+        self.entries = {11: {39: [('A-USDT-SWAP', 1, 4.0), ('B-USDT-SWAP', 1, 4.0)]}}
+        on_v, on_s = self.update(self.state(), 40, off)
+        off_v, off_s = self.update(self.state(live_from=None), 40, off)
+        b, a = on_s['B-USDT-SWAP'], on_v['price_off_live']['A-USDT-SWAP']
+        self.assertTrue(b['pending'] and a['pending'])
+        self.assertEqual((b['risk_factor'], b['live_risk_factor'], a['risk_factor']), (1.0, .5, .5))
+        self.assertEqual({k: x for k, x in b.items() if k != 'live_risk_factor'}, off_s['B-USDT-SWAP'])   # paper signal unchanged
+        self.assertNotIn('live_risk_factor', off_s['B-USDT-SWAP'])
+        for k in ('equity', 'positions', 'pending', 'trades', 'curve'):
+            self.assertEqual(on_v[k], off_v[k], k)
+        # the next replay fills them: the same factors on the filled paper position and the virtual one
+        v2, s2 = self.update(self.state(), 41, off)
+        b2, a2 = s2['B-USDT-SWAP'], v2['price_off_live']['A-USDT-SWAP']
+        self.assertFalse(b2.get('pending') or a2.get('pending'))
+        self.assertEqual((b2['risk_factor'], b2['live_risk_factor'], a2['risk_factor']), (1.0, .5, .5))
+        p, = [x for x in v2['positions'] if x['inst'] == 'B-USDT-SWAP']
+        _, s_off = self.update(self.state(live_from=None), 41, off)
+        self.assertEqual({k: x for k, x in b2.items() if k != 'live_risk_factor'}, s_off['B-USDT-SWAP'])
+        # filled early (bar 6, seat 6 h old: first bar ×½ on both): paper ½, live ¼ + ¼
+        self.entries = {11: {5: [('A-USDT-SWAP', 1, 4.0), ('B-USDT-SWAP', 1, 4.0)]}}
+        v3, s3 = self.update(self.state(), 20, off)
+        self.assertEqual((s3['B-USDT-SWAP']['risk_factor'], s3['B-USDT-SWAP']['live_risk_factor'], v3['price_off_live']['A-USDT-SWAP']['risk_factor']),
+                         (.5, .25, .25))
+        # no price_off entry on that bar: no live_risk_factor
+        self.entries = {11: {39: [('B-USDT-SWAP', 1, 4.0)]}}
+        _, s4 = self.update(self.state(), 40, off)
+        self.assertNotIn('live_risk_factor', s4['B-USDT-SWAP'])
 
     def test_virtual_exit_is_published_for_the_live_close(self):
         self.entries = {11: {5: [('A-USDT-SWAP', 1, 4.0)]}}
@@ -407,6 +495,27 @@ class LiveFollowTests(unittest.TestCase):
         orders = [b for p, b in fake.posts if p == '/api/v5/trade/order']
         self.assertEqual(len(orders), 1); self.assertEqual(orders[0]['attachAlgoOrds'][0]['slTriggerPx'], '1.22')
         self.assertEqual(state['mirrored'][f'XRP-USDT-SWAP|{self.opened}']['reason'], 'coin_already_mirrored')
+
+    def test_mixed_same_bar_entries_live_splits_demo_keeps_full_risk(self):
+        normal = {'BTC-USDT-SWAP': dict(side=1, entry=70000.0, stop=68600.0, tp=None, opened=self.opened, strategy='evolved', leverage=7,
+                                        risk=.05, rank=1, champion='c1', risk_factor=1.0, live_risk_factor=.5)}
+        pol = {'XRP-USDT-SWAP': pol_signal(opened=self.opened, risk_factor=.5)}
+        fake = self.fake()
+        m, state = self.mirror(fake, doc(positions=normal, pol=pol), live=True)
+        k_btc, k_xrp = f'BTC-USDT-SWAP|{self.opened}', f'XRP-USDT-SWAP|{self.opened}'
+        self.assertEqual((state['mirrored'][k_btc]['status'], state['mirrored'][k_xrp]['status']), ('open', 'open'))
+        self.assertEqual((state['mirrored'][k_btc]['risk_factor'], state['mirrored'][k_xrp]['risk_factor']), (.5, .5))   # one trade's risk
+        live_risk = {a['inst']: a['risk_usdt'] for a in m.actions if 'risk_usdt' in a}
+        fake = self.fake()                                               # demo: only the paper entry, at its full paper factor
+        m, state = self.mirror(fake, doc(positions=normal, pol=pol), live=False)
+        self.assertEqual(list(state['mirrored']), [k_btc])
+        self.assertEqual(state['mirrored'][k_btc]['risk_factor'], 1.0)
+        demo_risk = {a['inst']: a['risk_usdt'] for a in m.actions if 'risk_usdt' in a}
+        self.assertAlmostEqual(live_risk['BTC-USDT-SWAP'], demo_risk['BTC-USDT-SWAP'] / 2, places=1)
+        # live without live_risk_factor (older publisher): risk_factor as before
+        fake = self.fake()
+        m, state = self.mirror(fake, doc(positions={'BTC-USDT-SWAP': {k: v for k, v in normal['BTC-USDT-SWAP'].items() if k != 'live_risk_factor'}}), live=True)
+        self.assertEqual(state['mirrored'][k_btc]['risk_factor'], 1.0)
 
     def test_too_old_entry_uses_late_ok_and_the_daily_halt_blocks(self):
         fake = self.fake(prices={'XRP-USDT-SWAP': 1.10, 'BTC-USDT-SWAP': 70000.0})   # price ran to the sim stop: late_ok fails

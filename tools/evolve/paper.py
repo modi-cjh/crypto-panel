@@ -76,7 +76,7 @@ tools) update() keeps the old stamps (this run's last bar / the previous run's l
 import copy
 from bisect import bisect_left
 from execution import simulate, simulate_account, stop_distance, START_EQUITY, ACCOUNT_RULES, MAX_POSITIONS, DEFAULT_LEVERAGE, same_side_full, clamp_risk, target_rr
-from execution import entry_risk_factor, same_bar_groups
+from execution import entry_risk_factor, live_same_bar_groups, same_bar_groups
 from evolution import TEAM_SIZE, entry_gate
 from genome import fix
 
@@ -560,10 +560,27 @@ def update(state, series, changes, price_off=None, prev_last=None, now=None, rep
                              {g['id']: sum(1 for p in left if p['seg'] == g['id']) for g in acc['segs']},
                              eligible=lambda k: k not in blocked_next)
 
-    def queue_factor(sid, d):
+    # PRICE_OFF LIVE: the live follower's groups for the next open (paper + virtual entries together, execution.
+    # live_same_bar_groups, as the next replay counts them): size the queued price_off_live entries and give the queued
+    # paper entries their `live_risk_factor`; empty while the cutover key is pending or before it
+    lgroups = live_same_bar_groups(sorted(res['pending'], key=lambda x: not x[4]),
+                                   {p['inst'] for p in left} | {p['inst'] for p in res['off_book']},
+                                   {g['id']: sum(1 for p in left if p['seg'] == g['id']) for g in acc['segs']},
+                                   {g['id']: sum(1 for p in res['off_book'] if p['seg'] == g['id']) for g in acc['segs']},
+                                   lambda k: k in blocked_next) \
+        if 'off_book' in res and s.n > ci['price_off_live_from'] and not res['halted'] else None
+
+    def queue_factor(sid, d, grp=None):
         fb = res.get('first_fill', {}).get(seg_by[sid]['chain'])
-        return entry_risk_factor(groups.get((sid, d), 1), seat_age_h=(last_ts + HOUR - seg_by[sid]['tenure_ts']) / HOUR,
+        return entry_risk_factor((groups if grp is None else grp).get((sid, d), 1), seat_age_h=(last_ts + HOUR - seg_by[sid]['tenure_ts']) / HOUR,
                                  first=fb is None or fb == s.n, winding=False)
+
+    def live_factor(sid, d, factor):
+        """{'live_risk_factor': x} for a queued paper entry whose live share is smaller than its paper one, else {}."""
+        if lgroups is None:
+            return {}
+        x = min(factor, queue_factor(sid, d, lgroups))
+        return {'live_risk_factor': round(x, 6)} if round(x, 6) != round(factor, 6) else {}
     members = []
     for g in acc['segs']:
         if g['wind_ts'] is None:
@@ -584,14 +601,15 @@ def update(state, series, changes, price_off=None, prev_last=None, now=None, rep
                                   champion=who(p['seg']), rank=rank.get(who(p['seg']), 99) + 1,
                                   risk_factor=round(p.get('risk_factor', 1.0), 6), seat_from=seg_by[p['seg']]['tenure_ts'],
                                   winding=wound(by[p['seg']]),
+                                  **({'live_risk_factor': round(p['live_risk_factor'], 6)} if 'live_risk_factor' in p else {}),
                                   **_size(by[p['seg']]['genes'], leader=p['boost']))   # the base risk: the mirror applies the majors / crowding steps itself
     for sid, inst, d, dist, b in queue:
         g = by[sid]
         signals.setdefault(inst, dict(_signal_from_pending(inst, d, g['genes'], series, last_ts, g['champion']), rank=rank.get(g['champion'], 99) + 1,
                                       risk_factor=round(queue_factor(sid, d), 6), seat_from=seg_by[sid]['tenure_ts'], winding=False,
-                                      **_size(g['genes'], leader=b)))
+                                      **live_factor(sid, d, queue_factor(sid, d)), **_size(g['genes'], leader=b)))
     price_off_live, price_off_live_exits = _price_off_live(res, segs, by, seg_by, series, last_ts, left, held_start, blocked_next, rank, who, wound,
-                                                           ci['price_off_live_from'])
+                                                           ci['price_off_live_from'], lgroups or {})
     legacy = paper.get('legacy') or {}
     seats = [dict(champion=g['champion'], slot=g['slot'], species=g['species'], reason=g['reason'], from_ts=g['from_ts'], to_ts=g['wind_ts']) for g in acc['segs']]
     seats += [dict(champion=g['champion'], slot=g['slot'], species=g['species'], reason='leader', from_ts=a, to_ts=b) for g in acc['segs'] for a, b in g['boosts']]
@@ -631,7 +649,7 @@ def update(state, series, changes, price_off=None, prev_last=None, now=None, rep
     return view, signals
 
 
-def _price_off_live(res, segs, by, seg_by, series, last_ts, left, held_start, blocked_next, rank, who, wound, from_i):
+def _price_off_live(res, segs, by, seg_by, series, last_ts, left, held_start, blocked_next, rank, who, wound, from_i, groups):
     """PRICE_OFF LIVE (2026-11-25, user: 「先改过滤，让它不再挡实盘」). price_off compares the OKX DEMO market with the real one;
     the paper account keeps refusing those coins (unchanged), but the live account trades the real market, so the
     qualified signals refused ONLY by price_off are published separately for the OKX live follower:
@@ -645,6 +663,9 @@ def _price_off_live(res, segs, by, seg_by, series, last_ts, left, held_start, bl
       tp here are the paper's (real-market candles), for late_ok and the record only;
     - exits: virtual closes in the last EXIT_WINDOW (stop / target / trailing_stop / reverse_signal), so the follower
       closes its position when the strategy's own exit fires (the same way a paper close closes a mirror).
+    - risk_factor: TRAIL & RISK RULES b counted over the paper AND the price_off entries of the seat / bar / side
+      together (`groups` = execution.live_same_bar_groups for the next open; simulate_account for the filled ones), since
+      the live follower opens both; the paper signals of such a bar carry the matching `live_risk_factor`.
     Empty while the cutover key is pending (a replay of a state that does not have it yet)."""
     if 'off_book' not in res:
         return {}, {}
@@ -663,7 +684,6 @@ def _price_off_live(res, segs, by, seg_by, series, last_ts, left, held_start, bl
         held, vheld = dict(held_start), {x['id']: sum(1 for p in res['off_book'] if p['seg'] == x['id']) for x in segs}
         seen, sides = {p['inst'] for p in left}, {d: sum(1 for p in left if p['side'] == d) for d in (1, -1)}
         order = sorted(res['pending'], key=lambda x: not x[4])
-        groups = same_bar_groups(order, {p['inst'] for p in left}, dict(held_start))
         for sid, inst, d, dist, b in order:
             if inst in seen or held[sid] >= MAX_POSITIONS:
                 continue

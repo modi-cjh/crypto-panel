@@ -188,6 +188,39 @@ def same_bar_groups(pending, held, held_by_seat, eligible=None):
     return {k: min(n, max(0, MAX_POSITIONS - held_by_seat.get(k[0], 0))) for k, n in out.items()}
 
 
+def live_same_bar_groups(pending, held, real_by_seat, virtual_by_seat, blocked):
+    """PRICE_OFF LIVE: {(seat, side): n} of TRAIL & RISK RULES b for the OKX LIVE follower, which opens BOTH the paper
+    account's entries and the virtual price_off ones (simulate_account off_book_from; paper.update price_off_live).
+    The paper's own groups (same_bar_groups with price_off coins not eligible) are unchanged and still size the paper
+    account; this one counts, on one fill bar, every entry the paper account OR the virtual book takes as a signal, so
+    the live entries of one seat / bar / side share one position's risk together (1 ordinary + 1 price_off = ½ + ½).
+    pending = [(seat, inst, side, dist, ...)] in fill order; held = coins open in the paper account OR the virtual book
+    (the live follower holds one position per coin); real_by_seat / virtual_by_seat = the seat's open paper / virtual
+    positions; blocked(inst) -> bool = refused by price_off on this fill. Walked in fill order with the SAME slot tests
+    as the fills: an ordinary entry needs real < MAX_POSITIONS (the paper account ignores the virtual book), a virtual one
+    real + virtual < MAX_POSITIONS; each accepted entry takes its slot and claims its coin. Like same_bar_groups, n counts
+    SIGNALS: entries later skipped for margin / lot / MIN_STOP_DIST / max_same_side still count, so the live group may use
+    less than one position's risk (conservative), never more. Never below the paper's n for the ordinary entries."""
+    out, claimed = {}, set()
+    real, virt = dict(real_by_seat), dict(virtual_by_seat)
+    for x in pending:
+        sid, inst, d, dist = x[0], x[1], x[2], x[3]
+        if not (dist and dist > 0) or inst in held or inst in claimed:
+            continue
+        r, v = real.get(sid, 0), virt.get(sid, 0)
+        if blocked(inst):
+            if r + v >= MAX_POSITIONS:
+                continue
+            virt[sid] = v + 1
+        else:
+            if r >= MAX_POSITIONS:
+                continue
+            real[sid] = r + 1
+        claimed.add(inst)
+        out[(sid, d)] = out.get((sid, d), 0) + 1
+    return out
+
+
 def target_rr(g):
     """The take-profit multiple every position uses: the gene kept inside TARGET_RR_RANGE; a missing / < .5 gene (the
     old 'no target') is DEFAULT_TARGET_RR. Same mapping as genome.fix()."""
@@ -1043,9 +1076,15 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
       stop = entry ∓ dist, target = entry ± target_rr(genes) × dist (always the current EXIT RULES), and exits by the
       same price rules as a real position: gap through stop / target at the open, stop ('stop' / 'trailing_stop'),
       target, then at the close the trailing stop (rules['trail'] after trail_risk_from) and the reverse signal
-      (rules['reverse_close']). Its risk_factor is entry_risk_factor() with the same-bar group counted as if no coin
-      were blocked. They are published for the OKX LIVE follower only (paper.update → signals.json price_off_live);
-      returned as off_book (open) and off_book_trades (closed), only when off_book_from is not None.
+      (rules['reverse_close']). The live follower opens the paper entries AND these, so their same-bar groups are
+      counted together (live_same_bar_groups: paper + virtual entries of the seat / bar / side, coins held by either
+      book excluded, the same slot tests as the fills): a virtual entry's risk_factor is entry_risk_factor() of that
+      combined group, and a paper entry filled on such a bar whose combined group is larger than its paper group gets
+      `live_risk_factor` (<= its risk_factor) besides; the paper sizing (risk, qty, risk_factor) never changes. E.g. one
+      paper + one price_off entry of a seat on one bar: paper risk_factor 1 (the account takes only one), live 0.5 +
+      0.5. They are published for the OKX LIVE follower only (paper.update → signals.json price_off_live, and
+      live_risk_factor on the paper signals); returned as off_book (open) and off_book_trades (closed), only when
+      off_book_from is not None.
     Returns dict(equity, curve, trades, positions, pending, pnl={seg id: realised + floating}, halted, metrics,
     liquidations = number of cross liquidations of the whole account, insurance = total insurance-fund compensation,
     adjustments = [dict(ts, kind='insurance', amount)]). Trades and pnl keep the full loss, so
@@ -1149,8 +1188,13 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
         is_blocked = lambda k: bool(blocked) and any(a <= i and (b is None or i < b) for a, b in blocked.get(k, ()))
         groups = same_bar_groups(sorted(pending, key=lambda x: not x[4]), pos, {sid: sum(1 for p in pos.values() if p['seg'] == sid) for sid in by_id},
                                  eligible=lambda k: not is_blocked(k)) if new_era(i) and not halted else {}
-        vgroups = same_bar_groups(sorted(pending, key=lambda x: not x[4]), pos, {sid: sum(1 for p in pos.values() if p['seg'] == sid) for sid in by_id}) \
-            if track and i > off_book_from and new_era(i) and not halted else {}
+        # PRICE_OFF LIVE: the live follower's same-bar groups (paper + virtual entries together, live_same_bar_groups);
+        # they size the virtual entries and give the paper entries of this bar their `live_risk_factor` (paper sizing
+        # keeps `groups` above)
+        live_on = track and i > off_book_from and new_era(i) and not halted
+        vgroups = live_same_bar_groups(sorted(pending, key=lambda x: not x[4]), set(pos) | set(vpos),
+                                       {sid: sum(1 for p in pos.values() if p['seg'] == sid) for sid in by_id},
+                                       {sid: sum(1 for p in vpos.values() if p['seg'] == sid) for sid in by_id}, is_blocked) if live_on else {}
 
         def off_book_entry(sid, inst, d, dist, boost):
             """PRICE_OFF LIVE: a signal refused only by price_off becomes a virtual position (never touches the account)."""
@@ -1190,16 +1234,18 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                 r = position_risk(by_id[sid].get('old_risk', g['risk']), inst, n_same, {**rules, **PRIOR_SIZING})
             else:
                 r = position_risk(g['risk'], inst, n_same, rules)
-            factor = 1.0
+            factor = live_factor = 1.0
             if new_era(i):                                    # TRAIL & RISK RULES b, c
                 seg = by_id[sid]
                 chain = seg.get('chain', sid)
                 fb = first_fill.get(chain)
-                factor = entry_risk_factor(groups.get((sid, d), 1),
-                                           seat_age_h=(ts0[i] - seg.get('tenure_ts', ts0[seg['from_i']])) / HOUR,
-                                           first=fb is None or fb == i,
-                                           winding=seg.get('wind_i') is not None and i >= seg['wind_i'], rules=risk_new)
+                age_h, first = (ts0[i] - seg.get('tenure_ts', ts0[seg['from_i']])) / HOUR, fb is None or fb == i
+                wind = seg.get('wind_i') is not None and i >= seg['wind_i']
+                factor = entry_risk_factor(groups.get((sid, d), 1), seat_age_h=age_h, first=first, winding=wind, rules=risk_new)
                 r *= factor
+                live_factor = factor
+                if live_on:                                   # PRICE_OFF LIVE: the live follower's share (never sizes the paper)
+                    live_factor = min(factor, entry_risk_factor(vgroups.get((sid, d), 1), seat_age_h=age_h, first=first, winding=wind, rules=risk_new))
             qty = mark * r / dist
             if s.spec:
                 ct, lot, mn = s.spec
@@ -1226,6 +1272,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
             new_p = dict(side=d, entry=px, qty=qty, stop=px - d * dist, target=px + d * rr * dist if rr > 0 else None, opened=ts0[i], bar=i,
                          fee=qty * px * FEE, dist=dist, lever=lever, margin=margin, funding=0.0, seg=sid, boost=boost, risk=r, best=px,
                          liq=liquidation_price(px, d, lever, mmr=mmr), mmr=mmr, risk_factor=factor, **old)
+            if live_factor != factor:                         # PRICE_OFF LIVE only (off_book_from); never read by the account
+                new_p['live_risk_factor'] = live_factor
             opens_now = marks_at(series, list(pos), i, 'o')
             ok, _why = cross_open_allowed(cash, pos, inst, new_p, opens_now)
             if not ok:
@@ -1324,7 +1372,8 @@ def simulate_account(segs, series, start, end, equity=START_EQUITY, rules=ACCOUN
                    win_rate=round(wins / len(trades) * 100, 1) if trades else 0.0)
     open_positions = [dict(inst=k, side=p['side'], entry=p['entry'], qty=p['qty'], stop=p['stop'], target=p['target'], opened=p['opened'],
                            lever=p['lever'], margin=round(p['margin'], 4), liq=p['liq'], funding=round(p['funding'], 4), seg=p['seg'], boost=p['boost'], risk=p['risk'],
-                           dist=p['dist'], best=p['best'], trailing=bool(p.get('trailing')), risk_factor=p.get('risk_factor', 1.0))
+                           dist=p['dist'], best=p['best'], trailing=bool(p.get('trailing')), risk_factor=p.get('risk_factor', 1.0),
+                           **({'live_risk_factor': p['live_risk_factor']} if 'live_risk_factor' in p else {}))
                       for k, p in pos.items()]
     out = dict(equity=eq, cash=cash, trades=trades, curve=curve, positions=open_positions, pending=pending, pnl=pnl, halted=halted, metrics=metrics, liquidations=liquidations,
                insurance=insurance, adjustments=adjustments, first_fill=first_fill)
