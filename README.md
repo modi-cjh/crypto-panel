@@ -30,7 +30,7 @@
   | `stale` | `summary.updated_at` 距现在超过 2 小时（服务停了或定时没跑），或缺少该字段 |
   | `halted` | `halted == true`（含日亏 25% 熔断） |
   | `paused` | `paused == true` |
-  | `day_loss` | `(equity - day_start) / day_start < -10%` |
+  | `day_loss` | `(equity - day_start - day_cashflow) / day_start < -10%`（`day_cashflow` = 当日充值 / 提现 / 划转净额，旧 summary 没有时按 0） |
   | `stop_streak` | 最近连续 3 笔平仓（`close` / `closed_on_exchange`，不含 dry-run）都是止损：`outcome` 为 `stop` / `liquidation`，或 `reason` 含 `stop`；`outcome` 可能只在 `summary.recent_actions` 里补上，会自动合并；结果未知的平仓不计入也不打断 |
   | `api_error` | 过去 90 分钟内有 `action: error`（下单 / 平仓 / 设杠杆 / 补止损失败），消息含步骤、币种与交易所错误摘要（先过密钥检查） |
   | `read_error` | 服务器读不到（ssh 失败 / 超时 / JSON 损坏） |
@@ -138,7 +138,7 @@ nohup python3 tools/publish_snapshot.py > publish.log 2>&1 &   # 后台常驻
 - **当前风控（代码为准；2026-11-20 起实盘 / OKX 模拟盘跟单与纸面 / 进化重新使用同一套风险区间和拥挤台阶）**：
   - **OKX 实盘与模拟盘跟单**（`okx_demo_trader.py`，两种模式同一套常量）：每笔止损风险 = 开仓策略的风险基因，夹到 5%–10%（`RISK_RANGE = (.05, .10)`，缺 `risk` 时默认 5%）；主流币（BTC/ETH/SOL/BNB/XRP/DOGE）风险 ×2，但加倍后仍 ≤ 10%（`MAX_TRADE_RISK = .10`）；同方向已开不到 10 仓按满风险，≥10 仓时下一单减半（`CROWD_STEPS = ((10, .5),)`）；`LEADER_RISK` 跟随 `MAX_TRADE_RISK` 为 10%（只是上限），第一名仍按自己的基因开仓、只是信号优先。摘要 `execution_profile` 里 `risk` / `risk_max` / `max_risk` / `leader_risk` 分别为 5% / 10% / 10% / 10%。
   - **纸面与进化**（`execution.py` / `paper.py` / `genome.py`，与上面同值）：风险基因 `GENES['risk'] = (.05, .10)`（旧基因高于 10% 的由 `fix()` 压到 10%）；`MIN_TRADE_RISK` / `MAX_TRADE_RISK = .05 / .10`（缺风险按 5%），主流币加倍后仍 ≤ 10%；`CROWD_STEPS = ((10, .5),)`；`ACCOUNT_RULES['leader_risk'] = .10`（只是上限）。纸面账户每次从起点重放，按开仓时间分三段定尺寸，已成交 / 仍持有的仓位尺寸不变：`account['risk_rules_from']` 及之前按 `execution.LEGACY_SIZING`（2%–10%、10%、≥3 减半 / ≥6 四分之一）；之后到 `account['risk_cap_from']`（第一次带 5–10% 规则运行的时间）按 `execution.PRIOR_SIZING`（5%–20%、20%、满 10 仓减半）；再之后按当前 5%–10% / 10% / 满 10 仓减半。两个时间点都只设一次、不前移。
-  - **两边相同、未改**：同方向最多 20 仓（`MAX_SAME_SIDE_POSITIONS = 20`，含第一名）；同方向合计风险不设上限（`same_side_cap = None`）；当天（UTC+7）亏损达 25% 全部平仓停手到次日（`EVOLVED_DAILY_HALT = .25` / `ACCOUNT_RULES['daily_halt'] = .25`，含第一名）；杠杆 = 杠杆基因 1–20×，再受该币 OKX 最高档限制（实盘取不到上限不开新仓）；全仓（`cross`）；每笔都挂交易所止损；维持保证金率主流币 0.5%、其他 2.5%；保证金最多用可用的 95%；每个策略同时最多 3 仓；实盘只扫描信号列表前 50 个币（`SCAN_LIMIT = 50`，与币池 `UNIVERSE_SIZE = 50` 一致）。代码里 `DAILY_HALT = .10`、`RISK = .01`、10× 只属于已退役的旧档（legacy volume-test），不是实盘现状。
+  - **两边相同、未改**：同方向最多 20 仓（`MAX_SAME_SIDE_POSITIONS = 20`，含第一名）；同方向合计风险不设上限（`same_side_cap = None`）；当天（UTC+7）亏损达 25% 全部平仓停手到次日（`EVOLVED_DAILY_HALT = .25` / `ACCOUNT_RULES['daily_halt'] = .25`，含第一名），实盘 / 跟单的当日亏损先扣掉充值 / 提现 / 划转（CASHFLOW HALT RULE，`tools/cashflow.py` 读只读接口 `GET /api/v5/account/bills` 类型 1 的 USDT `balChg`，读不到时用当天上次的值或 0）；杠杆 = 杠杆基因 1–20×，再受该币 OKX 最高档限制（实盘取不到上限不开新仓）；全仓（`cross`）；每笔都挂交易所止损；维持保证金率主流币 0.5%、其他 2.5%；保证金最多用可用的 95%；每个策略同时最多 3 仓；实盘只扫描信号列表前 50 个币（`SCAN_LIMIT = 50`，与币池 `UNIVERSE_SIZE = 50` 一致）。代码里 `DAILY_HALT = .10`、`RISK = .01`、10× 只属于已退役的旧档（legacy volume-test），不是实盘现状。
   - **开仓尺寸按保证金（MARGIN SIZING，2026-11-25，`tools/evolve/sizing.py`）**：保证金 = 本金 × m，仓位名义 = 保证金 × 杠杆。m = 风险基因（夹到 5–10%）线性映射到 2–10%（5%→2%、7.5%→6%、10%→10%），× 拥挤（满 10 仓 ×0.5）× 主流币 2，夹到 2–10%，再 × risk_factor（可低于 2%）；不设单笔止损上限（一笔止损 = 本金 × m × 杠杆 × 止损距离）。本金：纸面为账户自身权益；实盘 / 模拟盘跟单为交易所权益减去非本程序仓位（人工 / 接管）的浮盈（正负都扣，下限 0）。纸面从 `account['margin_sizing_from']`（NEXT-HOUR cutover 键）之后成交的仓位按保证金、之前的按冻结的止损风险规则（`sizing.STOP_RISK_SIZING`），已成交仓位不改尺寸；这些信号在 `signals.json` 带 `sizing: 'margin'`，跟单只对带标记的信号按保证金，其余仍按止损风险。进化适应度 `simulate()` 自合并后第一次运行起按保证金。上面两条里的“每笔止损风险 5–10% / 单笔最多 10%”只适用于 cutover 之前成交的仓位和不带标记的信号。
 
 旧的三套固定策略（`tools/paper_trader.py`）已退役，以下章节保留作历史参考（其中的 1% / 2% / 3% 风险、5% / 6% 同向上限、8% 日亏停手、10× 杠杆、5 币 / 100 币等数字只属于旧引擎，不是当前规则）。

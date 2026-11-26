@@ -143,7 +143,8 @@ def build_snapshot(summary, state):
     if not updated or equity is None:
         raise SyncError('summary.json 缺少 updated_at 或 equity')
     day_start = money(summary.get('day_start'))
-    day_pnl = None if day_start is None or day_start <= 0 else money(equity - day_start)
+    day_flow = money(summary.get('day_cashflow'))     # CASHFLOW HALT RULE: deposits / withdrawals / transfers today (absent = 0)
+    day_pnl = None if day_start is None or day_start <= 0 else money(equity - day_start - (day_flow or 0))
     day_pct = None if day_pnl is None else number(day_pnl / day_start * 100, 6)
     start = money(summary.get('start_equity'))
     mirrors = open_mirrors(state)
@@ -176,7 +177,7 @@ def build_snapshot(summary, state):
     return clean({
         'schema_version': 1, 'source': 'okx-live', 'trading_mode': 'live',
         'updated_at': updated, 'equity': equity, 'available': money(summary.get('available')),
-        'day_start': day_start, 'day_pnl': day_pnl, 'day_pnl_pct': day_pct,
+        'day_start': day_start, 'day_pnl': day_pnl, 'day_pnl_pct': day_pct, 'day_cashflow': day_flow,
         'start_equity': start, 'total_pnl': None if start is None else money(equity - start),
         'paused': bool(summary.get('paused')), 'halted': bool(summary.get('halted')),
         'dry_run': bool(summary.get('dry_run')),

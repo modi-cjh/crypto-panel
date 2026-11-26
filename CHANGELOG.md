@@ -742,6 +742,17 @@
 - 影响（/workspace/modi/sizing-2026-11-25/pr/compare_pr.md，用本分支生产代码）：低杠杆基因（1–3×）的仓位缩到原来的 2%–6%；主流币（原来加倍到 10% 风险）一笔止损降到本金的 1.9%–4.2%；20× 加宽止损会变大（NEAR 止损 27%：一笔止损 15% 本金，原来 7%）。m = 10% 时约第 9–10 仓就撞 95% 保证金上限，拥挤减半基本用不上；m = 2% 的成员拥挤减半被夹回 2%。
 - 测试：`tests/test_margin_sizing.py`（20 项，含 2 项与 NEGATIVE TP RULE（#118）的组合：止盈无效的空单按保证金定尺寸、只挂止损；另含人工 ETH 空单 14:58Z 平仓后的情形：无持仓时本金 = 交易所权益 202.26 U，ETH 按保证金信号不再跳过）；`tests/test_evolve.py` 中 18 项、`tests/test_price_off_live.py` 中 1 项是止损风险引擎的机制测试，改为显式固定 `ACCOUNT_RULES['sizing'] = 'stop_risk'`（断言未改）。
 
+### 日亏停手不把出入金算作亏损：充值 / 提现 / 划转先从当日盈亏里扣掉（CASHFLOW HALT RULE，实盘 / 模拟盘跟单，2026-11-26）
+- 做了什么：
+  1. 新模块 `tools/cashflow.py`（只用标准库、只发 GET）：读 `GET /api/v5/account/bills?ccy=USDT&type=1&begin=&end=&limit=100`（交易账户账单，类型 1 = 划转，subType 11 转入 / 12 转出，含资金账户 ↔ 交易账户、子账户划转），`after` = 账单 ID 游标翻页，最多 10 页，按 billId 去重，只累计 `ccy == USDT` 且类型 1 的 `balChg`（带符号）。
+  2. `okx_demo_trader.Mirror.run()`：调整后当日盈亏 = (权益 − day_start) − 当日净流入；窗口 = [max(当天 UTC+7 零点, `day_start_ts`), 本轮时钟 `now_ms`]，每轮整段重算（幂等）。换日时 state 记下 `day_start_ts` / `day_cashflow = 0` / `day_cashflow_count = 0`；旧 state 没有 `day_start_ts` 时退回当天零点。数值变化时记 `cashflow`（net_flow / count / window），`daily_halt` 记录加 `raw_day` / `day_cashflow`（`others_day` 改为调整后的值）；summary.json 新增 `day_start_ts` / `day_cashflow` / `day_pnl_ex_cashflow`（只增字段）。
+  3. 降级：账单读不到（网络 / 鉴权 / HTTP / code ≠ 0 / 格式错误 / 翻页超上限）不中断本轮，记 `cashflow_unavailable`（简短原因、无密钥），用同一天上次成功的值（没有就 0 = 旧行为）。已停手的当天不解除，换日自动恢复（UTC+7 零点 = 17:00Z）。
+  4. `tools/live_sync.py`：`day_pnl` 扣掉 summary 的 `day_cashflow`，snapshot 新增 `day_cashflow`（没有该字段时与以前完全相同）；`tools/live_alert.py` 的 10% 日亏告警同样扣掉。
+- 为什么：2026-11-26 07:47Z 用户从 OKX 提现 100 USDT，权益 202.26 → 102.03，07:50Z 一轮把它当成亏损触发了 25% 日亏停手（无持仓）。用户决定「改代码，出入金不算亏损，今天等自动恢复」。为什么用 account/bills 类型 1：提现从资金账户付出、充值进资金账户，真正改变交易账户 USDT 权益的是资金 ↔ 交易的划转；asset/bills、充值 / 提现记录描述的是资金账户，不再叠加（否则重复计算）。只算 USDT：跟单权益就是 `/account/balance?ccy=USDT` 的 USDT `eq`。
+- 不变：DAILY_HALT 25%、OKX_DRY_RUN、杠杆、全仓、尺寸、同向、止损；纸面 / 进化不变；没有新增任何写接口。
+- 测试：`tests/test_cashflow_halt.py`（22 项）；`tests/test_okx_demo_trader.py` 的 FakeOKX 加了空账单响应，`tests/test_signals_hourly.py` 的手工 Mirror 加 `day_cashflow` 桩，`tests/test_live_sync.py` 白名单加 `day_cashflow`。pytest 562、unittest 562、npm 153 全部通过。
+- 后续：看板 `assets/live.mjs` / `okx.mjs` / `widgets/modi-robot.js` 仍用 权益 − day_start 自己算当日盈亏，未改。
+
 ## 策略引擎（自 PR #21 起为一个合并账户；自 PR #27 起只作为 OKX 模拟交易的信号来源，看板不再显示）
 
 | 键 | 名称 | 周期 | 规则 |

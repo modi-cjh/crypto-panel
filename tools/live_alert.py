@@ -8,7 +8,7 @@ cat / tail`, nothing is written on the server) and checks:
   stale        summary.updated_at older than STALE_HOURS (service stopped / timer not running)
   halted       summary.halted (incl. the 25% daily-loss halt)
   paused       summary.paused (manual pause / stop)
-  day_loss     (equity - day_start) / day_start < -DAY_LOSS_LIMIT
+  day_loss     (equity - day_start - day_cashflow) / day_start < -DAY_LOSS_LIMIT (day_cashflow absent = 0)
   stop_streak  the newest STOP_STREAK closes were all stop-outs (or liquidations)
   api_error    an `error` action (order / close / leverage / stop placement failed) within ERROR_WINDOW_MIN minutes
   read_error   the server could not be read at all (ssh / JSON failure)
@@ -103,8 +103,9 @@ def evaluate(summary, actions, now):
         alerts.append(alert('paused', '实盘已暂停（paused=true），不会开新仓'))
 
     equity, start = ls.number(summary.get('equity')), ls.number(summary.get('day_start'))
+    flow = ls.number(summary.get('day_cashflow')) or 0.0       # CASHFLOW HALT RULE: deposits / withdrawals are not losses (absent = 0)
     if equity is not None and start and start > 0:
-        pct = (equity - start) / start
+        pct = (equity - start - flow) / start
         if pct < -DAY_LOSS_LIMIT:
             alerts.append(alert('day_loss', f'当日亏损 {pct * 100:.2f}%（权益 {equity:.2f} / 日初 {start:.2f} USDT），'
                                             f'超过 {DAY_LOSS_LIMIT * 100:.0f}%', day))
