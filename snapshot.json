@@ -2,16 +2,16 @@
  "schema_version": 1,
  "source": "okx-live",
  "trading_mode": "live",
- "updated_at": "2026-11-26T06:50:00Z",
- "equity": 202.26358,
- "available": 202.26358,
+ "updated_at": "2026-11-26T07:50:01Z",
+ "equity": 102.15358,
+ "available": 102.15358,
  "day_start": 202.26358,
- "day_pnl": 0.0,
- "day_pnl_pct": 0.0,
+ "day_pnl": -100.11,
+ "day_pnl_pct": -49.4948,
  "start_equity": 126.66404,
- "total_pnl": 75.59954,
+ "total_pnl": -24.51046,
  "paused": false,
- "halted": false,
+ "halted": true,
  "dry_run": false,
  "closed_trades": 17,
  "positions": [],
@@ -1055,6 +1055,10 @@
   [
    1795675800949,
    202.26
+  ],
+  [
+   1795679401330,
+   102.15
   ]
  ]
 }
