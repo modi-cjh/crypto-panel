@@ -103,6 +103,7 @@ CROWD_STEPS = ((10, .5),)  # 2026-11-20: <10 same-side already open → full ris
 # minus the unrealised PnL of every position that is not one of our own open mirrors (manual / adopted). Signals without
 # the marker keep the stop-risk sizing below. No per-trade stop-loss cap; every other gate is unchanged.
 from sizing import MARGIN_SIZING, margin_fraction, margin_qty, live_base_equity  # noqa: E402
+import cashflow  # noqa: E402  CASHFLOW HALT RULE: deposits / withdrawals / transfers are not trading losses
 SAME_SIDE_CAP = .05
 MAX_SAME_SIDE = MAX_SAME_SIDE_POSITIONS  # evolved mode: at most 20 open mirrored positions per side (execution.MAX_SAME_SIDE_POSITIONS, same count as the paper account)
 HISTORY_POINTS = 3000            # equity curve points kept (~31 days at one point per 15 minutes)
@@ -1335,7 +1336,8 @@ class Mirror:
         day = local_day(self.now)
         leader_upl = self.leader_upl()
         if self.s.get('day') != day:
-            self.s.update(day=day, day_start=self.equity, halted=False, leader_realized=0.0, leader_upl_start=leader_upl)
+            self.s.update(day=day, day_start=self.equity, halted=False, leader_realized=0.0, leader_upl_start=leader_upl,
+                          day_start_ts=self.now_ms, day_cashflow=0.0, day_cashflow_count=0)
         if action == 'pause':
             self.s['paused'] = True; self.log('pause', '-')
         elif action == 'resume':
@@ -1351,10 +1353,14 @@ class Mirror:
             self.s['paused'] = True; self.flatten('manual_flatten'); self.log('flatten', '-')
             return
         # Daily halt: today's change in equity for the whole account, including the leader. It closes and blocks everyone.
-        day_pnl = self.equity - (self.s.get('day_start') or self.equity)
+        # CASHFLOW HALT RULE: deposits / withdrawals / transfers since day_start are taken out first (tools/cashflow.py).
+        raw_day = self.equity - (self.s.get('day_start') or self.equity)
+        flow = self.day_cashflow() if self.s.get('day_start') else 0.0
+        day_pnl = raw_day - flow
         if not self.s['halted'] and self.s.get('day_start') and day_pnl <= -self.s['day_start'] * DAILY_HALT:
             self.s['halted'] = True
-            self.log('daily_halt', '-', equity=self.equity, day_start=self.s['day_start'], others_day=round(day_pnl, 2), leader_day=0.0)
+            self.log('daily_halt', '-', equity=self.equity, day_start=self.s['day_start'], others_day=round(day_pnl, 2), leader_day=0.0,
+                     raw_day=round(raw_day, 2), day_cashflow=round(flow, 2))
             self.flatten('daily_halt', keep_leader=False, keep_adopted=True)
         paper_positions = self.paper.get('positions', {})
         # Closes and stop updates for what we mirrored.
@@ -1419,6 +1425,27 @@ class Mirror:
         if getattr(self, 'follow_price_off', False):
             self.follow_price_off_entries(action, order)
 
+    def day_cashflow(self):
+        """Net USDT moved into (+) / out of (-) the trading account since day_start was captured (CASHFLOW HALT RULE).
+        Recomputed over the whole window every run (idempotent), read after load() so equity and bills are from the
+        same run. The window ends at this run's clock (now_ms, taken before the balance read): a transfer booked between
+        that and the balance read is in equity but not subtracted, i.e. the old behaviour for that one run. Never raises:
+        on any failure it logs `cashflow_unavailable` and returns the last good value of the same day (0 if none)."""
+        prev = self.s.get('day_cashflow')
+        try:
+            begin = cashflow.window_start(self.s, self.now_ms)
+            net, count = cashflow.compute(self.c.request, begin, self.now_ms)
+        except Exception as e:                                 # noqa: BLE001  the halt path must never raise
+            fallback = prev if isinstance(prev, (int, float)) else 0.0
+            self.log('cashflow_unavailable', '-', reason=getattr(e, 'reason', type(e).__name__), fallback=round(fallback, 2))
+            return float(fallback)
+        net = round(net, 8)
+        if net != prev or count != self.s.get('day_cashflow_count'):
+            iso = lambda ms: datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+            self.log('cashflow', '-', net_flow=round(net, 2), count=count, window_from=iso(begin), window_to=iso(self.now_ms))
+        self.s['day_cashflow'], self.s['day_cashflow_count'] = net, count
+        return net
+
     def follow_price_off_entries(self, action, order):
         """PRICE_OFF LIVE entries (live only), after the paper ones, with every gate of the paper entries above (dedupe by
         inst|opened, scan list, daily halt, a position on the coin that is not ours, OPEN_WINDOW / late_ok) and all of
@@ -1469,6 +1496,8 @@ class Mirror:
                for p in getattr(self, 'all_positions', self.positions).values()]
         return dict(updated_at=self.now.isoformat(timespec='seconds').replace('+00:00', 'Z'), equity=self.equity, available=self.available,
                     day_start=self.s.get('day_start'), paused=self.s['paused'], halted=self.s['halted'], dry_run=self.dry, positions=pos,
+                    day_start_ts=self.s.get('day_start_ts'), day_cashflow=self.s.get('day_cashflow'),
+                    day_pnl_ex_cashflow=None if not self.s.get('day_start') else round(self.equity - self.s['day_start'] - float(self.s.get('day_cashflow') or 0), 8),
                     stop_control=self.s.get('stop_control'),
                     execution_profile=dict(ACTIVE_PROFILE or volume_profile(self.now), instruments=list(INSTRUMENTS), risk=RISK, same_side_cap=SAME_SIDE_CAP),
                     open_mirrors=[dict(m, key=k) for k, m in self.s['mirrored'].items() if m['status'] == 'open'],

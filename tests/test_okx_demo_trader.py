@@ -31,6 +31,8 @@ class FakeOKX:
             return {'code': '0', 'data': [{'acctLv': self.acct, 'perm': self.perm, 'posMode': self.pos_mode}]}
         if path.startswith('/api/v5/account/balance'):
             return {'code': '0', 'data': [{'details': [{'ccy': 'USDT', 'eq': str(self.equity), 'availBal': str(self.equity)}]}]}
+        if path.startswith('/api/v5/account/bills'):          # CASHFLOW HALT RULE: no transfers unless a test sets them
+            return {'code': '0', 'data': list(getattr(self, 'bills', []))}
         if path.startswith('/api/v5/account/positions-history'):
             self.history_calls += 1
             inst = path.split('instId=')[1].split('&')[0]

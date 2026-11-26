@@ -747,6 +747,7 @@ class SignalTimingTests(unittest.TestCase):
             m.paper, m.now, m.now_ms, m.dry, m.actions, m.positions, m.equity = paper, now, int(now.timestamp() * 1000), False, [], {}, 1000.0
             m.load = lambda: None
             m.leader_upl = lambda: 0.0
+            m.day_cashflow = lambda: 0.0                                # no client here (CASHFLOW HALT RULE has its own tests)
             m.late_ok = lambda inst, p: late
             m.log = lambda action, inst, **kw: m.actions.append(dict(action=action, inst=inst, **kw))
             m.open = lambda key, inst, p: m.actions.append(dict(action='open', inst=inst))

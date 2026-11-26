@@ -73,7 +73,7 @@ class Assembly(unittest.TestCase):
     def test_snapshot_whitelist_and_merge(self):
         snap = ls.build_snapshot(sample_summary(), sample_state())
         self.assertEqual(set(snap) - {'schema_version', 'source', 'trading_mode', 'updated_at', 'equity', 'available',
-                                      'day_start', 'day_pnl', 'day_pnl_pct', 'start_equity', 'total_pnl', 'paused',
+                                      'day_start', 'day_pnl', 'day_pnl_pct', 'day_cashflow', 'start_equity', 'total_pnl', 'paused',
                                       'halted', 'dry_run', 'closed_trades', 'positions', 'history'}, set())
         self.assertAlmostEqual(snap['equity'], 126.82424)
         self.assertAlmostEqual(snap['day_pnl'], 126.82424 - 126.670001, places=5)
